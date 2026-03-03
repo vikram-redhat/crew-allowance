@@ -575,6 +575,11 @@ function LandingPage({ goLogin, goSignup }) {
         <div style={{ marginTop:28, fontSize:11, color:"rgba(255,255,255,0.4)", letterSpacing:"0.06em" }}>
           © 2026 Crew Allowance · For IndiGo crew members
         </div>
+        <div style={{ marginTop:12, display:"flex", gap:20, justifyContent:"center" }}>
+          <a href="/privacy.html" style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Privacy Policy</a>
+          <a href="/terms.html"   style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Terms of Service</a>
+          <a href="mailto:support@crewallowance.in" style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Contact</a>
+        </div>
       </div>
     </div>
   );
@@ -838,7 +843,7 @@ function ForgotScreen({ goLogin }) {
     setBusy(true); setErr("");
     if (supabase) {
       await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + "/reset-password",
+        redirectTo: "https://crewallowance.in",
       });
     }
     setBusy(false); setSent(true);
@@ -1193,6 +1198,61 @@ function AdminScreen({ rates, onUpdateRates }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   RESET PASSWORD SCREEN
+═══════════════════════════════════════════════════════════════════ */
+function ResetPasswordScreen({ goLogin }) {
+  const [pass,    setPass]    = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [err,     setErr]     = useState("");
+  const [busy,    setBusy]    = useState(false);
+  const [done,    setDone]    = useState(false);
+
+  const submit = async () => {
+    if (!pass || !confirm)    { setErr("Please fill in both fields.");           return; }
+    if (pass !== confirm)     { setErr("Passwords do not match.");               return; }
+    if (pass.length < 8)      { setErr("Password must be at least 8 characters."); return; }
+    setBusy(true); setErr("");
+    const { error } = await supabase.auth.updateUser({ password: pass });
+    if (error) { setErr(error.message); setBusy(false); return; }
+    // Sign out so user does a clean login with new password
+    await supabase.auth.signOut();
+    setBusy(false); setDone(true);
+  };
+
+  if (done) return (
+    <AuthShell title="Password updated ✓" sub="">
+      <div style={{ textAlign:"center", padding:"8px 0 18px" }}>
+        <div style={{ width:60, height:60, borderRadius:"50%", background:C.greenBg,
+          border:"2px solid "+C.green, display:"flex", alignItems:"center", justifyContent:"center",
+          fontSize:28, margin:"0 auto 16px" }}>✓</div>
+        <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
+          Your password has been updated successfully. Sign in with your new password to continue.
+        </p>
+      </div>
+      <Btn onClick={goLogin}>Sign in →</Btn>
+    </AuthShell>
+  );
+
+  return (
+    <AuthShell title="Set new password" sub="Choose a strong password for your account">
+      <FInput
+        label="New password" type="password" value={pass} onChange={setPass}
+        placeholder="Minimum 8 characters" />
+      <FInput
+        label="Confirm new password" type="password" value={confirm} onChange={setConfirm}
+        placeholder="Repeat your new password" />
+      {err && (
+        <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5",
+          borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>
+      )}
+      <Btn onClick={submit} disabled={busy}>
+        {busy ? "Updating password..." : "Update password →"}
+      </Btn>
+    </AuthShell>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    ROOT APP  — session persistence via Supabase
 ═══════════════════════════════════════════════════════════════════ */
 export default function App() {
@@ -1223,6 +1283,11 @@ export default function App() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Supabase fires this when the user arrives via a password-reset link
+      if (event === "PASSWORD_RECOVERY") {
+        setScreen("reset-password");
+        return;
+      }
       if (event === "SIGNED_OUT" || !session) {
         setUser(null); setScreen("landing");
       }
@@ -1263,11 +1328,12 @@ export default function App() {
     </div>
   );
 
-  if (screen === "landing")  return <LandingPage goLogin={() => setScreen("login")} goSignup={() => setScreen("signup")} />;
-  if (screen === "login")    return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} />;
-  if (screen === "signup")   return <SignupScreen goLogin={() => setScreen("login")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} />;
-  if (screen === "checkout") return <CheckoutScreen pendingUser={pendingUser} goLogin={() => setScreen("login")} onActivate={onActivate} />;
-  if (screen === "forgot")   return <ForgotScreen goLogin={() => setScreen("login")} />;
+  if (screen === "landing")        return <LandingPage goLogin={() => setScreen("login")} goSignup={() => setScreen("signup")} />;
+  if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} />;
+  if (screen === "signup")         return <SignupScreen goLogin={() => setScreen("login")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} />;
+  if (screen === "checkout")       return <CheckoutScreen pendingUser={pendingUser} goLogin={() => setScreen("login")} onActivate={onActivate} />;
+  if (screen === "forgot")         return <ForgotScreen goLogin={() => setScreen("login")} />;
+  if (screen === "reset-password") return <ResetPasswordScreen goLogin={() => setScreen("login")} />;
 
   return (
     <div style={{ minHeight:"100vh", background:C.sky, fontFamily:"'Nunito','Segoe UI',sans-serif", color:C.text }}>
