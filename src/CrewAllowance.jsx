@@ -14,18 +14,47 @@ const supabase = SUPABASE_URL
 const sbWarn = () => console.warn("Supabase not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY");
 
 /* ═══════════════════════════════════════════════════════════════════
-   CONFIG
+   ✏️  APP CONFIGURATION — edit these to customise the site
 ═══════════════════════════════════════════════════════════════════ */
-const APP_NAME   = "Crew Allowance";
-const RANKS      = ["Captain", "First Officer", "Cabin Crew"];
-const PRICE_INR  = 299;
-const PRICE_LABEL= "₹299";
+const CONFIG = {
+  // Branding
+  appName:       "Crew Allowance",
+  airline:       "IndiGo",
+  tagline:       "Eff. Jan 2026",
+  copyrightYear: "2026",
+  siteUrl:       "https://crewallowance.in",
 
-const DISCOUNT_CODES = {
-  "CREW2026": { pct: 100, label: "100% off — Free"   },
-  "LAUNCH50": { pct: 50,  label: "50% off — ₹149/mo" },
-  "INDIGO10": { pct: 10,  label: "10% off — ₹269/mo" },
+  // Contact
+  emailSupport:  "support@crewallowance.in",
+  emailPrivacy:  "privacy@crewallowance.in",
+
+  // Pricing
+  currency:      "₹",
+  priceMonthly:  299,      // numeric, used for discount calculations
+  priceLabel:    "₹299",   // display string
+
+  // Discount codes  { pct: 0-100, label: string shown to user }
+  discountCodes: {
+    "CREW2026": { pct: 100, label: "100% off — Free"   },
+    "LAUNCH50": { pct: 50,  label: "50% off — ₹149/mo" },
+    "INDIGO10": { pct: 10,  label: "10% off — ₹269/mo" },
+  },
+
+  // Allowance rules
+  ranks:              ["Captain", "First Officer", "Cabin Crew"],
+  layoverMinHours:    10.0167,   // minimum hours away to qualify for layover
+
+  // Legal
+  governingLaw:       "New Delhi, India",
+  effectiveDate:      "1 January 2026",
 };
+
+/* ── Convenience aliases so the rest of the code stays readable ── */
+const APP_NAME      = CONFIG.appName;
+const RANKS         = CONFIG.ranks;
+const PRICE_INR     = CONFIG.priceMonthly;
+const PRICE_LABEL   = CONFIG.priceLabel;
+const DISCOUNT_CODES= CONFIG.discountCodes;
 
 const DEFAULT_RATES = {
   lastUpdated: "1 January 2026",
@@ -35,7 +64,7 @@ const DEFAULT_RATES = {
   layover:   { Captain: { base: 3000, beyondRate: 150 }, "First Officer": { base: 1500, beyondRate: 75 }, "Cabin Crew": null },
   tailSwap:  { Captain: 1500, "First Officer": 750,  "Cabin Crew": null },
   transit:   { Captain: 1000, "First Officer": 500,  "Cabin Crew": null },
-  layoverMinHours: 10.0167,
+  layoverMinHours: CONFIG.layoverMinHours,
 };
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -370,7 +399,7 @@ function AuthShell({ children, title, sub, wide }) {
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:26, margin:"0 auto 12px", boxShadow:"0 6px 20px rgba(26,111,212,0.3)" }}>✈</div>
         <div style={{ fontSize:22, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
-        <div style={{ fontSize:11, color:C.blue, letterSpacing:"0.12em", textTransform:"uppercase", marginTop:2, opacity:0.75 }}>IndiGo · Eff. Jan 2026</div>
+        <div style={{ fontSize:11, color:C.blue, letterSpacing:"0.12em", textTransform:"uppercase", marginTop:2, opacity:0.75 }}>{CONFIG.airline} · {CONFIG.tagline}</div>
       </div>
       <div style={{ width:"100%", maxWidth: wide ? 520 : 420, background:C.white, borderRadius:22,
         boxShadow:"0 12px 48px rgba(26,111,212,0.14)", padding:"28px 24px", border:"1px solid "+C.border }}>
@@ -573,12 +602,12 @@ function LandingPage({ goLogin, goSignup }) {
           Create your account →
         </button>
         <div style={{ marginTop:28, fontSize:11, color:"rgba(255,255,255,0.4)", letterSpacing:"0.06em" }}>
-          © 2026 Crew Allowance · For IndiGo crew members
+          © {CONFIG.copyrightYear} {CONFIG.appName} · For {CONFIG.airline} crew members
         </div>
         <div style={{ marginTop:12, display:"flex", gap:20, justifyContent:"center" }}>
           <a href="/privacy.html" style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Privacy Policy</a>
           <a href="/terms.html"   style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Terms of Service</a>
-          <a href="mailto:support@crewallowance.in" style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Contact</a>
+          <a href={"mailto:"+CONFIG.emailSupport} style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Contact</a>
         </div>
       </div>
     </div>
@@ -843,7 +872,7 @@ function ForgotScreen({ goLogin }) {
     setBusy(true); setErr("");
     if (supabase) {
       await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: "https://crewallowance.in",
+        redirectTo: CONFIG.siteUrl,
       });
     }
     setBusy(false); setSent(true);
@@ -1027,15 +1056,11 @@ function CalcScreen({ user, rates }) {
 /* ═══════════════════════════════════════════════════════════════════
    ADMIN SCREEN
 ═══════════════════════════════════════════════════════════════════ */
-const RATES_SYSTEM_PROMPT = 'Extract IndiGo crew allowance rates from the PDF. Return ONLY valid JSON with no markdown:\n{"lastUpdated":"string","source":"string","deadhead":{"Captain":number,"First Officer":number,"Cabin Crew":null},"night":{"Captain":number,"First Officer":number,"Cabin Crew":null},"layover":{"Captain":{"base":number,"beyondRate":number},"First Officer":{"base":number,"beyondRate":number},"Cabin Crew":null},"tailSwap":{"Captain":number,"First Officer":number,"Cabin Crew":null},"transit":{"Captain":number,"First Officer":number,"Cabin Crew":null},"layoverMinHours":number}';
-
 function AdminScreen({ rates, onUpdateRates }) {
   const [tab,      setTab]      = useState("users");
   const [users,    setUsers]    = useState([]);
-  const [loading,  setLoading]  = useState(false);
-  const [pdfFile,  setPdfFile]  = useState(null);
-  const [ratesMsg, setRatesMsg] = useState("");
-  const pdfRef = useRef();
+
+  const tabs = [{ id:"users", label:"Users" }, { id:"rates", label:"Current Rates" }];
 
   // Load users from Supabase
   useEffect(() => {
@@ -1051,40 +1076,7 @@ function AdminScreen({ rates, onUpdateRates }) {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, is_active: !currentState } : u));
   };
 
-  const uploadRates = async () => {
-    if (!pdfFile) return;
-    setLoading(true); setRatesMsg("");
-    try {
-      const b64 = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(",")[1]);
-        r.onerror = rej;
-        r.readAsDataURL(pdfFile);
-      });
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 1500,
-          system: RATES_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-            { type: "text", text: "Extract the allowance rates. Return only the JSON object." }
-          ]}]
-        })
-      });
-      const data = await resp.json();
-      const txt  = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
-      onUpdateRates(JSON.parse(txt.replace(/```json|```/g, "").trim()));
-      setRatesMsg("success");
-    } catch (e) {
-      setRatesMsg("err:" + e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const tabs = [{ id:"users", label:"Users" }, { id:"rates", label:"Rates" }, { id:"upload", label:"Upload PDF" }];
+  const tabs = [{ id:"users", label:"Users" }, { id:"rates", label:"Current Rates" }];
 
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:680, margin:"0 auto" }}>
@@ -1161,36 +1153,10 @@ function AdminScreen({ rates, onUpdateRates }) {
               </div>
             </Card>
           ))}
-        </div>
-      )}
-
-      {tab === "upload" && (
-        <div>
-          <Card style={{ marginBottom:16 }}>
-            <div style={{ fontSize:15, fontWeight:700, color:C.navy, marginBottom:6 }}>Upload Allowance Circular PDF</div>
-            <p style={{ fontSize:13, color:C.textMid, marginBottom:16, lineHeight:1.6 }}>
-              Upload the official IndiGo allowance circular. Claude will extract all rate tables and update the system automatically.
-            </p>
-            <div onClick={() => pdfRef.current.click()}
-              style={{ background: pdfFile ? C.blueXLight : C.sky,
-                border: "2px dashed "+(pdfFile ? C.blue : C.borderMid),
-                borderRadius:12, padding:"28px", cursor:"pointer", textAlign:"center", marginBottom:14 }}>
-              <div style={{ fontSize:36, marginBottom:8 }}>📄</div>
-              <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:4 }}>{pdfFile ? pdfFile.name : "Select PDF file"}</div>
-              <div style={{ fontSize:11, color: pdfFile ? C.blue : C.textLo }}>{pdfFile ? "Click to change" : "Click to browse · PDF format"}</div>
-              <input ref={pdfRef} type="file" accept=".pdf,application/pdf" style={{ display:"none" }}
-                onChange={e => { if (e.target.files[0]) { setPdfFile(e.target.files[0]); setRatesMsg(""); } }} />
-            </div>
-            <Btn onClick={uploadRates} disabled={!pdfFile || loading} icon={loading ? "⟳" : "✨"}>
-              {loading ? "Extracting rates via Claude..." : "Extract & Update Rates"}
-            </Btn>
-            {ratesMsg === "success" && (
-              <div style={{ marginTop:12, padding:"12px 14px", background:C.greenBg, border:"1px solid #6ee7b7", borderRadius:8, color:C.green, fontSize:13, fontWeight:600 }}>✓ Rates updated successfully.</div>
-            )}
-            {ratesMsg.startsWith("err") && (
-              <div style={{ marginTop:12, padding:"12px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12 }}>✗ {ratesMsg.replace("err:", "")}</div>
-            )}
-          </Card>
+          <div style={{ padding:"12px 16px", background:C.goldBg, border:"1.5px solid "+C.goldBorder,
+            borderRadius:12, fontSize:12, color:C.goldText, lineHeight:1.6, marginTop:8 }}>
+            <strong>To update rates:</strong> contact your administrator. Rates are updated directly in the application code when a new IndiGo circular is issued.
+          </div>
         </div>
       )}
     </div>
@@ -1359,7 +1325,7 @@ export default function App() {
             fontSize:18, boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
           <div>
             <div style={{ fontSize:16, fontWeight:900, color:C.navy, letterSpacing:"-0.02em", lineHeight:1 }}>{APP_NAME}</div>
-            <div style={{ fontSize:9, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", opacity:0.75 }}>IndiGo</div>
+            <div style={{ fontSize:9, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", opacity:0.75 }}>{CONFIG.airline}</div>
           </div>
         </div>
         <button onClick={onLogout} style={{ background:C.blueXLight, border:"1px solid "+C.border,
