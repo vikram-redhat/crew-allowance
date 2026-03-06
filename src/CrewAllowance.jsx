@@ -707,27 +707,94 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   CHECKOUT
+   CHECKOUT  — real Stripe Elements integration
 ═══════════════════════════════════════════════════════════════════ */
 function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
-  const [code,    setCode]    = useState("");
-  const [discount,setDiscount]= useState(null);
-  const [codeErr, setCodeErr] = useState("");
-  const [cardNum, setCardNum] = useState("");
-  const [expiry,  setExpiry]  = useState("");
-  const [cvc,     setCvc]     = useState("");
-  const [name,    setName]    = useState(pendingUser?.name || "");
-  const [loading, setLoading] = useState(false);
-  const [done,    setDone]    = useState(false);
-  const [payErr,  setPayErr]  = useState("");
+  const [code,     setCode]     = useState("");
+  const [discount, setDiscount] = useState(null);
+  const [codeErr,  setCodeErr]  = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [done,     setDone]     = useState(false);
+  const [payErr,   setPayErr]   = useState("");
+  const [stripeReady, setStripeReady] = useState(false);
 
+  // Refs for Stripe objects
+  const stripeRef      = useRef(null);
+  const cardElementRef = useRef(null);
+  const cardDivRef     = useRef(null);
+
+  const finalPrice = discount ? Math.round(PRICE_INR * (1 - discount.pct / 100)) : PRICE_INR;
+  const isFree     = finalPrice === 0;
+
+  // Load Stripe.js and mount the card element
   useEffect(() => {
-    if (!window.Stripe && !document.querySelector("#stripe-js")) {
-      const s = document.createElement("script");
-      s.id = "stripe-js"; s.src = "https://js.stripe.com/v3/";
-      document.head.appendChild(s);
+    const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
+
+    const mountCard = () => {
+      if (!STRIPE_PK || !cardDivRef.current || cardElementRef.current) return;
+      const stripe  = window.Stripe(STRIPE_PK);
+      const elements = stripe.elements();
+      const card = elements.create("card", {
+        style: {
+          base: {
+            fontFamily: "'Nunito', 'Segoe UI', sans-serif",
+            fontSize: "15px",
+            color: "#1e293b",
+            "::placeholder": { color: "#94a3b8" },
+          },
+          invalid: { color: "#c0132a" },
+        },
+        hidePostalCode: true,
+      });
+      card.mount(cardDivRef.current);
+      stripeRef.current      = stripe;
+      cardElementRef.current = card;
+      setStripeReady(true);
+    };
+
+    if (!window.Stripe) {
+      const script = document.createElement("script");
+      script.src = "https://js.stripe.com/v3/";
+      script.onload = mountCard;
+      document.head.appendChild(script);
+    } else {
+      mountCard();
     }
+
+    return () => {
+      // Unmount card element on cleanup to avoid double-mount
+      if (cardElementRef.current) {
+        cardElementRef.current.unmount();
+        cardElementRef.current = null;
+      }
+    };
   }, []);
+
+  // Re-mount card element when switching from free → paid
+  useEffect(() => {
+    if (!isFree && !cardElementRef.current && window.Stripe && cardDivRef.current) {
+      const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
+      if (!STRIPE_PK) return;
+      const stripe   = window.Stripe(STRIPE_PK);
+      const elements = stripe.elements();
+      const card = elements.create("card", {
+        style: {
+          base: {
+            fontFamily: "'Nunito', 'Segoe UI', sans-serif",
+            fontSize: "15px",
+            color: "#1e293b",
+            "::placeholder": { color: "#94a3b8" },
+          },
+          invalid: { color: "#c0132a" },
+        },
+        hidePostalCode: true,
+      });
+      card.mount(cardDivRef.current);
+      stripeRef.current      = stripe;
+      cardElementRef.current = card;
+      setStripeReady(true);
+    }
+  }, [isFree]);
 
   const applyCode = () => {
     const upper = code.trim().toUpperCase();
@@ -736,24 +803,65 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
     else   { setCodeErr("Invalid discount code."); setDiscount(null); }
   };
 
-  const finalPrice = discount ? Math.round(PRICE_INR * (1 - discount.pct / 100)) : PRICE_INR;
-  const isFree = finalPrice === 0;
-
-  const handlePay = async () => {
-    if (!isFree && (!cardNum || !expiry || !cvc)) { setPayErr("Please fill in all card details."); return; }
-    setLoading(true); setPayErr("");
-    await new Promise(r => setTimeout(r, isFree ? 600 : 1400));
-    // Activate the user in Supabase
+  const activateUser = async () => {
     if (supabase && pendingUser?.id) {
       await supabase.from("profiles").update({ is_active: true }).eq("id", pendingUser.id);
     }
     onActivate(pendingUser);
-    setLoading(false); setDone(true);
+    setDone(true);
   };
 
-  const formatCard   = v => v.replace(/\D/g,"").slice(0,16).replace(/(.{4})/g,"$1 ").trim();
-  const formatExpiry = v => { const d=v.replace(/\D/g,"").slice(0,4); return d.length>2 ? d.slice(0,2)+"/"+d.slice(2) : d; };
+  const handlePay = async () => {
+    setPayErr(""); setLoading(true);
 
+    // ── Free path ──────────────────────────────────────────────────
+    if (isFree) {
+      await activateUser();
+      setLoading(false);
+      return;
+    }
+
+    // ── Paid path ──────────────────────────────────────────────────
+    if (!stripeRef.current || !cardElementRef.current) {
+      setPayErr("Payment form not ready. Please wait a moment and try again.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // 1. Ask our serverless function for a PaymentIntent client secret
+      const resp = await fetch("/api/create-payment-intent", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount:       finalPrice,
+          discountCode: discount?.code || "",
+          userId:       pendingUser?.id    || "",
+          email:        pendingUser?.email || "",
+        }),
+      });
+      const { clientSecret, error: serverErr } = await resp.json();
+      if (serverErr) throw new Error(serverErr);
+
+      // 2. Confirm the payment with the Stripe card element
+      const { paymentIntent, error: stripeErr } = await stripeRef.current.confirmCardPayment(
+        clientSecret,
+        { payment_method: { card: cardElementRef.current } }
+      );
+
+      if (stripeErr) throw new Error(stripeErr.message);
+      if (paymentIntent.status !== "succeeded") throw new Error("Payment did not complete. Please try again.");
+
+      // 3. Activate the account
+      await activateUser();
+    } catch (err) {
+      setPayErr(err.message);
+    }
+
+    setLoading(false);
+  };
+
+  // ── Done state ─────────────────────────────────────────────────────
   if (done) return (
     <AuthShell title="You're all set! 🎉" sub="">
       <div style={{ textAlign:"center", padding:"8px 0 18px" }}>
@@ -771,6 +879,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
 
   return (
     <AuthShell title="Complete your subscription" sub={PRICE_LABEL+"/month · Cancel anytime"} wide>
+
       {/* Order summary */}
       <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:12, padding:"14px 16px", marginBottom:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: discount ? 8 : 0 }}>
@@ -783,9 +892,12 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
             <span style={{ fontSize:13, fontWeight:700, color:C.green }}>−₹{PRICE_INR - finalPrice}</span>
           </div>
         )}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", paddingTop:8, borderTop:"1px solid "+C.borderMid, marginTop: discount ? 8 : 0 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+          paddingTop:8, borderTop:"1px solid "+C.borderMid, marginTop: discount ? 8 : 0 }}>
           <span style={{ fontSize:14, fontWeight:800, color:C.navy }}>Total today</span>
-          <span style={{ fontSize:18, fontWeight:900, color: isFree ? C.green : C.navy }}>{isFree ? "Free" : fmtINR(finalPrice)}</span>
+          <span style={{ fontSize:18, fontWeight:900, color: isFree ? C.green : C.navy }}>
+            {isFree ? "Free" : fmtINR(finalPrice)}
+          </span>
         </div>
       </div>
 
@@ -796,61 +908,62 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
           <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
             placeholder="Enter code if you have one"
             onKeyDown={e => e.key === "Enter" && applyCode()}
-            style={{ flex:1, background:C.white, border:"1.5px solid "+(codeErr ? C.red : discount ? C.green : C.border),
-              borderRadius:10, padding:"11px 14px", color:C.text, fontFamily:"inherit", fontSize:14, outline:"none", letterSpacing:"0.06em" }} />
-          <button onClick={applyCode} style={{ background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
-            border:"none", borderRadius:10, color:C.white, fontSize:13, padding:"11px 18px",
-            cursor:"pointer", fontWeight:700, fontFamily:"inherit", whiteSpace:"nowrap" }}>Apply</button>
+            style={{ flex:1, background:C.white,
+              border:"1.5px solid "+(codeErr ? C.red : discount ? C.green : C.border),
+              borderRadius:10, padding:"11px 14px", color:C.text,
+              fontFamily:"inherit", fontSize:14, outline:"none", letterSpacing:"0.06em" }} />
+          <button onClick={applyCode}
+            style={{ background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
+              border:"none", borderRadius:10, color:C.white, fontSize:13,
+              padding:"11px 18px", cursor:"pointer", fontWeight:700,
+              fontFamily:"inherit", whiteSpace:"nowrap" }}>Apply</button>
         </div>
         {codeErr  && <div style={{ fontSize:11, color:C.red,   marginTop:4 }}>{codeErr}</div>}
         {discount && <div style={{ fontSize:11, color:C.green, marginTop:4, fontWeight:700 }}>✓ {discount.label} applied</div>}
       </div>
 
-      {/* Card fields */}
+      {/* Stripe card element — hidden when free */}
       {!isFree && (
-        <div style={{ marginBottom:4 }}>
+        <div style={{ marginBottom:16 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
             <div style={{ flex:1, height:1, background:C.border }} />
             <span style={{ fontSize:11, color:C.textLo, whiteSpace:"nowrap" }}>Payment details</span>
             <div style={{ flex:1, height:1, background:C.border }} />
           </div>
-          <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:10, padding:"12px 14px", marginBottom:12, fontSize:11, color:C.textMid }}>
-            🔒 Card processed securely via <strong>Stripe</strong>. Crew Allowance never stores card details.
-            <div style={{ marginTop:6, padding:"6px 10px", background:C.goldBg, border:"1px solid "+C.goldBorder, borderRadius:6, color:C.goldText }}>
-              ⚠ <strong>Backend required for live payments.</strong> See README for the 20-line <code>/api/create-payment-intent</code> endpoint.
-            </div>
+          <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border,
+            borderRadius:10, padding:"10px 14px", marginBottom:14,
+            fontSize:11, color:C.textMid, display:"flex", alignItems:"center", gap:6 }}>
+            🔒 Card details are handled directly by <strong>Stripe</strong>. We never see or store your card number.
           </div>
-          <FInput label="Name on card" value={name} onChange={setName} placeholder="Name as it appears on your card" />
-          <div style={{ marginBottom:12 }}>
-            <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:5 }}>Card number</label>
-            <input value={cardNum} onChange={e => setCardNum(formatCard(e.target.value))} placeholder="16-digit card number"
-              style={{ width:"100%", background:C.white, border:"1.5px solid "+C.border, borderRadius:10,
-                padding:"12px 14px", color:C.text, fontFamily:"inherit", fontSize:15, outline:"none", boxSizing:"border-box", letterSpacing:"0.06em" }} />
-          </div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:4 }}>
-            <div>
-              <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:5 }}>Expiry</label>
-              <input value={expiry} onChange={e => setExpiry(formatExpiry(e.target.value))} placeholder="MM / YY"
-                style={{ width:"100%", background:C.white, border:"1.5px solid "+C.border, borderRadius:10,
-                  padding:"12px 14px", color:C.text, fontFamily:"inherit", fontSize:15, outline:"none", boxSizing:"border-box" }} />
-            </div>
-            <div>
-              <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:5 }}>CVC</label>
-              <input value={cvc} onChange={e => setCvc(e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="3 or 4 digits"
-                style={{ width:"100%", background:C.white, border:"1.5px solid "+C.border, borderRadius:10,
-                  padding:"12px 14px", color:C.text, fontFamily:"inherit", fontSize:15, outline:"none", boxSizing:"border-box" }} />
-            </div>
-          </div>
+          <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:6 }}>Card details</label>
+          {/* Stripe mounts its iframe into this div */}
+          <div ref={cardDivRef}
+            style={{ background:C.white, border:"1.5px solid "+C.border, borderRadius:10,
+              padding:"13px 14px", minHeight:46,
+              boxShadow: "0 0 0 0px "+C.blueLight, transition:"box-shadow 0.15s" }} />
+          {!stripeReady && (
+            <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Loading secure card form...</div>
+          )}
         </div>
       )}
 
-      {payErr && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{payErr}</div>}
+      {payErr && (
+        <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5",
+          borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{payErr}</div>
+      )}
 
-      <Btn onClick={handlePay} variant={isFree ? "gold" : "primary"} disabled={loading} icon={loading ? "⟳" : isFree ? "✨" : "🔒"}>
-        {loading ? (isFree ? "Activating..." : "Processing...") : (isFree ? "Activate free account →" : "Pay "+fmtINR(finalPrice)+" & activate →")}
+      <Btn onClick={handlePay} variant={isFree ? "gold" : "primary"}
+        disabled={loading || (!isFree && !stripeReady)}
+        icon={loading ? "⟳" : isFree ? "✨" : "🔒"}>
+        {loading
+          ? (isFree ? "Activating..." : "Processing...")
+          : (isFree ? "Activate free account →" : "Pay "+fmtINR(finalPrice)+" & activate →")}
       </Btn>
+
       <div style={{ marginTop:12, textAlign:"center" }}>
-        <button onClick={goLogin} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+        <button onClick={goLogin}
+          style={{ background:"none", border:"none", color:C.textLo,
+            fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
           Already have an account? Sign in
         </button>
       </div>
