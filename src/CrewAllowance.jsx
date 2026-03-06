@@ -1076,8 +1076,6 @@ function AdminScreen({ rates, onUpdateRates }) {
     setUsers(prev => prev.map(u => u.id === id ? { ...u, is_active: !currentState } : u));
   };
 
-  const tabs = [{ id:"users", label:"Users" }, { id:"rates", label:"Current Rates" }];
-
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:680, margin:"0 auto" }}>
       <div style={{ background:"linear-gradient(120deg,"+C.navy+","+C.blue+")", borderRadius:18,
