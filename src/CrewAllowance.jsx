@@ -30,8 +30,8 @@ const CONFIG = {
 
   // Pricing
   currency:      "₹",
-  priceMonthly:  299,      // numeric, used for discount calculations
-  priceLabel:    "₹299",   // display string
+  priceMonthly:  99,      // numeric, used for discount calculations
+  priceLabel:    "₹99",   // display string
 
   // Discount codes  { pct: 0-100, label: string shown to user }
   discountCodes: {
