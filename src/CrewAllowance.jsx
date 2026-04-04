@@ -30,8 +30,8 @@ const CONFIG = {
 
   // Pricing
   currency:      "₹",
-  priceMonthly:  99,      // numeric, used for discount calculations
-  priceLabel:    "₹99",   // display string
+  priceMonthly:  299,      // numeric, used for discount calculations
+  priceLabel:    "₹299",   // display string
 
   // Discount codes  { pct: 0-100, label: string shown to user }
   discountCodes: {
@@ -158,6 +158,50 @@ const SAMPLE_SCHEDULE = `Date,Flight_No,Duty_Code,STD_Local,STA_Local,From_Airpo
 31/01/2026,6721,,16:09,18:37,CCU,DEL,321
 31/01/2026,6722,,19:24,21:34,DEL,CCU,321`;
 
+// Sample SV CSV — matches format exported from 6eBreeze > Departments – OCC > Sector Pay
+// Columns: Flight_No, DEP_AIRPORT, ARR_AIRPORT, DEP_HOUR_SLOT, SV_MINS
+// DEP_HOUR_SLOT = hour of departure in IST (e.g. "2" = flights departing 02:00–02:59 IST)
+// SV_MINS = Sector Value in whole minutes (IndiGo 90-day trimmed mean, per PAH §9.0)
+const SAMPLE_SV = `Flight_No,DEP_AIRPORT,ARR_AIRPORT,DEP_HOUR_SLOT,SV_MINS
+6327,DEL,DED,8,47
+2312,DED,DEL,9,53
+2230,DEL,KNU,12,71
+6836,DEL,CCU,6,123
+5077,CCU,DEL,9,140
+6846,STV,DEL,21,110
+519,DEL,BOM,23,132
+6045,BOM,DEL,2,130
+2052,DEL,HYD,12,129
+2073,HYD,TRZ,15,97
+770,TRZ,DEL,5,180
+5037,DEL,JAI,4,52
+752,JAI,HYD,6,113
+424,HYD,DEL,6,132
+6328,DEL,BOM,10,165
+615,BOM,DEL,14,128
+6731,DEL,RDP,14,114
+6732,RDP,DEL,16,146
+6733,DEL,AMD,20,98
+6794,AMD,BOM,23,89
+359,BOM,DEL,16,124
+6762,DEL,IXJ,13,89
+2044,IXJ,DEL,16,107
+6188,DEL,BLR,13,159
+451,BLR,LKO,17,155
+6354,LKO,BLR,21,154
+6034,BLR,DEL,18,174
+2145,DEL,CCJ,16,177
+2773,CCJ,DEL,19,182
+759,DEL,IXC,17,56
+760,IXC,DEL,19,72
+761,DEL,BBI,20,136
+806,BBI,DEL,23,144
+1103,DEL,DAC,12,134
+1104,DAC,DEL,16,169
+6711,DEL,CCU,13,123
+6721,CCU,DEL,16,148
+6722,DEL,CCU,19,123`;
+
 /* ═══════════════════════════════════════════════════════════════════
    CALCULATION ENGINE
 ═══════════════════════════════════════════════════════════════════ */
@@ -168,23 +212,173 @@ const fmtHM = m => { const h=Math.floor(Math.abs(m)/60),mn=Math.round(Math.abs(m
 const fmtIST = u => { const i=toIST(t2m(u)); return String(Math.floor(i/60)).padStart(2,"0")+":"+String(i%60).padStart(2,"0"); };
 const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
 const parseDate = s => { if(!s)return null; const[d,mo,y]=s.split("/").map(Number); return new Date(y<100?2000+y:y,mo-1,d); };
-const nightMins = (dep,arr) => { let dI=toIST(t2m(dep)),aI=toIST(t2m(arr)); if(aI<=dI)aI+=1440; return [[0,360],[1440,1800]].reduce((a,[ws,we])=>a+Math.max(0,Math.min(aI,we)-Math.max(dI,ws)),0); };
+// Night allowance per PAH §9.0: STD (IST) + Sector Value → intersect with 00:01–06:00 IST
+// std_ist_mins: STD in IST as total minutes from midnight (e.g. 02:45 = 165)
+// sv_mins: Sector Value from 6eBreeze in whole minutes
+const nightMinsFromSTDSV = (std_ist_mins, sv_mins) => {
+  const NIGHT_START = 1;    // 00:01 IST
+  const NIGHT_END   = 360;  // 06:00 IST
+  const sta = std_ist_mins + sv_mins;
+  if (std_ist_mins >= NIGHT_END) {
+    // STD is at or after 06:00 — only counts if cross-midnight into next day
+    if (sta > 1440) {
+      const post = sta - 1440;
+      return Math.max(0, Math.min(NIGHT_END, post) - NIGHT_START);
+    }
+    return 0;
+  }
+  // STD is before 06:00
+  return Math.max(0, Math.min(NIGHT_END, sta) - Math.max(NIGHT_START, std_ist_mins));
+};
 
-const runCalc = (logCSV, schedCSV, rank, rates) => {
+// Build SV lookup from 6eBreeze CSV: key = "FlightNo_DEP_ARR_HourSlot"
+const buildSVLookup = (svCSV) => {
+  if (!svCSV) return {};
+  const rows = parseCSV(svCSV);
+  const map = {};
+  rows.forEach(r => {
+    const key = [r.Flight_No, r.DEP_AIRPORT, r.ARR_AIRPORT, r.DEP_HOUR_SLOT].join("_");
+    const sv = parseInt(r.SV_MINS, 10);
+    if (!isNaN(sv)) map[key] = sv;
+  });
+  return map;
+};
+
+const lookupSV = (svMap, flightNo, dep, arr, stdIST_mins) => {
+  const hour = Math.floor(stdIST_mins / 60) % 24;
+  const key  = [flightNo, dep, arr, String(hour)].join("_");
+  return svMap[key] ?? null;
+};
+
+const runCalc = (logCSV, schedCSV, svCSV, rank, rates) => {
   const log=parseCSV(logCSV).sort((a,b)=>{const da=parseDate(a.Date),db=parseDate(b.Date);return da-db||t2m(a.Dep_Time_UTC)-t2m(b.Dep_Time_UTC);});
   const sched=parseCSV(schedCSV);
+  const svMap=buildSVLookup(svCSV);
+  const hasSV=Object.keys(svMap).length>0;
   const homeBase=log[0]?.Home_Base||"DEL";
   const isDH=r=>["DHF","DHT"].includes(r.Operated_As);
   const R=rates;
   const dhR=R.deadhead[rank],nR=R.night[rank],tsR=R.tailSwap[rank],trR=R.transit[rank],lvR=R.layover[rank];
-  const res={pilot:{rank,homeBase},period:"",deadhead:{sectors:[],total_mins:0,amount:0},night:{sectors:[],total_mins:0,amount:0},layover:{events:[],amount:0},tailSwap:{swaps:[],count:0,amount:0},transit:{halts:[],amount:0},total:0};
+  const res={pilot:{rank,homeBase},period:"",sv_uploaded:hasSV,night_warnings:[],deadhead:{sectors:[],total_mins:0,amount:0},night:{sectors:[],total_mins:0,amount:0},layover:{events:[],amount:0},tailSwap:{swaps:[],count:0,amount:0},transit:{halts:[],amount:0},total:0};
   const dates=log.map(r=>parseDate(r.Date)).filter(Boolean);
   if(dates.length){const mn=new Date(Math.min(...dates));res.period=mn.toLocaleDateString("en-IN",{month:"long",year:"numeric"});}
   log.filter(isDH).forEach(s=>{const sc=sched.find(r=>r.Flight_No===s.Flight_No);let bm;if(sc){let d=t2m(sc.STA_Local)-t2m(sc.STD_Local);if(d<0)d+=1440;bm=d;}else{bm=t2m(s.Block_Time);}if(!dhR||!bm)return;const amt=(bm/60)*dhR;res.deadhead.sectors.push({date:s.Date,flight:s.Flight_No,from:s.Dep_Airport,to:s.Arr_Airport,scheduled_block_mins:bm,amount:amt});res.deadhead.total_mins+=bm;res.deadhead.amount+=amt;});
-  log.filter(s=>!isDH(s)).forEach(s=>{const nm=nightMins(s.Dep_Time_UTC,s.Arr_Time_UTC);if(nm>0&&nR){const amt=(nm/60)*nR;res.night.sectors.push({date:s.Date,flight:s.Flight_No,from:s.Dep_Airport,to:s.Arr_Airport,dep_ist:fmtIST(s.Dep_Time_UTC),arr_ist:fmtIST(s.Arr_Time_UTC),night_mins:Math.round(nm),amount:amt});res.night.total_mins+=nm;res.night.amount+=amt;}});
-  for(let i=0;i<log.length-1;i++){const a=log[i],b=log[i+1];if(isDH(a)&&isDH(b))continue;if(a.Arr_Airport!==b.Dep_Airport)continue;if(parseDate(a.Date)?.getTime()!==parseDate(b.Date)?.getTime())continue;if(a.Aircraft_Reg===b.Aircraft_Reg||!tsR)continue;res.tailSwap.swaps.push({date:a.Date,sector_pair:a.Flight_No+"->"+b.Flight_No,reg_out:a.Aircraft_Reg,reg_in:b.Aircraft_Reg,is_dh_involved:isDH(a)||isDH(b),amount:tsR});res.tailSwap.amount+=tsR;}
+  log.filter(s=>!isDH(s)).forEach(s=>{
+    if(!nR)return;
+    const sc=sched.find(r=>r.Flight_No===s.Flight_No&&r.From_Airport===s.Dep_Airport);
+    const stdStr=sc?.STD_Local||"";
+    const stdIST=t2m(stdStr);
+    const sv=lookupSV(svMap,s.Flight_No,s.Dep_Airport,s.Arr_Airport,stdIST);
+    let nm=0,method="",svUsed=null,noSVWarning=false;
+    if(hasSV&&sv!==null&&stdStr){
+      // PAH §9.0 method: STD + SV
+      nm=nightMinsFromSTDSV(stdIST,sv);
+      method="STD+SV";svUsed=sv;
+    } else if(stdStr&&hasSV){
+      // SV uploaded but no match for this flight — flag it, fall back to actual
+      noSVWarning=true;
+      const dI=toIST(t2m(s.Dep_Time_UTC)),aI_raw=toIST(t2m(s.Arr_Time_UTC));
+      let aI=aI_raw<=dI?aI_raw+1440:aI_raw;
+      nm=[[0,360],[1440,1800]].reduce((a,[ws,we])=>a+Math.max(0,Math.min(aI,we)-Math.max(dI,ws)),0);
+      method="Actual (no SV match)";
+      res.night_warnings.push(s.Flight_No+" "+s.Dep_Airport+"→"+s.Arr_Airport+": no SV found in uploaded file");
+    } else {
+      // No SV file — use actual ATD/ATA as best estimate
+      const dI=toIST(t2m(s.Dep_Time_UTC)),aI_raw=toIST(t2m(s.Arr_Time_UTC));
+      let aI=aI_raw<=dI?aI_raw+1440:aI_raw;
+      nm=[[0,360],[1440,1800]].reduce((a,[ws,we])=>a+Math.max(0,Math.min(aI,we)-Math.max(dI,ws)),0);
+      method="Actual (no SV file)";
+    }
+    if(nm>0){
+      const amt=(nm/60)*nR;
+      const staIST=hasSV&&sv!==null?String(Math.floor((stdIST+sv)/60%24)).padStart(2,"0")+":"+String((stdIST+(sv||0))%60).padStart(2,"0"):fmtIST(s.Arr_Time_UTC);
+      res.night.sectors.push({date:s.Date,flight:s.Flight_No,from:s.Dep_Airport,to:s.Arr_Airport,std_ist:stdStr||"—",sta_ist:staIST,night_mins:Math.round(nm),amount:amt,method,sv_used:svUsed,no_sv_warning:noSVWarning});
+      res.night.total_mins+=nm;res.night.amount+=amt;
+    }
+  });
+  // TAIL SWAP — PAH §6.0: OP+OP or OP+DHF within same duty period. DHT and DHF+DHF excluded.
+  // "Same duty period" includes cross-date consecutive sectors at OUTSTATION (not home base).
+  // Two sectors are consecutive if they share the same station with no intervening layover.
+  for(let i=0;i<log.length-1;i++){
+    const a=log[i],b=log[i+1];
+    if(isDH(a)&&isDH(b))continue;           // DHF+DHF excluded
+    if(["DHT"].includes(a.Operated_As)||["DHT"].includes(b.Operated_As))continue; // DHT excluded
+    if(a.Arr_Airport!==b.Dep_Airport)continue;
+    if(a.Aircraft_Reg===b.Aircraft_Reg||!tsR)continue;
+    const sameDate=parseDate(a.Date)?.getTime()===parseDate(b.Date)?.getTime();
+    const crossDate=!sameDate;
+    // For cross-date: only count if away from home base (outstation overnight within same duty)
+    // and the gap is short enough to be same duty (< layoverMinHours threshold)
+    if(crossDate){
+      if(a.Arr_Airport===homeBase)continue; // home base cross-date changes are separate duties
+      const dA=parseDate(a.Date),dB=parseDate(b.Date);
+      if(!dA||!dB)continue;
+      const dayDiff=Math.round((dB-dA)/86400000);
+      if(dayDiff>2)continue; // >2 days apart — definitely not same duty
+      // Check gap duration: if it's a layover (>layoverMinHours) it's a separate duty, not a swap
+      const gapMins=(dayDiff*1440+t2m(b.Dep_Time_UTC)-t2m(a.Arr_Time_UTC));
+      if(gapMins/60>=R.layoverMinHours)continue; // genuine layover = different duty period
+    }
+    res.tailSwap.swaps.push({
+      date:a.Date+(crossDate?" → "+b.Date:""),
+      sector_pair:a.Flight_No+"→"+b.Flight_No,
+      station:a.Arr_Airport,
+      reg_out:a.Aircraft_Reg,reg_in:b.Aircraft_Reg,
+      is_dh_involved:isDH(a)||isDH(b),
+      cross_date:crossDate,
+      amount:tsR
+    });
+    res.tailSwap.amount+=tsR;
+  }
   res.tailSwap.count=res.tailSwap.swaps.length;
-  for(let i=0;i<log.length-1;i++){const a=log[i],b=log[i+1];if(a.Arr_Airport!==b.Dep_Airport||a.Arr_Airport===homeBase)continue;if(parseDate(a.Date)?.getTime()!==parseDate(b.Date)?.getTime())continue;let gap=t2m(b.Dep_Time_UTC)-t2m(a.Arr_Time_UTC);if(gap<0)gap+=1440;if(gap<=90||gap>240||!trR)continue;const bill=Math.min(gap,240),amt=(bill/60)*trR;res.transit.halts.push({date:a.Date,station:a.Arr_Airport,arrived_ist:fmtIST(a.Arr_Time_UTC),departed_ist:fmtIST(b.Dep_Time_UTC),halt_mins:Math.round(gap),billable_mins:Math.round(bill),amount:amt});res.transit.amount+=amt;}
+
+  // TRANSIT — PAH §7.0: halt ≥90 mins at domestic outstation, capped 4 hrs. DHT excluded.
+  // Primary basis: SCHEDULED halt (STA→STD from schedule CSV). Actual used if:
+  //   (a) no schedule data, OR
+  //   (b) actual differs from scheduled by >15 mins AND actual ≥90 mins
+  for(let i=0;i<log.length-1;i++){
+    const a=log[i],b=log[i+1];
+    if(["DHT"].includes(a.Operated_As)||["DHT"].includes(b.Operated_As))continue; // DHT excluded
+    if(a.Arr_Airport!==b.Dep_Airport||a.Arr_Airport===homeBase)continue;
+    if(parseDate(a.Date)?.getTime()!==parseDate(b.Date)?.getTime())continue; // must be same calendar date
+    // Actual gap from logbook (UTC, then derive IST gap)
+    let actualGap=t2m(b.Dep_Time_UTC)-t2m(a.Arr_Time_UTC);
+    if(actualGap<0)actualGap+=1440;
+    // Scheduled gap from schedule CSV
+    const scA=sched.find(r=>r.Flight_No===a.Flight_No&&r.From_Airport===a.Dep_Airport);
+    const scB=sched.find(r=>r.Flight_No===b.Flight_No&&r.From_Airport===b.Dep_Airport);
+    let schedGap=null,usingScheduled=false;
+    if(scA?.STA_Local&&scB?.STD_Local){
+      let sg=t2m(scB.STD_Local)-t2m(scA.STA_Local);
+      if(sg<0)sg+=1440;
+      schedGap=sg;
+    }
+    let gap=actualGap,basisLabel="actual";
+    if(schedGap!==null){
+      const diff=Math.abs(actualGap-schedGap);
+      if(schedGap>=90&&diff<=15){
+        // Scheduled ≥90 and actual is close → use scheduled (PAH primary basis)
+        gap=schedGap;basisLabel="scheduled";usingScheduled=true;
+      } else if(actualGap>=90&&diff>15){
+        // Actual differs by >15 mins → use actual
+        gap=actualGap;basisLabel="actual (varied >15m)";
+      } else if(schedGap<90&&actualGap>=90&&diff>15){
+        // Scheduled <90 but actual reached ≥90 and differs >15 → use actual
+        gap=actualGap;basisLabel="actual (sched<90)";
+      } else if(schedGap>=90){
+        gap=schedGap;basisLabel="scheduled";usingScheduled=true;
+      }
+    }
+    if(gap<90||!trR)continue;
+    const bill=Math.min(gap,240),amt=(bill/60)*trR;
+    res.transit.halts.push({
+      date:a.Date,station:a.Arr_Airport,
+      arrived_ist:fmtIST(a.Arr_Time_UTC),departed_ist:fmtIST(b.Dep_Time_UTC),
+      halt_mins:Math.round(gap),actual_mins:Math.round(actualGap),
+      billable_mins:Math.round(bill),basis:basisLabel,amount:amt
+    });
+    res.transit.amount+=amt;
+  }
   const opLog=log.filter(s=>!isDH(s));
   for(let i=0;i<opLog.length-1;i++){const a=opLog[i],b=opLog[i+1];if(a.Arr_Airport===homeBase||b.Dep_Airport!==a.Arr_Airport)continue;const dA=parseDate(a.Date),dB=parseDate(b.Date);if(!dA||!dB||dA.getTime()===dB.getTime())continue;const gapHrs=(Math.round((dB-dA)/86400000)*1440+t2m(b.Dep_Time_UTC)-t2m(a.Arr_Time_UTC))/60;if(gapHrs<R.layoverMinHours||!lvR)continue;const baseAmt=lvR.base,extraAmt=Math.max(0,(gapHrs-24)*lvR.beyondRate);res.layover.events.push({station:a.Arr_Airport,date_in:a.Date,date_out:b.Date,check_in_ist:fmtIST(a.Arr_Time_UTC),check_out_ist:fmtIST(b.Dep_Time_UTC),duration_hrs:Math.round(gapHrs*100)/100,base_amount:baseAmt,extra_amount:extraAmt,total:baseAmt+extraAmt});res.layover.amount+=baseAmt+extraAmt;}
   res.total=res.deadhead.amount+res.night.amount+res.layover.amount+res.tailSwap.amount+res.transit.amount;
@@ -198,8 +392,8 @@ const dlCSV = (res, pilot) => {
   add();add("DEADHEAD");add("Date","Flight","From","To","Sched Block (mins)","Amount (INR)");
   res.deadhead.sectors.forEach(s=>add(s.date,s.flight,s.from,s.to,s.scheduled_block_mins,Math.round(s.amount)));
   add("TOTAL","","","","",Math.round(res.deadhead.amount));add();
-  add("NIGHT FLYING (0000-0600 IST)");add("Date","Flight","From","To","Dep IST","Arr IST","Night Mins","Amount (INR)");
-  res.night.sectors.forEach(s=>add(s.date,s.flight,s.from,s.to,s.dep_ist,s.arr_ist,s.night_mins,Math.round(s.amount)));
+  add("NIGHT FLYING (0000-0600 IST, PAH §9.0: STD + Sector Value)");add("Date","Flight","From","To","STD (IST)","Est ATA (IST)","Night Mins","SV Used","Method","Amount (INR)");
+  res.night.sectors.forEach(s=>add(s.date,s.flight,s.from,s.to,s.std_ist,s.sta_ist,s.night_mins,s.sv_used!==null?s.sv_used+"m":"—",s.method,Math.round(s.amount)));
   add("TOTAL","","","","","","",Math.round(res.night.amount));add();
   add("LAYOVER");add("Station","Date In","Date Out","Check-In","Check-Out","Hrs","Base","Extra","Total (INR)");
   res.layover.events.forEach(e=>add(e.station,e.date_in,e.date_out,e.check_in_ist,e.check_out_ist,e.duration_hrs,Math.round(e.base_amount),Math.round(e.extra_amount),Math.round(e.total)));
@@ -207,8 +401,8 @@ const dlCSV = (res, pilot) => {
   add("TAIL-SWAP");add("Date","Sectors","Reg Out","Reg In","DH?","Amount (INR)");
   res.tailSwap.swaps.forEach(s=>add(s.date,s.sector_pair,s.reg_out,s.reg_in,s.is_dh_involved?"Yes":"No",Math.round(s.amount)));
   add("TOTAL","","","","",Math.round(res.tailSwap.amount));add();
-  add("TRANSIT");add("Date","Station","Arrived","Departed","Halt","Billable","Amount (INR)");
-  res.transit.halts.forEach(h=>add(h.date,h.station,h.arrived_ist,h.departed_ist,h.halt_mins,h.billable_mins,Math.round(h.amount)));
+  add("TRANSIT");add("Date","Station","Arrived","Departed","Halt (mins)","Actual (mins)","Basis","Billable","Amount (INR)");
+  res.transit.halts.forEach(h=>add(h.date,h.station,h.arrived_ist,h.departed_ist,h.halt_mins,h.actual_mins,h.basis,h.billable_mins,Math.round(h.amount)));
   add("TOTAL","","","","","",Math.round(res.transit.amount));add();
   add("GRAND TOTAL INR",Math.round(res.total));
   const blob=new Blob([rows.join("\n")],{type:"text/csv;charset=utf-8;"});
@@ -421,8 +615,8 @@ function AuthShell({ children, title, sub, wide }) {
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
   const steps = [
-    { icon:"📥", title:"Export from AIMS", body:"Download your monthly Pilot Logbook Report and Personal Crew Schedule as CSV files from IndiGo's AIMS system. Takes under a minute." },
-    { icon:"📤", title:"Upload to Crew Allowance", body:"Drop both CSVs into the app. No manual entry, no formatting — just the raw exports your AIMS system already produces." },
+    { icon:"📥", title:"Export from AIMS & 6eBreeze", body:"Download your monthly Pilot Logbook Report and Crew Schedule as CSV from AIMS. Also export your Sector Values from 6eBreeze → Departments – OCC → Sector Pay. Takes under two minutes." },
+    { icon:"📤", title:"Upload all three files", body:"Drop your Logbook CSV, Schedule CSV, and Sector Values CSV into the app. The Sector Values are essential for accurate Night Allowance calculation per PAH §9.0." },
     { icon:"⚡", title:"Instant calculation", body:"Our engine applies all IndiGo allowance rules automatically: Deadhead, Night Flying, Layover, Tail-Swap, and Transit — every rupee, every rule." },
     { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown, ready to compare against your payslip or share with your crew rep if there's a discrepancy." },
   ];
@@ -1023,8 +1217,10 @@ function ForgotScreen({ goLogin }) {
 function CalcScreen({ user, rates }) {
   const [logFile,   setLogFile]   = useState(null);
   const [schedFile, setSchedFile] = useState(null);
+  const [svFile,    setSvFile]    = useState(null);
   const [logCSV,    setLogCSV]    = useState("");
   const [schedCSV,  setSchedCSV]  = useState("");
+  const [svCSV,     setSvCSV]     = useState("");
   const [result,    setResult]    = useState(null);
   const [err,       setErr]       = useState("");
   const [calcRank,  setCalcRank]  = useState("Captain");
@@ -1034,13 +1230,14 @@ function CalcScreen({ user, rates }) {
   const loadDemo = () => {
     setLogFile({ name:"Demo_Logbook_Jan2026.csv" });
     setSchedFile({ name:"Demo_Schedule_Jan2026.csv" });
-    setLogCSV(SAMPLE_LOGBOOK); setSchedCSV(SAMPLE_SCHEDULE);
+    setSvFile({ name:"Demo_SectorValues_Jan2026.csv" });
+    setLogCSV(SAMPLE_LOGBOOK); setSchedCSV(SAMPLE_SCHEDULE); setSvCSV(SAMPLE_SV);
     setResult(null); setErr("");
   };
 
   const calculate = () => {
     setErr(""); setResult(null);
-    try { setResult(runCalc(logCSV, schedCSV, eRank, rates)); }
+    try { setResult(runCalc(logCSV, schedCSV, svCSV, eRank, rates)); }
     catch (e) { setErr("Could not parse CSVs — check column format. " + e.message); }
   };
 
@@ -1081,18 +1278,38 @@ function CalcScreen({ user, rates }) {
       {/* Templates */}
       <Card style={{ marginBottom:16 }}>
         <div style={{ fontSize:14, fontWeight:700, color:C.navy, marginBottom:4 }}>Templates & Demo Data</div>
-        <div style={{ fontSize:12, color:C.textMid, marginBottom:12 }}>Download the CSV column format your AIMS export needs, or load demo data to test.</div>
+        <div style={{ fontSize:12, color:C.textMid, marginBottom:12 }}>
+          Download CSV templates for your AIMS exports and Sector Values, or load demo data to test.
+          <br />
+          <span style={{ color:C.blue, fontWeight:700 }}>Sector Values</span> come from: <span style={{ fontFamily:"monospace", fontSize:11 }}>6eBreeze → Departments – OCC → Sector Pay</span> — export as CSV for the month.
+        </div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           <Btn onClick={() => dlTemplate(SAMPLE_LOGBOOK,  "Logbook_Template.csv")}  variant="ghost" small full={false} icon="↓">Logbook CSV</Btn>
           <Btn onClick={() => dlTemplate(SAMPLE_SCHEDULE, "Schedule_Template.csv")} variant="ghost" small full={false} icon="↓">Schedule CSV</Btn>
+          <Btn onClick={() => dlTemplate(SAMPLE_SV,       "SectorValues_Template.csv")} variant="ghost" small full={false} icon="↓">Sector Values CSV</Btn>
           <Btn onClick={loadDemo} small full={false} icon="⬦">Load Demo Data</Btn>
         </div>
       </Card>
 
-      {/* Upload */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
-        <DropZone label="Logbook CSV"  icon="📓" hint="Pilot Logbook Report"  file={logFile}   onChange={(f,csv) => { setLogFile(f);   setLogCSV(csv);   }} />
-        <DropZone label="Schedule CSV" icon="📋" hint="Crew Schedule"         file={schedFile} onChange={(f,csv) => { setSchedFile(f); setSchedCSV(csv); }} />
+      {/* Upload — 3 files */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
+        <DropZone label="Logbook CSV"  icon="📓" hint="Pilot Logbook Report (AIMS)"  file={logFile}   onChange={(f,csv) => { setLogFile(f);   setLogCSV(csv);   }} />
+        <DropZone label="Schedule CSV" icon="📋" hint="Crew Schedule with STD times" file={schedFile} onChange={(f,csv) => { setSchedFile(f); setSchedCSV(csv); }} />
+      </div>
+      <div style={{ marginBottom:16 }}>
+        <DropZone
+          label="Sector Values CSV 🌙"
+          icon="📊"
+          hint="From 6eBreeze → OCC → Sector Pay — required for accurate Night Allowance"
+          file={svFile}
+          onChange={(f,csv) => { setSvFile(f); setSvCSV(csv); }}
+        />
+        {!svFile && (
+          <div style={{ marginTop:6, padding:"8px 12px", background:C.goldBg, border:"1px solid "+C.goldBorder,
+            borderRadius:8, fontSize:11, color:C.goldText }}>
+            ⚠ Without Sector Values, Night Allowance is estimated from actual times — may differ from payslip.
+          </div>
+        )}
       </div>
 
       <Btn onClick={calculate} disabled={!ready} icon="▶">Calculate — {eRank}</Btn>
@@ -1138,9 +1355,33 @@ function CalcScreen({ user, rates }) {
           )}
           {result.night.sectors.length > 0 && (
             <CollapsibleTable title="Night Flying Allowance" total={result.night.amount}
-              note="Night = 0000–0600 IST. UTC logbook times converted +5:30."
-              headers={["Date","Flight","Route","Dep IST","Arr IST","Night","Amount"]} rows={result.night.sectors}
-              renderRow={(s,i) => (<tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.flight}</TC><TC i={i}>{s.from}→{s.to}</TC><TC i={i}>{s.dep_ist}</TC><TC i={i}>{s.arr_ist}</TC><TC i={i}>{s.night_mins}m</TC><TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>)} />
+              note={result.sv_uploaded
+                ? "PAH §9.0 method: STD (IST) + Sector Value → intersect with 00:01–06:00 IST."
+                : "⚠ Estimated from actual times — upload Sector Values CSV for PAH-accurate calculation."}
+              headers={["Date","Flight","Route","STD","Est. ATA","Night","SV","Amount"]} rows={result.night.sectors}
+              renderRow={(s,i) => (
+                <tr key={i}>
+                  <TC i={i}>{s.date}</TC>
+                  <TC i={i}>{s.flight}</TC>
+                  <TC i={i}>{s.from}→{s.to}</TC>
+                  <TC i={i}>{s.std_ist}</TC>
+                  <TC i={i}>{s.sta_ist}</TC>
+                  <TC i={i}>{s.night_mins}m</TC>
+                  <TC i={i}>
+                    {s.sv_used !== null
+                      ? <Badge color="green">{s.sv_used}m</Badge>
+                      : <Badge color="gold">{s.no_sv_warning ? "no match" : "actual"}</Badge>}
+                  </TC>
+                  <TC i={i} right gold>{fmtINR(s.amount)}</TC>
+                </tr>
+              )} />
+          )}
+          {result.night_warnings?.length > 0 && (
+            <div style={{ marginBottom:14, padding:"10px 14px", background:C.goldBg,
+              border:"1px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText }}>
+              <strong>⚠ Night Allowance warnings:</strong>
+              {result.night_warnings.map((w,i) => <div key={i} style={{ marginTop:4 }}>• {w}</div>)}
+            </div>
           )}
           {result.layover.events.length > 0 && (
             <CollapsibleTable title="Domestic Layover Allowance" total={result.layover.amount}
@@ -1150,15 +1391,15 @@ function CalcScreen({ user, rates }) {
           )}
           {result.tailSwap.swaps.length > 0 && (
             <CollapsibleTable title={"Tail-Swap Allowance ("+result.tailSwap.count+")"} total={result.tailSwap.amount}
-              note="Operating↔DH qualify. DH→DH excluded."
-              headers={["Date","Sectors","Reg Out","Reg In","DH?","Amount"]} rows={result.tailSwap.swaps}
-              renderRow={(s,i) => (<tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.sector_pair}</TC><TC i={i}>{s.reg_out}</TC><TC i={i}>{s.reg_in}</TC><TC i={i}>{s.is_dh_involved?<Badge color="gold">Yes</Badge>:"No"}</TC><TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>)} />
+              note="OP+OP and OP+DHF within same duty period. Cross-date outstation swaps included. DHT and DHF+DHF excluded."
+              headers={["Date","Sectors","Stn","Reg Out","Reg In","DH?","Amount"]} rows={result.tailSwap.swaps}
+              renderRow={(s,i) => (<tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.sector_pair}</TC><TC i={i}><strong>{s.station}</strong></TC><TC i={i}>{s.reg_out}</TC><TC i={i}>{s.reg_in}</TC><TC i={i}>{s.is_dh_involved?<Badge color="gold">Yes</Badge>:s.cross_date?<Badge color="blue">X-date</Badge>:"No"}</TC><TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>)} />
           )}
           {result.transit.halts.length > 0 && (
             <CollapsibleTable title="Transit Allowance" total={result.transit.amount}
-              note="Pro-rata from 90 min, capped at 4 hrs. Home base excluded."
-              headers={["Date","Station","Arrived","Departed","Halt","Billable","Amount"]} rows={result.transit.halts}
-              renderRow={(h,i) => (<tr key={i}><TC i={i}>{h.date}</TC><TC i={i}><strong>{h.station}</strong></TC><TC i={i}>{h.arrived_ist}</TC><TC i={i}>{h.departed_ist}</TC><TC i={i}>{h.halt_mins}m</TC><TC i={i}>{h.billable_mins}m</TC><TC i={i} right gold>{fmtINR(h.amount)}</TC></tr>)} />
+              note="PAH §7.0: scheduled STA→STD used as primary basis; actual used if differs >15 mins. Min 90 mins, capped 4 hrs. Home base excluded."
+              headers={["Date","Station","Arrived","Departed","Halt","Basis","Billable","Amount"]} rows={result.transit.halts}
+              renderRow={(h,i) => (<tr key={i}><TC i={i}>{h.date}</TC><TC i={i}><strong>{h.station}</strong></TC><TC i={i}>{h.arrived_ist}</TC><TC i={i}>{h.departed_ist}</TC><TC i={i}>{h.halt_mins}m</TC><TC i={i}><Badge color={h.basis==="scheduled"?"green":"gold"}>{h.basis}</Badge></TC><TC i={i}>{h.billable_mins}m</TC><TC i={i} right gold>{fmtINR(h.amount)}</TC></tr>)} />
           )}
         </div>
       )}
