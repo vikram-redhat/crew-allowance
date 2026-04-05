@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
+import "./App.css";
 
 /* ═══════════════════════════════════════════════════════════════════
    SUPABASE CLIENT
@@ -1752,15 +1753,6 @@ export default function App() {
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-      <style dangerouslySetInnerHTML={{__html:`
-        * { box-sizing: border-box; margin: 0; }
-        button { font-family: inherit; }
-        ::-webkit-scrollbar { width:5px; height:5px; }
-        ::-webkit-scrollbar-track { background: #f0f7ff; }
-        ::-webkit-scrollbar-thumb { background: #c8d8ee; border-radius:3px; }
-        select option { background: white; }
-        @keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
-      `}} />
 
       {/* Top bar */}
       <div style={{ background:C.white, borderBottom:"1px solid "+C.border, padding:"12px 16px",
