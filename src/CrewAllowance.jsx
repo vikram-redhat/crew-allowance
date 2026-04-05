@@ -160,9 +160,52 @@ const SAMPLE_SCHEDULE = `Date,Flight_No,Duty_Code,STD_Local,STA_Local,From_Airpo
 
 // Sample SV CSV — matches format exported from 6eBreeze > Departments – OCC > Sector Pay
 // Columns: Flight_No, DEP_AIRPORT, ARR_AIRPORT, DEP_HOUR_SLOT, SV_MINS
-// DEP_HOUR_SLOT = hour of departure in IST (e.g. "2" = flights departing 02:00–02:59 IST)
+// DEP_HOUR_SLOT = STD hour in IST (e.g. "2" = scheduled departure 02:00–02:59 IST)
 // SV_MINS = Sector Value in whole minutes (IndiGo 90-day trimmed mean, per PAH §9.0)
+// NOTE: These sample SVs match the SAMPLE_SCHEDULE STD times exactly.
 const SAMPLE_SV = `Flight_No,DEP_AIRPORT,ARR_AIRPORT,DEP_HOUR_SLOT,SV_MINS
+6327,DEL,DED,8,47
+2312,DED,DEL,9,53
+2230,DEL,KNU,12,71
+2158,KNU,DEL,14,79
+6836,DEL,CCU,6,123
+5077,CCU,DEL,9,140
+6843,DEL,UDR,12,77
+6844,UDR,DEL,13,73
+6845,DEL,STV,16,102
+6846,STV,DEL,18,107
+519,DEL,BOM,23,132
+6045,BOM,DEL,2,130
+2052,DEL,HYD,12,129
+2073,HYD,TRZ,15,97
+770,TRZ,DEL,5,180
+5037,DEL,JAI,4,52
+752,JAI,HYD,5,113
+424,HYD,DEL,5,132
+6328,DEL,BOM,10,165
+615,BOM,DEL,14,128
+6731,DEL,RDP,13,114
+6732,RDP,DEL,16,146
+6733,DEL,AMD,20,98
+6794,AMD,BOM,23,89
+359,BOM,DEL,16,124
+6762,DEL,IXJ,13,89
+2044,IXJ,DEL,16,107
+6188,DEL,BLR,13,159
+451,BLR,LKO,17,155
+6354,LKO,BLR,21,154
+6034,BLR,DEL,18,174
+2145,DEL,CCJ,16,177
+2773,CCJ,DEL,19,182
+759,DEL,IXC,17,56
+760,IXC,DEL,19,72
+761,DEL,BBI,20,136
+806,BBI,DEL,23,144
+1103,DEL,DAC,12,134
+1104,DAC,DEL,16,169
+6711,DEL,CCU,13,123
+6721,CCU,DEL,16,148
+6722,DEL,CCU,19,123`;
 6327,DEL,DED,8,47
 2312,DED,DEL,9,53
 2230,DEL,KNU,12,71
@@ -251,12 +294,63 @@ const lookupSV = (svMap, flightNo, dep, arr, stdIST_mins) => {
 };
 
 const runCalc = (logCSV, schedCSV, svCSV, rank, rates) => {
-  const log=parseCSV(logCSV).sort((a,b)=>{const da=parseDate(a.Date),db=parseDate(b.Date);return da-db||t2m(a.Dep_Time_UTC)-t2m(b.Dep_Time_UTC);});
-  const sched=parseCSV(schedCSV);
+  // ── Column name normalization: handle common AIMS export variations ──────
+  // AIMS exports may use different capitalisation or spacing. We normalise
+  // each row's keys to the canonical names the engine expects.
+  const COL_MAP = {
+    // Logbook
+    "date":"Date","flight_no":"Flight_No","flightno":"Flight_No","flight":"Flight_No",
+    "dep_airport":"Dep_Airport","departure_airport":"Dep_Airport","from":"Dep_Airport","from_airport":"Dep_Airport",
+    "dep_time_utc":"Dep_Time_UTC","departure_time_utc":"Dep_Time_UTC","atd_utc":"Dep_Time_UTC","off_utc":"Dep_Time_UTC",
+    "arr_airport":"Arr_Airport","arrival_airport":"Arr_Airport","to":"Arr_Airport","to_airport":"Arr_Airport",
+    "arr_time_utc":"Arr_Time_UTC","arrival_time_utc":"Arr_Time_UTC","ata_utc":"Arr_Time_UTC","on_utc":"Arr_Time_UTC",
+    "aircraft_type":"Aircraft_Type","actype":"Aircraft_Type",
+    "aircraft_reg":"Aircraft_Reg","registration":"Aircraft_Reg","reg":"Aircraft_Reg","tail":"Aircraft_Reg",
+    "block_time":"Block_Time","block":"Block_Time","blk":"Block_Time",
+    "operated_as":"Operated_As","role":"Operated_As","duty":"Operated_As","function":"Operated_As","capacity":"Operated_As",
+    "home_base":"Home_Base","base":"Home_Base",
+    // Schedule
+    "std_local":"STD_Local","std":"STD_Local","scheduled_departure":"STD_Local","sched_dep":"STD_Local",
+    "sta_local":"STA_Local","sta":"STA_Local","scheduled_arrival":"STA_Local","sched_arr":"STA_Local",
+    "duty_code":"Duty_Code","dutycode":"Duty_Code",
+  };
+  const normaliseRow = row => {
+    const out = {};
+    Object.entries(row).forEach(([k, v]) => {
+      const norm = COL_MAP[k.toLowerCase().replace(/\s+/g,"_")] || k;
+      out[norm] = v;
+    });
+    return out;
+  };
+
+  const rawLog   = parseCSV(logCSV).map(normaliseRow);
+  const rawSched = parseCSV(schedCSV).map(normaliseRow);
+
+  // ── Column validation ────────────────────────────────────────────────────
+  const REQUIRED_LOG   = ["Date","Flight_No","Dep_Airport","Dep_Time_UTC","Arr_Airport","Arr_Time_UTC","Aircraft_Reg","Operated_As","Home_Base"];
+  const REQUIRED_SCHED = ["Flight_No","STD_Local","STA_Local"];
+  if(rawLog.length === 0) throw new Error("Logbook CSV appears empty — check file format.");
+  const missingLog = REQUIRED_LOG.filter(c => rawLog[0][c] === undefined);
+  if(missingLog.length) throw new Error("Logbook CSV is missing required column(s): "+missingLog.join(", ")+". Check column names match the template.");
+  const missingSched = REQUIRED_SCHED.filter(c => rawSched[0]?.[c] === undefined);
+  if(missingSched.length) throw new Error("Schedule CSV is missing required column(s): "+missingSched.join(", ")+". Check column names match the template.");
+
+  // ── Validate Operated_As values are recognisable ─────────────────────────
+  const OPS_VALUES  = ["PIC","FO","SIC","CP","FP","TRAINING","TRG"];
+  const DH_VALUES   = ["DHF","DHT","DH","DEADHEAD"];
+  const knownOpAs   = new Set([...OPS_VALUES,...DH_VALUES]);
+  const sampleOpAs  = [...new Set(rawLog.map(r=>r.Operated_As).filter(Boolean))];
+  if(sampleOpAs.length && !sampleOpAs.some(v=>knownOpAs.has(v.toUpperCase()))) {
+    throw new Error("Operated_As column has unrecognised values: "+sampleOpAs.slice(0,5).join(", ")+". Expected values like PIC, DHF, DHT, FO. Check your logbook export settings.");
+  }
+
+  const log=rawLog.sort((a,b)=>{const da=parseDate(a.Date),db=parseDate(b.Date);return da-db||t2m(a.Dep_Time_UTC)-t2m(b.Dep_Time_UTC);});
+  const sched=rawSched;
   const svMap=buildSVLookup(svCSV);
   const hasSV=Object.keys(svMap).length>0;
   const homeBase=log[0]?.Home_Base||"DEL";
-  const isDH=r=>["DHF","DHT"].includes(r.Operated_As);
+  // Normalise DHF/DHT detection — handle common variations
+  const isDH=r=>{const v=(r.Operated_As||"").toUpperCase();return v==="DHF"||v==="DHT"||v==="DH"||v==="DEADHEAD";};
   const R=rates;
   const dhR=R.deadhead[rank],nR=R.night[rank],tsR=R.tailSwap[rank],trR=R.transit[rank],lvR=R.layover[rank];
   const res={pilot:{rank,homeBase},period:"",sv_uploaded:hasSV,night_warnings:[],deadhead:{sectors:[],total_mins:0,amount:0},night:{sectors:[],total_mins:0,amount:0},layover:{events:[],amount:0},tailSwap:{swaps:[],count:0,amount:0},transit:{halts:[],amount:0},total:0};
