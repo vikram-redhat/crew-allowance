@@ -207,44 +207,6 @@ const SAMPLE_SV = `Flight_No,DEP_AIRPORT,ARR_AIRPORT,DEP_HOUR_SLOT,SV_MINS
 6711,DEL,CCU,13,123
 6721,CCU,DEL,16,148
 6722,DEL,CCU,19,123`;
-6327,DEL,DED,8,47
-2312,DED,DEL,9,53
-2230,DEL,KNU,12,71
-6836,DEL,CCU,6,123
-5077,CCU,DEL,9,140
-6846,STV,DEL,21,110
-519,DEL,BOM,23,132
-6045,BOM,DEL,2,130
-2052,DEL,HYD,12,129
-2073,HYD,TRZ,15,97
-770,TRZ,DEL,5,180
-5037,DEL,JAI,4,52
-752,JAI,HYD,6,113
-424,HYD,DEL,6,132
-6328,DEL,BOM,10,165
-615,BOM,DEL,14,128
-6731,DEL,RDP,14,114
-6732,RDP,DEL,16,146
-6733,DEL,AMD,20,98
-6794,AMD,BOM,23,89
-359,BOM,DEL,16,124
-6762,DEL,IXJ,13,89
-2044,IXJ,DEL,16,107
-6188,DEL,BLR,13,159
-451,BLR,LKO,17,155
-6354,LKO,BLR,21,154
-6034,BLR,DEL,18,174
-2145,DEL,CCJ,16,177
-2773,CCJ,DEL,19,182
-759,DEL,IXC,17,56
-760,IXC,DEL,19,72
-761,DEL,BBI,20,136
-806,BBI,DEL,23,144
-1103,DEL,DAC,12,134
-1104,DAC,DEL,16,169
-6711,DEL,CCU,13,123
-6721,CCU,DEL,16,148
-6722,DEL,CCU,19,123`;
 
 /* ═══════════════════════════════════════════════════════════════════
    CALCULATION ENGINE
@@ -386,7 +348,10 @@ const runCalc = (logCSV, schedCSV, svCSV, rank, rates) => {
     }
     if(nm>0){
       const amt=(nm/60)*nR;
-      const staIST=hasSV&&sv!==null?String(Math.floor((stdIST+sv)/60%24)).padStart(2,"0")+":"+String((stdIST+(sv||0))%60).padStart(2,"0"):fmtIST(s.Arr_Time_UTC);
+      const staTotal = stdIST + (sv || 0);
+      const staIST = hasSV && sv !== null
+        ? String(Math.floor(staTotal / 60) % 24).padStart(2, "0") + ":" + String(staTotal % 60).padStart(2, "0")
+        : fmtIST(s.Arr_Time_UTC);
       res.night.sectors.push({date:s.Date,flight:s.Flight_No,from:s.Dep_Airport,to:s.Arr_Airport,std_ist:stdStr||"—",sta_ist:staIST,night_mins:Math.round(nm),amount:amt,method,sv_used:svUsed,no_sv_warning:noSVWarning});
       res.night.total_mins+=nm;res.night.amount+=amt;
     }
@@ -1624,6 +1589,7 @@ function ResetPasswordScreen({ goLogin }) {
     if (!pass || !confirm)    { setErr("Please fill in both fields.");           return; }
     if (pass !== confirm)     { setErr("Passwords do not match.");               return; }
     if (pass.length < 8)      { setErr("Password must be at least 8 characters."); return; }
+    if (!supabase) { setErr("Database not configured."); return; }
     setBusy(true); setErr("");
     const { error } = await supabase.auth.updateUser({ password: pass });
     if (error) { setErr(error.message); setBusy(false); return; }
@@ -1809,3 +1775,4 @@ export default function App() {
     </div>
   );
 }
+
