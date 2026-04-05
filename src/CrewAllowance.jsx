@@ -1750,7 +1750,7 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background:C.sky, fontFamily:"'Nunito','Segoe UI',sans-serif", color:C.text }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+        ${'@import'} url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
         * { box-sizing: border-box; margin: 0; }
         button { font-family: inherit; }
         ::-webkit-scrollbar { width:5px; height:5px; }
