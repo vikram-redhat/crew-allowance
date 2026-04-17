@@ -55,10 +55,16 @@ function extractPilotHeader(text) {
   const empM = head.match(/Emp(?:loyee)?(?:\s*(?:ID|No|#))?\s*[:-]\s*(\d{4,6})/i);
   if (empM) employee_id = empM[1];
 
-  // Pattern 2: surname, first mid - standalone XXXXXX before CP/FO/LD
+  // Pattern 2: standalone XXXXXX before CP/FO/LD
   if (!employee_id) {
     const m2 = head.match(/\b(\d{4,6})\s+(?:CP|FO|LD|SE|CA)\b/i);
     if (m2) employee_id = m2[1];
+  }
+
+  // Pattern 2b: IndiGo PCSR header — "16612 GOYAL, VINEET DEL,CP,320"
+  if (!employee_id) {
+    const m2b = head.match(/\b(\d{4,6})\s+[A-Z]{2,},\s*[A-Z]+/);
+    if (m2b) employee_id = m2b[1];
   }
 
   // Pattern 3: parenthetical like (DEL-320-CP-16612) or (DEL-320-FO)
@@ -73,9 +79,15 @@ function extractPilotHeader(text) {
   const nameM = head.match(/(?:Name\s*[:-]\s*)?([A-Z]{2,20},\s*[A-Z]{2,20}(?:\s+[A-Z]{2,20})?)/);
   if (nameM) name = nameM[1].trim();
 
-  // Base patterns
+  // Base: explicit label
   const baseM = head.match(/(?:Base|Home\s*Base|Station)\s*[:-]\s*([A-Z]{3})\b/i);
   if (baseM) home_base = baseM[1].toUpperCase();
+
+  // Base: IndiGo PCSR inline format "...VINEET DEL,CP,320" or "...VINEET DEL-CP-320"
+  if (!baseM) {
+    const inlineBase = head.match(/[A-Z]{2,},\s*[A-Z]+\s+([A-Z]{3})[,-](CP|FO|LD|SE|CA)\b/i);
+    if (inlineBase) home_base = inlineBase[1].toUpperCase();
+  }
 
   // Fleet
   const fleetM = head.match(/(?:Fleet|Type|A\/C)\s*[:-]?\s*[A3]?(3[012][0-9])/i);
@@ -87,8 +99,13 @@ function extractPilotHeader(text) {
 // ─── month extraction ─────────────────────────────────────────────────────────
 
 function extractMonth(text) {
-  const t = norm(text).slice(0, 600);
-  // "January 2026", "Jan 2026", "01/2026"
+  const flat = norm(text);
+  // Highest priority: explicit report date range "DD/MM/YYYY - DD/MM/YYYY"
+  // This is always the canonical period and beats any month-name in footers/headers.
+  const rangeM = flat.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\s*[-–]\s*\d{2}\/\d{2}\/\d{4}\b/);
+  if (rangeM) return `${rangeM[3]}-${rangeM[2].padStart(2, "0")}`;
+
+  const t = flat.slice(0, 600);
   const months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
   const m1 = t.match(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[,\s]+(\d{4})\b/i);
   if (m1) {
@@ -97,7 +114,6 @@ function extractMonth(text) {
   }
   const m2 = t.match(/\b(\d{1,2})[/-](\d{4})\b/);
   if (m2) return `${m2[2]}-${m2[1].padStart(2, "0")}`;
-  // fall back to current year-month from current date context
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -358,8 +374,26 @@ export async function parsePcsrPdf(buffer) {
     result = parseGrid(rawText, rawText);
   }
 
-  // Attach first 3000 chars of raw text to help diagnose parse failures
-  result._rawSample = rawText.slice(0, 3000);
+  // Attach debug text
+  const flat = rawText.replace(/\n/g, " ");
+  const otherIdx = flat.search(/Other\s*Crew/i);
+  const otherSection = otherIdx !== -1 ? flat.slice(otherIdx, otherIdx + 3000) : "";
+
+  // Show first 3 SECT_RE matches with captured groups for diagnosis
+  const SECT_RE_DBG = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d{3,5})\s+([A-Z]{3})\s+([A-Z]{3})\s+(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})/g;
+  const sectMatches = [];
+  let sm;
+  while ((sm = SECT_RE_DBG.exec(flat.slice(otherIdx !== -1 ? otherIdx : 0))) !== null && sectMatches.length < 5) {
+    sectMatches.push(`  match[${sectMatches.length}]: "${sm[0]}" → date=${sm[1]} flt=${sm[2]} dep=${sm[3]} arr=${sm[4]} std=${sm[5]} sta=${sm[6]}`);
+  }
+
+  result._rawSample =
+    "=== FIRST 1000 ===\n" + flat.slice(0, 1000) +
+    (otherIdx !== -1
+      ? "\n\n=== OTHER CREW SECTION (first 3000) ===\n" + otherSection
+      : "\n\n[No 'Other Crew' section found]") +
+    "\n\n=== SECT_RE MATCHES (" + sectMatches.length + ") ===\n" +
+    (sectMatches.length ? sectMatches.join("\n") : "  [none]");
 
   if (!result.sectors.length) {
     throw new Error(
