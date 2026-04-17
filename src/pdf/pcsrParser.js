@@ -224,19 +224,21 @@ function parseEom(text) {
 /**
  * Grid layout (Vineet style).
  *
- * pdfToText.js gives one string per page joined by "\n" — the grid page 1
- * linearises poorly.  Pages 2+ contain the "Other Crew" section which has
- * clean sector rows:  "05/01 5077 DEL BOM 06:30 08:15"
- * followed by crew lines: "CP - DHF - 16612 - GOYAL, VINEET"
+ * Page 1: calendar grid linearised as date-column headers then sector stream.
+ *   Sector format: flight_no A[atd] [*]DEP [→↓] ARR A[ata] [[type]]
+ *   '*' on DEP means this pilot is deadheading (DHF).
+ *
+ * Pages 2+: "Other Crew" section.
+ *   Columns: Date | Duty (= flight_no) | Details
+ *   Details: pipe-separated entries like "CP - PIC - 16612 - GOYAL, VINEET | FO - DHT - 91461 - ..."
+ *   Each entry is either: RANK - DUTY - EMP_ID - NAME  or  RANK - EMP_ID - NAME
  *
  * Strategy:
- *  1. Normalise ALL text into one flat string (kills \n / extra spaces).
- *  2. Find "Other Crew" and parse sector + crew blocks from it.
- *  3. If that yields nothing, fall back to date-chunk scan of full text
- *     (same approach as the EOM parser) — no DHF/DHT info in that case.
+ *  1. Parse Other Crew section → (date, flight_no, is_dhf, is_dht) per sector.
+ *  2. Parse grid page 1 → (flight_no, dep, arr, atd_local, ata_local) per sector.
+ *  3. Zip by flight_no in chronological order to produce complete sector records.
  */
 function parseGrid(text, allPagesText) {
-  // Normalise everything first — this is the critical fix vs the old version
   const flat = norm(allPagesText.replace(/\n/g, " "));
 
   const pilot = extractPilotHeader(flat);
@@ -246,78 +248,107 @@ function parseGrid(text, allPagesText) {
   const sectors = [];
   const hotels  = [];
 
-  // ── 1. Other Crew section ──────────────────────────────────────────────────
+  // ── 1. Other Crew section: date + flight_no + DHF/DHT per sector ──────────
   const otherCrewIdx = flat.search(/Other\s*Crew/i);
+  const ocSectors = [];
 
   if (otherCrewIdx !== -1) {
     const section = flat.slice(otherCrewIdx);
 
-    // "05/01 5077 DEL BOM 06:30 08:15"  (year optional)
-    const SECT_RE = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d{3,5})\s+([A-Z]{3})\s+([A-Z]{3})\s+(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})/g;
-    // "CP - DHF - 16612 - ..."  or  "FO - DHT - 91461 - ..."
-    const CREW_RE = /(CP|FO|SE|LD|CA)\s*[-–]\s*(DHF|DHT|DH)\s*[-–]\s*(\d{4,6})/gi;
-
-    const blocks = [];
-    let m;
-    while ((m = SECT_RE.exec(section)) !== null) {
-      const [, date, flt, dep, arr, std, sta] = m;
-      const isoDate = parseDate(date) ||
-        `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
-      blocks.push({ isoDate, flt, dep: dep.toUpperCase(), arr: arr.toUpperCase(),
-        std_local: hhmm(std), sta_local: hhmm(sta), startIdx: m.index });
+    // Each row starts with: DD/MM/YYYY   flight_no   [details...]
+    const ROW_RE = /(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{3,5})\s+/g;
+    const rows = [];
+    let rm;
+    while ((rm = ROW_RE.exec(section)) !== null) {
+      rows.push({ date: rm[1], flt: rm[2], detailsAt: rm.index + rm[0].length, rowAt: rm.index });
     }
 
-    for (let i = 0; i < blocks.length; i++) {
-      const blk  = blocks[i];
-      const next = blocks[i + 1]?.startIdx ?? section.length;
-      const crew = section.slice(blk.startIdx, next);
+    for (let i = 0; i < rows.length; i++) {
+      const { date, flt, detailsAt } = rows[i];
+      const detailsEnd = rows[i + 1]?.rowAt ?? section.length;
+      const details = section.slice(detailsAt, detailsEnd);
+      const isoDate = parseDate(date) ||
+        `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
 
       let is_dhf = false, is_dht = false;
-      const crewRe = new RegExp(CREW_RE.source, "gi");
+      // "CP - DHF - 16612 - NAME" or "FO - DHT - 91461 - NAME"
+      const DH_RE = /(CP|FO)\s*-\s*(DHF|DHT)\s*-\s*(\d{4,6})/gi;
       let cm;
-      while ((cm = crewRe.exec(crew)) !== null) {
-        const rank  = cm[1].toUpperCase();
+      while ((cm = DH_RE.exec(details)) !== null) {
         const duty  = cm[2].toUpperCase();
         const empId = cm[3];
-        const isPilotRank  = rank === "CP" || rank === "FO";
-        const isThisPilot  = pilot.employee_id ? empId === pilot.employee_id : isPilotRank;
+        const rankIsPilot = cm[1].toUpperCase() === "CP" || cm[1].toUpperCase() === "FO";
+        const isThisPilot = pilot.employee_id ? empId === pilot.employee_id : rankIsPilot;
         if (isThisPilot) {
           if (duty === "DHF") is_dhf = true;
           if (duty === "DHT") is_dht = true;
         }
       }
 
-      sectors.push({ date: blk.isoDate, flight_no: `6E${blk.flt}`,
-        dep: blk.dep, arr: blk.arr, is_dhf, is_dht,
-        atd_local: null, ata_local: null });
+      ocSectors.push({ date: isoDate, flight_no: `6E${flt}`, is_dhf, is_dht });
     }
   }
 
-  // ── 2. Fallback: date-chunk scan (no DHF/DHT data) ─────────────────────────
-  if (!sectors.length) {
-    const DATE_ANCHOR = /\d{1,2}\/\d{1,2}\/\d{2,4}/g;
-    const idx = [];
-    let ma;
-    while ((ma = DATE_ANCHOR.exec(flat)) !== null) idx.push(ma.index);
+  // ── 2. Grid page 1: flight_no + dep + arr + actual times ─────────────────
+  // Format: flight_no A[atd] [*]DEP [→ ↓ spaces] ARR A[ata] [[type]]
+  const page1Text = otherCrewIdx !== -1 ? flat.slice(0, otherCrewIdx) : flat;
+  // \u2192 = →, \u2193 = ↓ (continuation arrows in calendar grid for DHF sectors)
+  const G_RE = /\b(\d{3,5})\s+A(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,12}([A-Z]{3})\s+A(\d{1,2}:\d{2})/gu;
+  const gridSectors = [];
+  let gm;
+  while ((gm = G_RE.exec(page1Text)) !== null) {
+    gridSectors.push({
+      flight_no: `6E${gm[1]}`,
+      atd_local: hhmm(gm[2]),
+      dep: gm[4].toUpperCase(),
+      arr: gm[5].toUpperCase(),
+      ata_local: hhmm(gm[6]),
+      star: gm[3] === "*",
+    });
+  }
 
-    for (let i = 0; i < idx.length; i++) {
-      const chunk  = flat.slice(idx[i], idx[i + 1] ?? flat.length);
-      const dateM  = chunk.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})/);
-      if (!dateM) continue;
-      const isoDate = parseDate(dateM[1]) || "";
-      if (!isoDate) continue;
-      const routes = [...chunk.matchAll(/(\*?)([A-Z]{3})\s*[-–]\s*([A-Z]{3})/g)];
-      const flts   = [...chunk.matchAll(/\b(?:6E\s*)?(\d{3,5})\b/g)];
-      routes.forEach((r, ri) => {
-        sectors.push({ date: isoDate, flight_no: flts[ri] ? `6E${flts[ri][1]}` : "",
-          dep: r[2].toUpperCase(), arr: r[3].toUpperCase(),
-          is_dhf: r[1] === "*", is_dht: false,
-          atd_local: null, ata_local: null });
+  // ── 3. Zip: match OC entries to grid entries by flight_no in order ────────
+  if (ocSectors.length) {
+    // Build per-flight ordered lists from grid sectors
+    const gridByFlt = new Map();
+    for (const gs of gridSectors) {
+      if (!gridByFlt.has(gs.flight_no)) gridByFlt.set(gs.flight_no, []);
+      gridByFlt.get(gs.flight_no).push(gs);
+    }
+    const usedCount = new Map();
+    for (const oc of ocSectors) {
+      const list = gridByFlt.get(oc.flight_no) || [];
+      const n    = usedCount.get(oc.flight_no) || 0;
+      const gs   = list[n] || null;
+      usedCount.set(oc.flight_no, n + 1);
+      sectors.push({
+        date:      oc.date,
+        flight_no: oc.flight_no,
+        dep:       gs?.dep || "",
+        arr:       gs?.arr || "",
+        is_dhf:    oc.is_dhf || gs?.star || false,
+        is_dht:    oc.is_dht,
+        atd_local: gs?.atd_local || null,
+        ata_local: gs?.ata_local || null,
+      });
+    }
+  } else if (gridSectors.length) {
+    // No OC section — use grid sectors, dates unknown (placeholder first of month)
+    for (const gs of gridSectors) {
+      sectors.push({
+        date:      `${year}-${String(mo).padStart(2,"0")}-01`,
+        flight_no: gs.flight_no,
+        dep:       gs.dep,
+        arr:       gs.arr,
+        is_dhf:    gs.star,
+        is_dht:    false,
+        atd_local: gs.atd_local,
+        ata_local: gs.ata_local,
       });
     }
   }
 
-  // ── 3. Hotel section ───────────────────────────────────────────────────────
+  // ── 4. Hotel section ───────────────────────────────────────────────────────
   parseHotelSection(flat, sectors, hotels);
 
   return { format: "GRID", month, pilot, sectors, hotels };
