@@ -326,14 +326,15 @@ async function fetchWithCache(flight, dep, arr, date) {
   const resp = await fetch(url);
   if (!resp.ok) return null;
   const json = await resp.json();
-  if (supabase && json?.std_local) {
-    await supabase.from("flight_schedule_cache").upsert({
+  if (supabase) {
+    const { error: cacheErr } = await supabase.from("flight_schedule_cache").upsert({
       flight_no: flight, dep, arr, date,
-      std_local: json.std_local, sta_local: json.sta_local,
-      atd_local: json.atd_local, ata_local: json.ata_local,
-      aircraft_reg: json.aircraft_reg,
+      std_local: json.std_local ?? null, sta_local: json.sta_local ?? null,
+      atd_local: json.atd_local ?? null, ata_local: json.ata_local ?? null,
+      aircraft_reg: json.aircraft_reg ?? null,
       fetched_at: new Date().toISOString(),
     }, { onConflict: "flight_no,dep,arr,date" });
+    if (cacheErr) console.warn("Cache write failed:", cacheErr.message);
   }
   return json;
 }
