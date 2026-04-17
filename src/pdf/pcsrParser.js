@@ -108,16 +108,13 @@ function extractMonth(text) {
  * EOM layout (Anshu style):
  *   Date | Duties | Details | Report | Actual | Debrief | Indicators
  *
- * Each row is anchored by a date token DD/MM/YY or DD/MM.
- * Flight entries look like:
- *   "01/01/26  6E2316  DEL - IXC  06:30  A07:36 - A08:30  09:45"
- * DHF rows have an asterisk prefix: "*DEL - IXC"
- *
- * We scan line-by-line for date-anchored blocks, extract flight# route and times.
+ * pdfToText.js produces one string per page joined by "\n".
+ * We flatten everything and split on date positions (DD/MM/YY anchors),
+ * same technique used by indiGoPdfParsers.js.
  */
 function parseEom(text) {
-  const lines = text.split(/\n/).map(norm).filter(Boolean);
-  const fullText = lines.join(" ");
+  // Flatten all pages into one string
+  const fullText = norm(text.replace(/\n/g, " "));
 
   const pilot = extractPilotHeader(fullText);
   const month = extractMonth(fullText);
@@ -126,26 +123,24 @@ function parseEom(text) {
   const sectors = [];
   const hotels = [];
 
-  // Date pattern at line start
-  const DATE_RE = /^(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(.*)/;
+  // Split on every DD/MM/YY or DD/MM/YYYY date occurrence
+  const DATE_ANCHOR = /\d{1,2}\/\d{1,2}\/\d{2,4}/g;
+  const idx = [];
+  let m;
+  while ((m = DATE_ANCHOR.exec(fullText)) !== null) idx.push(m.index);
 
-  // We'll collect all lines that start with a date, then group continuations
-  const blocks = [];
-  let cur = null;
-  for (const line of lines) {
-    const dm = line.match(DATE_RE);
-    if (dm) {
-      if (cur) blocks.push(cur);
-      cur = { date: dm[1], rest: dm[2] };
-    } else if (cur) {
-      cur.rest += " " + line;
-    }
-  }
-  if (cur) blocks.push(cur);
+  if (!idx.length) return { format: "EOM", month, pilot, sectors, hotels };
+
+  // Build blocks: each block starts at a date and ends at the next date
+  const blocks = idx.map((start, i) => {
+    const chunk = fullText.slice(start, idx[i + 1] ?? fullText.length).trim();
+    const dateM = chunk.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+    return { date: dateM ? dateM[1] : null, rest: chunk };
+  }).filter(b => b.date);
 
   for (const blk of blocks) {
     const { date, rest } = blk;
-    const isoDate = parseDate(date, year) || `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
+    const isoDate = parseDate(date) || `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
 
     // Find all route matches in this block (may have multiple sectors same day)
     const routeMatches = [...rest.matchAll(/(\*?)([A-Z]{3})\s*[-–]\s*([A-Z]{3})/g)];
