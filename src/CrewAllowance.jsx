@@ -71,10 +71,9 @@ const t2m = t => {
   const [h, m] = String(t).split(":").map(Number);
   return h * 60 + (m || 0);
 };
-const toIST     = utcMins => (utcMins + 330 + 2880) % 1440;
+
 const fmtHM     = m => { const h = Math.floor(Math.abs(m)/60), mn = Math.round(Math.abs(m)%60); return h+"h "+mn.toString().padStart(2,"0")+"m"; };
 const fmtINR    = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
-const fmtIST    = utcStr => { const i = toIST(t2m(utcStr)); return String(Math.floor(i/60)).padStart(2,"0")+":"+String(i%60).padStart(2,"0"); };
 const istStr    = mins => String(Math.floor(((mins%1440)+1440)%1440/60)).padStart(2,"0")+":"+String(((mins%1440)+1440)%1440%60).padStart(2,"0");
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -173,8 +172,11 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
     if (!s.is_dhf) continue;
     if (!dhR) continue;
     let bm = 0;
-    if (s.std_local && s.sta_local) {
-      bm = t2m(s.sta_local) - t2m(s.std_local);
+    // Prefer scheduled times; fall back to actual times from PCSR
+    const dStd = s.std_local || s.atd_local;
+    const dSta = s.sta_local || s.ata_local;
+    if (dStd && dSta) {
+      bm = t2m(dSta) - t2m(dStd);
       if (bm < 0) bm += 1440;
     }
     if (!bm) continue;
@@ -188,11 +190,10 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
   for (const s of enriched) {
     if (s.is_dhf || s.is_dht) continue;
     if (!nR) continue;
-    const std = s.std_local;
+    // Prefer scheduled STD; fall back to actual departure time
+    const std = s.std_local || s.atd_local;
     if (!std) continue;
-    const stdIST = fmtIST(null) === "05:30"
-      ? std  // already IST if AeroDataBox returns local IST
-      : std;  // AeroDataBox std_local is already local (IST for domestic)
+    const stdIST = std;  // AeroDataBox std_local and PCSR atd_local are both local IST
     const sv = getSV(svData, s.flight_no, s.dep, s.arr, stdIST);
     const nm = sv != null ? nightMins(stdIST, sv) : 0;
     if (nm <= 0) continue;
@@ -316,15 +317,27 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
 /* ═══════════════════════════════════════════════════════════════════
    AERO DATABOX API  (via serverless proxy, with Supabase cache)
 ═══════════════════════════════════════════════════════════════════ */
+// Returns { data, fromCache } or null
 async function fetchWithCache(flight, dep, arr, date) {
   if (supabase) {
     const { data } = await supabase.from("flight_schedule_cache")
       .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", date).maybeSingle();
-    if (data) return data;
+    if (data) return { data, fromCache: true };
   }
   const url = `/api/aerodatabox?flight=${encodeURIComponent(flight)}&dep=${encodeURIComponent(dep)}&arr=${encodeURIComponent(arr)}&date=${encodeURIComponent(date)}`;
-  const resp = await fetch(url);
-  if (!resp.ok) return null;
+  let resp;
+  try {
+    resp = await fetch(url);
+  } catch (fetchErr) {
+    console.warn(`AeroDataBox fetch error for ${flight} ${dep}→${arr} ${date}:`, fetchErr.message);
+    return null;
+  }
+  if (!resp.ok) {
+    let body = "";
+    try { body = await resp.text(); } catch { /* ignore */ }
+    console.warn(`AeroDataBox ${resp.status} for ${flight} ${dep}→${arr} ${date}:`, body.slice(0, 200));
+    return null;
+  }
   const json = await resp.json();
   if (supabase) {
     const { error: cacheErr } = await supabase.from("flight_schedule_cache").upsert({
@@ -336,9 +349,10 @@ async function fetchWithCache(flight, dep, arr, date) {
     }, { onConflict: "flight_no,dep,arr,date" });
     if (cacheErr) console.warn("Cache write failed:", cacheErr.message);
   }
-  return json;
+  return { data: json, fromCache: false };
 }
 
+// Returns { map, fetched, cached, failed }
 async function buildSchedMap(sectors, onProgress) {
   const map = {};
   const unique = [];
@@ -347,17 +361,26 @@ async function buildSchedMap(sectors, onProgress) {
     const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
     if (!seen.has(key)) { seen.add(key); unique.push(s); }
   }
+  let fetched = 0, cached = 0, failed = 0;
   for (let i = 0; i < unique.length; i++) {
     const s = unique[i];
     onProgress?.(i + 1, unique.length, s.flight_no);
     const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
     try {
-      const d = await fetchWithCache(s.flight_no, s.dep, s.arr, s.date);
-      if (d) map[key] = d;
-    } catch { /* skip */ }
+      const result = await fetchWithCache(s.flight_no, s.dep, s.arr, s.date);
+      if (result) {
+        map[key] = result.data;
+        if (result.fromCache) cached++; else fetched++;
+      } else {
+        failed++;
+      }
+    } catch (e) {
+      console.warn("buildSchedMap error:", e.message);
+      failed++;
+    }
     if (i < unique.length - 1) await new Promise(r => setTimeout(r, 600));
   }
-  return map;
+  return { map, fetched, cached, failed };
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1166,6 +1189,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
   const [phase,      setPhase]      = useState("idle"); // idle | fetching | done
   const [progress,   setProgress]   = useState({ current:0, total:0, flight:"" });
   const [svStatus,   setSvStatus]   = useState(null);   // "found" | "missing"
+  const [apiStats,   setApiStats]   = useState(null);   // { fetched, cached, failed }
 
   const homeBase = user.home_base || "DEL";
   const rank     = user.rank || "Captain";
@@ -1192,20 +1216,24 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       setSvStatus(svData.length ? "found" : "missing");
 
       // 2. Fetch schedule + aircraft reg from AeroDataBox (with cache)
-      const schedMap = await buildSchedMap(pcsrData.sectors, (cur, total, flight) => {
-        setProgress({ current: cur, total, flight });
-      });
+      const { map: schedMap, fetched, cached, failed } = await buildSchedMap(
+        pcsrData.sectors,
+        (cur, total, flight) => setProgress({ current: cur, total, flight })
+      );
+      setApiStats({ fetched, cached, failed });
 
       // 3. Enrich sectors with parsed pilot data
-      const sectors = pcsrData.sectors.map(s => ({
-        ...s,
-        // AeroDataBox returns local IST times for domestic sectors
-        std_local: schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.std_local || null,
-        sta_local: schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.sta_local || null,
-        atd_local: s.atd_local || schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.atd_local || null,
-        ata_local: s.ata_local || schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.ata_local || null,
-        aircraft_reg: schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.aircraft_reg || null,
-      }));
+      const sectors = pcsrData.sectors.map(s => {
+        const sd = schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`] || {};
+        return {
+          ...s,
+          std_local:    sd.std_local    || null,
+          sta_local:    sd.sta_local    || null,
+          atd_local:    s.atd_local     || sd.atd_local    || null,
+          ata_local:    s.ata_local     || sd.ata_local    || null,
+          aircraft_reg: sd.aircraft_reg || null,
+        };
+      });
 
       // 4. Run calc
       const res = runCalc(sectors, schedMap, svData, homeBase, rank, rates);
@@ -1220,6 +1248,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
   const reset = () => {
     setPcsrFile(null); setPcsrData(null); setResult(null);
     setErr(""); setPhase("idle"); setProgress({ current:0, total:0, flight:"" });
+    setApiStats(null);
   };
 
   const profileIncomplete = !user.home_base || !user.emp_id;
@@ -1304,6 +1333,17 @@ function CalcScreen({ user, rates, onNeedProfile }) {
           {svStatus === "missing" && (
             <div style={{ marginBottom:14, padding:"10px 14px", background:C.goldBg, border:"1px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText }}>
               ⚠ No Sector Values found for {result.period}. Night allowance cannot be calculated. Ask your admin to upload the SV file for this month.
+            </div>
+          )}
+
+          {apiStats && (apiStats.failed > 0 || apiStats.fetched > 0 || apiStats.cached > 0) && (
+            <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:10, fontSize:12,
+              background: apiStats.failed === apiStats.fetched + apiStats.cached + apiStats.failed ? C.redBg : apiStats.failed > 0 ? C.goldBg : C.greenBg,
+              border:"1px solid "+(apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 ? "#fca5a5" : apiStats.failed > 0 ? C.goldBorder : C.green),
+              color: apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 ? C.red : apiStats.failed > 0 ? C.goldText : C.green }}>
+              Schedule data: {apiStats.fetched} fetched from AeroDataBox · {apiStats.cached} from cache · {apiStats.failed} failed
+              {apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 && " — tail-swap requires schedule data. Check RAPIDAPI_KEY or try again."}
+              {apiStats.failed > 0 && apiStats.fetched + apiStats.cached > 0 && " — deadhead/night calculated from actual times for failed sectors."}
             </div>
           )}
 
