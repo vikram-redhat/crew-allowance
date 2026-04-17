@@ -252,11 +252,15 @@ function parseGrid(text, allPagesText) {
   const otherCrewIdx = flat.search(/Other\s*Crew/i);
   const ocSectors = [];
 
+  // Normalise "6E0715" and "6E715" to the same key by dropping leading zeros
+  const normFlt = f => `6E${parseInt(f, 10)}`;
+
+  // ── 1. Other Crew section: date + flight_no + DHF/DHT per sector ──────────
   if (otherCrewIdx !== -1) {
     const section = flat.slice(otherCrewIdx);
 
-    // Each row starts with: DD/MM/YYYY   flight_no   [details...]
-    const ROW_RE = /(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{3,5})\s+/g;
+    // Each row starts with: DD/MM/YY[YY]   flight_no   [details...]
+    const ROW_RE = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d{3,5})\s+/g;
     const rows = [];
     let rm;
     while ((rm = ROW_RE.exec(section)) !== null) {
@@ -271,7 +275,6 @@ function parseGrid(text, allPagesText) {
         `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
 
       let is_dhf = false, is_dht = false;
-      // "CP - DHF - 16612 - NAME" or "FO - DHT - 91461 - NAME"
       const DH_RE = /(CP|FO)\s*-\s*(DHF|DHT)\s*-\s*(\d{4,6})/gi;
       let cm;
       while ((cm = DH_RE.exec(details)) !== null) {
@@ -285,7 +288,7 @@ function parseGrid(text, allPagesText) {
         }
       }
 
-      ocSectors.push({ date: isoDate, flight_no: `6E${flt}`, is_dhf, is_dht });
+      ocSectors.push({ date: isoDate, flight_no: normFlt(flt), is_dhf, is_dht });
     }
   }
 
@@ -298,7 +301,7 @@ function parseGrid(text, allPagesText) {
   let gm;
   while ((gm = G_RE.exec(page1Text)) !== null) {
     gridSectors.push({
-      flight_no: `6E${gm[1]}`,
+      flight_no: normFlt(gm[1]),
       atd_local: hhmm(gm[2]),
       dep: gm[4].toUpperCase(),
       arr: gm[5].toUpperCase(),
@@ -307,9 +310,9 @@ function parseGrid(text, allPagesText) {
     });
   }
 
-  // ── 3. Zip: match OC entries to grid entries by flight_no in order ────────
+  // ── 3. Merge ───────────────────────────────────────────────────────────────
   if (ocSectors.length) {
-    // Build per-flight ordered lists from grid sectors
+    // Zip OC entries with grid entries by flight_no in order
     const gridByFlt = new Map();
     for (const gs of gridSectors) {
       if (!gridByFlt.has(gs.flight_no)) gridByFlt.set(gs.flight_no, []);

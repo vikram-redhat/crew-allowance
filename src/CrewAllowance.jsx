@@ -365,6 +365,11 @@ async function buildSchedMap(sectors, onProgress) {
   for (let i = 0; i < unique.length; i++) {
     const s = unique[i];
     onProgress?.(i + 1, unique.length, s.flight_no);
+    if (!s.dep || !s.arr) {
+      console.warn(`Skipping ${s.flight_no} on ${s.date}: dep/arr missing (grid zip miss)`);
+      failed++;
+      continue;
+    }
     const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
     try {
       const result = await fetchWithCache(s.flight_no, s.dep, s.arr, s.date);
