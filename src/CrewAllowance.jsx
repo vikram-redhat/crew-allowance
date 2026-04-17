@@ -1242,6 +1242,11 @@ function CalcScreen({ user, rates, onNeedProfile }) {
 
       // 4. Run calc
       const res = runCalc(sectors, schedMap, svData, homeBase, rank, rates);
+      // Override period from parsed header (more reliable than deriving from sector dates)
+      if (pcsrData.month) {
+        const [y, mo] = pcsrData.month.split("-").map(Number);
+        res.period = new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+      }
       setResult(res);
       setPhase("done");
     } catch (e) {
