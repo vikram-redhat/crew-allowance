@@ -206,151 +206,105 @@ function parseEom(text) {
 // ─── GRID format parser ───────────────────────────────────────────────────────
 
 /**
- * Grid layout (Vineet style):
+ * Grid layout (Vineet style).
  *
- * Page 1: calendar grid — each column is a day, each row is an activity slot.
- *   Column headers: "01/01  02/01 ... 31/01"
- *   Cells contain flight numbers, times, or codes (OFF, SBY, etc.)
- *   This page is hard to parse reliably from linear text — we do best-effort.
+ * pdfToText.js gives one string per page joined by "\n" — the grid page 1
+ * linearises poorly.  Pages 2+ contain the "Other Crew" section which has
+ * clean sector rows:  "05/01 5077 DEL BOM 06:30 08:15"
+ * followed by crew lines: "CP - DHF - 16612 - GOYAL, VINEET"
  *
- * Pages 2–4: "Other Crew" section — cleanly tabular:
- *   "Date  Flight  From  To  STD  STA  [crew list]"
- *   Crew entries have "CP - DHF", "FO - DHT", etc.
- *
- * We rely on Other Crew for sector list + DHF/DHT flags.
- * We use page 1 to try to extract actual times (A-prefixed) and supplement.
+ * Strategy:
+ *  1. Normalise ALL text into one flat string (kills \n / extra spaces).
+ *  2. Find "Other Crew" and parse sector + crew blocks from it.
+ *  3. If that yields nothing, fall back to date-chunk scan of full text
+ *     (same approach as the EOM parser) — no DHF/DHT info in that case.
  */
 function parseGrid(text, allPagesText) {
-  const fullText = norm(text);
-  const pilot = extractPilotHeader(fullText);
-  const month = extractMonth(fullText);
+  // Normalise everything first — this is the critical fix vs the old version
+  const flat = norm(allPagesText.replace(/\n/g, " "));
+
+  const pilot = extractPilotHeader(flat);
+  const month = extractMonth(flat);
   const [year, mo] = month.split("-").map(Number);
 
   const sectors = [];
-  const hotels = [];
+  const hotels  = [];
 
-  // ── Parse "Other Crew" section ──────────────────────────────────────────────
-  // Find the section (may span multiple pages)
-  const otherCrewIdx = allPagesText.search(/Other\s+Crew/i);
-  if (otherCrewIdx === -1) {
-    // Fallback: try to parse from grid page (less reliable)
-    return parseGridFromPage1Only(text, pilot, month, year, mo);
-  }
+  // ── 1. Other Crew section ──────────────────────────────────────────────────
+  const otherCrewIdx = flat.search(/Other\s*Crew/i);
 
-  const otherCrewSection = allPagesText.slice(otherCrewIdx);
+  if (otherCrewIdx !== -1) {
+    const section = flat.slice(otherCrewIdx);
 
-  // Sector header pattern: date + flight + airports
-  // "05/01 5077 DEL BOM 06:30 08:15" or "05/01/26 5077 DEL BOM ..."
-  const SECTOR_BLOCK_RE =
-    /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d{3,5})\s+([A-Z]{3})\s+([A-Z]{3})\s+(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})/g;
+    // "05/01 5077 DEL BOM 06:30 08:15"  (year optional)
+    const SECT_RE = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d{3,5})\s+([A-Z]{3})\s+([A-Z]{3})\s+(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})/g;
+    // "CP - DHF - 16612 - ..."  or  "FO - DHT - 91461 - ..."
+    const CREW_RE = /(CP|FO|SE|LD|CA)\s*[-–]\s*(DHF|DHT|DH)\s*[-–]\s*(\d{4,6})/gi;
 
-  // Crew row: "CP - DHF - 16612 - GOYAL, VINEET" or "FO - DHT - 91461 - YADAV, ABHISHEK"
-  const CREW_RE = /(CP|FO|SE|LD|CA)\s*[-–]\s*(DHF|DHT|DH)\s*[-–]\s*(\d{4,6})\s*[-–]\s*([A-Z ,.]+)/gi;
-
-  // Find all sector blocks in Other Crew section
-  let sectorBlocks = [];
-  let m;
-  const re = new RegExp(SECTOR_BLOCK_RE.source, "g");
-  while ((m = re.exec(otherCrewSection)) !== null) {
-    const [, date, flt, dep, arr, std, sta] = m;
-    const isoDate = parseDate(date, year) ||
-      `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
-    sectorBlocks.push({
-      isoDate,
-      flight_no: `6E${flt}`,
-      dep: dep.toUpperCase(),
-      arr: arr.toUpperCase(),
-      std_local: hhmm(std),
-      sta_local: hhmm(sta),
-      startIdx: m.index,
-    });
-  }
-
-  // For each sector block, scan crew between this block and the next for DHF/DHT
-  for (let i = 0; i < sectorBlocks.length; i++) {
-    const blk = sectorBlocks[i];
-    const nextIdx = sectorBlocks[i + 1]?.startIdx ?? otherCrewSection.length;
-    const crewChunk = otherCrewSection.slice(blk.startIdx, nextIdx);
-
-    let is_dhf = false, is_dht = false;
-    let crewM;
-    const crewRe = new RegExp(CREW_RE.source, "gi");
-    while ((crewM = crewRe.exec(crewChunk)) !== null) {
-      const rank = crewM[1].toUpperCase();
-      const duty = crewM[2].toUpperCase();
-      const empId = crewM[3];
-      // Match against pilot's employee_id, or if unknown, match CP/FO rank
-      const isPilotRank = rank === "CP" || rank === "FO";
-      const isThisPilot = pilot.employee_id
-        ? empId === pilot.employee_id
-        : isPilotRank;
-
-      if (isThisPilot) {
-        if (duty === "DHF") is_dhf = true;
-        if (duty === "DHT") is_dht = true;
-      }
+    const blocks = [];
+    let m;
+    while ((m = SECT_RE.exec(section)) !== null) {
+      const [, date, flt, dep, arr, std, sta] = m;
+      const isoDate = parseDate(date) ||
+        `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
+      blocks.push({ isoDate, flt, dep: dep.toUpperCase(), arr: arr.toUpperCase(),
+        std_local: hhmm(std), sta_local: hhmm(sta), startIdx: m.index });
     }
 
-    sectors.push({
-      date: blk.isoDate,
-      flight_no: blk.flight_no,
-      dep: blk.dep,
-      arr: blk.arr,
-      is_dhf,
-      is_dht,
-      atd_local: null, // actual times not reliably available in Other Crew section
-      ata_local: null,
-    });
+    for (let i = 0; i < blocks.length; i++) {
+      const blk  = blocks[i];
+      const next = blocks[i + 1]?.startIdx ?? section.length;
+      const crew = section.slice(blk.startIdx, next);
+
+      let is_dhf = false, is_dht = false;
+      const crewRe = new RegExp(CREW_RE.source, "gi");
+      let cm;
+      while ((cm = crewRe.exec(crew)) !== null) {
+        const rank  = cm[1].toUpperCase();
+        const duty  = cm[2].toUpperCase();
+        const empId = cm[3];
+        const isPilotRank  = rank === "CP" || rank === "FO";
+        const isThisPilot  = pilot.employee_id ? empId === pilot.employee_id : isPilotRank;
+        if (isThisPilot) {
+          if (duty === "DHF") is_dhf = true;
+          if (duty === "DHT") is_dht = true;
+        }
+      }
+
+      sectors.push({ date: blk.isoDate, flight_no: `6E${blk.flt}`,
+        dep: blk.dep, arr: blk.arr, is_dhf, is_dht,
+        atd_local: null, ata_local: null });
+    }
   }
 
-  // ── Try to enrich actual times from page 1 grid text ──────────────────────
-  // Page 1 may have "A07:36" actual time annotations near flight numbers
-  enrichActualTimesFromGridPage(text.split("\n")[0] || text, sectors);
+  // ── 2. Fallback: date-chunk scan (no DHF/DHT data) ─────────────────────────
+  if (!sectors.length) {
+    const DATE_ANCHOR = /\d{1,2}\/\d{1,2}\/\d{2,4}/g;
+    const idx = [];
+    let ma;
+    while ((ma = DATE_ANCHOR.exec(flat)) !== null) idx.push(ma.index);
 
-  // ── Hotel section ──────────────────────────────────────────────────────────
-  parseHotelSection(allPagesText, sectors, hotels);
+    for (let i = 0; i < idx.length; i++) {
+      const chunk  = flat.slice(idx[i], idx[i + 1] ?? flat.length);
+      const dateM  = chunk.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+      if (!dateM) continue;
+      const isoDate = parseDate(dateM[1]) || "";
+      if (!isoDate) continue;
+      const routes = [...chunk.matchAll(/(\*?)([A-Z]{3})\s*[-–]\s*([A-Z]{3})/g)];
+      const flts   = [...chunk.matchAll(/\b(?:6E\s*)?(\d{3,5})\b/g)];
+      routes.forEach((r, ri) => {
+        sectors.push({ date: isoDate, flight_no: flts[ri] ? `6E${flts[ri][1]}` : "",
+          dep: r[2].toUpperCase(), arr: r[3].toUpperCase(),
+          is_dhf: r[1] === "*", is_dht: false,
+          atd_local: null, ata_local: null });
+      });
+    }
+  }
+
+  // ── 3. Hotel section ───────────────────────────────────────────────────────
+  parseHotelSection(flat, sectors, hotels);
 
   return { format: "GRID", month, pilot, sectors, hotels };
-}
-
-function parseGridFromPage1Only(text, pilot, month, year, mo) {
-  // Minimal fallback: extract flight numbers and dates from grid, no DHF/DHT
-  const sectors = [];
-  // Look for patterns like "6E5077" or standalone "5077" near dates
-  const FLT_DATE_RE = /(\d{1,2}\/\d{1,2})\s+(?:6E\s*)?(\d{3,5})\s+([A-Z]{3})\s+([A-Z]{3})/g;
-  let m;
-  while ((m = FLT_DATE_RE.exec(text)) !== null) {
-    const isoDate = `${year}-${String(mo).padStart(2,"0")}-${m[1].split("/")[0].padStart(2,"0")}`;
-    sectors.push({
-      date: isoDate,
-      flight_no: `6E${m[2]}`,
-      dep: m[3].toUpperCase(),
-      arr: m[4].toUpperCase(),
-      is_dhf: false,
-      is_dht: false,
-      atd_local: null,
-      ata_local: null,
-    });
-  }
-  return { format: "GRID", month, pilot, sectors, hotels: [] };
-}
-
-function enrichActualTimesFromGridPage(pageText, sectors) {
-  // Grid page may have "A HH:MM" near flight numbers — best-effort match
-  // "5077 ... A07:36 ... A08:30"
-  const lines = norm(pageText).split(/\s{3,}|\n/);
-  for (const line of lines) {
-    const fltM = line.match(/\b(\d{3,5})\b/);
-    if (!fltM) continue;
-    const actM = [...line.matchAll(/A(\d{1,2}:\d{2})/g)];
-    if (!actM.length) continue;
-    const fltNo = `6E${fltM[1]}`;
-    const sector = sectors.find(s => s.flight_no === fltNo && !s.atd_local);
-    if (sector && actM[0]) {
-      sector.atd_local = hhmm(actM[0][1]);
-      if (actM[1]) sector.ata_local = hhmm(actM[1][1]);
-    }
-  }
 }
 
 function parseHotelSection(text, sectors, hotels) {
