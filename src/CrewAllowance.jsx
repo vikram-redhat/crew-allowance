@@ -1299,6 +1299,37 @@ function CalcScreen({ user, rates, onNeedProfile }) {
                   </pre>
                 </details>
               )}
+              {pcsrData.sectors.length >= 1 && (
+                <details style={{ marginTop:8 }}>
+                  <summary style={{ cursor:"pointer", fontSize:11, fontWeight:700 }}>Show parsed sectors (debug)</summary>
+                  <div style={{ marginTop:8, overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:10, color:C.text, background:"rgba(0,0,0,0.04)", borderRadius:6 }}>
+                      <thead>
+                        <tr style={{ background:"rgba(0,0,0,0.08)" }}>
+                          {["#","Date","Flight","Dep","Arr","DHF","DHT","ATD (local)","ATA (local)"].map(h => (
+                            <th key={h} style={{ padding:"4px 6px", textAlign:"left", fontWeight:700, whiteSpace:"nowrap", borderBottom:"1px solid rgba(0,0,0,0.1)" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pcsrData.sectors.map((s, i) => (
+                          <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : "rgba(0,0,0,0.03)" }}>
+                            <td style={{ padding:"3px 6px", color:"rgba(0,0,0,0.4)" }}>{i + 1}</td>
+                            <td style={{ padding:"3px 6px", whiteSpace:"nowrap" }}>{s.date}</td>
+                            <td style={{ padding:"3px 6px", whiteSpace:"nowrap", fontWeight:600 }}>{s.flight_no}</td>
+                            <td style={{ padding:"3px 6px" }}>{s.dep}</td>
+                            <td style={{ padding:"3px 6px" }}>{s.arr}</td>
+                            <td style={{ padding:"3px 6px", textAlign:"center" }}>{s.is_dhf ? "✓" : ""}</td>
+                            <td style={{ padding:"3px 6px", textAlign:"center" }}>{s.is_dht ? "✓" : ""}</td>
+                            <td style={{ padding:"3px 6px", whiteSpace:"nowrap" }}>{s.atd_local || "—"}</td>
+                            <td style={{ padding:"3px 6px", whiteSpace:"nowrap" }}>{s.ata_local || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              )}
             </div>
           )}
 
