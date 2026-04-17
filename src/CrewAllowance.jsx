@@ -4,7 +4,6 @@ import "./App.css";
 
 /* ═══════════════════════════════════════════════════════════════════
    SUPABASE CLIENT
-   Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local
 ═══════════════════════════════════════════════════════════════════ */
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL      || "";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
@@ -15,47 +14,43 @@ const supabase = SUPABASE_URL
 const sbWarn = () => console.warn("Supabase not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY");
 
 /* ═══════════════════════════════════════════════════════════════════
-   ✏️  APP CONFIGURATION — edit these to customise the site
+   APP CONFIGURATION
 ═══════════════════════════════════════════════════════════════════ */
 const CONFIG = {
-  // Branding
   appName:       "Crew Allowance",
   airline:       "IndiGo",
   tagline:       "Eff. Jan 2026",
   copyrightYear: "2026",
   siteUrl:       "https://crewallowance.in",
-
-  // Contact
   emailSupport:  "support@crewallowance.in",
   emailPrivacy:  "privacy@crewallowance.in",
-
-  // Pricing
   currency:      "₹",
-  priceMonthly:  299,      // numeric, used for discount calculations
-  priceLabel:    "₹299",   // display string
-
-  // Discount codes  { pct: 0-100, label: string shown to user }
+  priceMonthly:  299,
+  priceLabel:    "₹299",
   discountCodes: {
     "CREW2026": { pct: 100, label: "100% off — Free"   },
     "LAUNCH50": { pct: 50,  label: "50% off — ₹149/mo" },
     "INDIGO10": { pct: 10,  label: "10% off — ₹269/mo" },
   },
-
-  // Allowance rules
-  ranks:              ["Captain", "First Officer", "Cabin Crew"],
-  layoverMinHours:    10.0167,   // minimum hours away to qualify for layover
-
-  // Legal
-  governingLaw:       "New Delhi, India",
-  effectiveDate:      "1 January 2026",
+  ranks: ["Captain", "Senior Captain", "First Officer", "Senior First Officer", "Cabin Crew"],
+  layoverMinHours: 10.0167,
+  governingLaw:    "New Delhi, India",
+  effectiveDate:   "1 January 2026",
 };
 
-/* ── Convenience aliases so the rest of the code stays readable ── */
-const APP_NAME      = CONFIG.appName;
-const RANKS         = CONFIG.ranks;
-const PRICE_INR     = CONFIG.priceMonthly;
-const PRICE_LABEL   = CONFIG.priceLabel;
-const DISCOUNT_CODES= CONFIG.discountCodes;
+const APP_NAME       = CONFIG.appName;
+const RANKS          = CONFIG.ranks;
+const PRICE_INR      = CONFIG.priceMonthly;
+const PRICE_LABEL    = CONFIG.priceLabel;
+const DISCOUNT_CODES = CONFIG.discountCodes;
+
+// Map display ranks → rate bucket
+const rankBucket = r => {
+  const v = (r || "").toLowerCase();
+  if (v.includes("cabin")) return "Cabin Crew";
+  if (v.includes("first") || v.includes("fo")) return "First Officer";
+  return "Captain";
+};
 
 const DEFAULT_RATES = {
   lastUpdated: "1 January 2026",
@@ -69,411 +64,330 @@ const DEFAULT_RATES = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
-   SAMPLE CSV DATA
+   TIME UTILITIES
 ═══════════════════════════════════════════════════════════════════ */
-const SAMPLE_LOGBOOK = `Date,Flight_No,Dep_Airport,Dep_Time_UTC,Arr_Airport,Arr_Time_UTC,Aircraft_Type,Aircraft_Reg,Block_Time,Operated_As,Home_Base
-01/01/26,6327,DEL,02:55,DED,03:42,320,VTIKS,00:47,PIC,DEL
-01/01/26,2312,DED,04:25,DEL,05:18,320,VTIKS,00:53,PIC,DEL
-01/01/26,2230,DEL,07:16,KNU,08:27,320,VTIJG,01:11,PIC,DEL
-01/01/26,2158,KNU,09:01,DEL,10:20,320,VTIJG,01:19,PIC,DEL
-05/01/26,6836,DEL,01:24,CCU,03:27,321,VTNCK,02:03,PIC,DEL
-05/01/26,5077,CCU,04:16,DEL,06:36,321,VTNCK,02:20,PIC,DEL
-06/01/26,6843,DEL,06:37,UDR,07:54,321,VTICX,01:17,PIC,DEL
-06/01/26,6844,UDR,08:28,DEL,09:41,321,VTICX,01:13,PIC,DEL
-06/01/26,6845,DEL,11:00,STV,12:42,321,VTICX,01:42,PIC,DEL
-06/01/26,6846,STV,13:11,DEL,14:42,321,VTICX,01:31,PIC,DEL
-07/01/26,519,DEL,18:11,BOM,20:23,321,VTNCJ,02:12,DHF,DEL
-07/01/26,6045,BOM,21:24,DEL,23:19,321,VTNCJ,01:55,PIC,DEL
-11/01/26,2052,DEL,06:36,HYD,08:45,321,VTICH,02:09,PIC,DEL
-11/01/26,2073,HYD,10:23,TRZ,12:00,320,VTIFQ,01:37,PIC,DEL
-12/01/26,770,TRZ,23:57,DEL,02:49,320,VTIXN,02:52,PIC,DEL
-15/01/26,5037,DEL,23:02,JAI,23:45,321,VTIMJ,00:43,PIC,DEL
-16/01/26,752,JAI,00:22,HYD,02:18,321,VTIMJ,01:56,PIC,DEL
-17/01/26,424,HYD,00:19,DEL,02:21,321,VTNHB,02:02,PIC,DEL
-17/01/26,6328,DEL,04:41,BOM,07:26,321,VTNCD,02:45,PIC,DEL
-17/01/26,615,BOM,08:31,DEL,10:39,321,VTNCD,02:08,PIC,DEL
-19/01/26,6731,DEL,08:55,RDP,10:49,321,VTIUP,01:54,PIC,DEL
-19/01/26,6732,RDP,11:17,DEL,13:43,321,VTIUP,02:26,PIC,DEL
-19/01/26,6733,DEL,14:48,AMD,16:26,320,VTIIV,01:38,PIC,DEL
-19/01/26,6794,AMD,18:07,BOM,19:53,320,VTISY,01:46,PIC,DEL
-20/01/26,359,BOM,11:02,DEL,13:06,321,VTNCJ,02:04,DHF,DEL
-23/01/26,6762,DEL,07:50,IXJ,09:19,321,VTIBH,01:29,PIC,DEL
-23/01/26,2044,IXJ,10:44,DEL,12:31,321,VTIBH,01:47,PIC,DEL
-24/01/26,6188,DEL,07:34,BLR,10:13,321,VTNCD,02:39,DHF,DEL
-24/01/26,451,BLR,11:55,LKO,14:30,320,VTISU,02:35,PIC,DEL
-24/01/26,6354,LKO,15:30,BLR,18:04,320,VTIPF,02:34,PIC,DEL
-25/01/26,6034,BLR,12:30,DEL,15:24,321,VTNCJ,02:54,DHF,DEL
-26/01/26,2145,DEL,10:51,CCJ,13:48,321,VTIMH,02:57,PIC,DEL
-26/01/26,2773,CCJ,14:24,DEL,17:26,321,VTIMH,03:02,DHF,DEL
-27/01/26,759,DEL,12:02,IXC,12:58,321,VTILL,00:56,PIC,DEL
-27/01/26,760,IXC,13:38,DEL,14:50,321,VTILL,01:12,PIC,DEL
-27/01/26,761,DEL,15:29,BBI,17:45,321,VTILL,02:16,PIC,DEL
-27/01/26,806,BBI,18:13,DEL,20:35,321,VTILL,02:22,PIC,DEL
-30/01/26,1103,DEL,07:11,DAC,09:25,321,VTIRV,02:14,PIC,DEL
-30/01/26,1104,DAC,10:24,DEL,13:13,321,VTIRV,02:49,PIC,DEL
-31/01/26,6711,DEL,09:53,CCU,11:56,321,VTNCY,02:03,PIC,DEL
-31/01/26,6721,CCU,12:39,DEL,15:07,321,VTNCY,02:28,PIC,DEL
-31/01/26,6722,DEL,15:54,CCU,18:04,321,VTNCY,02:10,PIC,DEL`;
-
-const SAMPLE_SCHEDULE = `Date,Flight_No,Duty_Code,STD_Local,STA_Local,From_Airport,To_Airport,Aircraft_Type
-01/01/2026,6327,,08:25,09:12,DEL,DED,320
-01/01/2026,2312,,09:55,10:48,DED,DEL,320
-01/01/2026,2230,,12:46,13:57,DEL,KNU,320
-01/01/2026,2158,,14:31,15:50,KNU,DEL,320
-05/01/2026,6836,,06:54,08:57,DEL,CCU,321
-05/01/2026,5077,,09:46,12:06,CCU,DEL,321
-06/01/2026,6843,,12:07,13:24,DEL,UDR,321
-06/01/2026,6844,,13:58,15:11,UDR,DEL,321
-06/01/2026,6845,,16:30,18:12,DEL,STV,321
-06/01/2026,6846,,18:41,20:12,STV,DEL,321
-07/01/2026,519,DHF,23:41,01:53,DEL,BOM,321
-07/01/2026,6045,,02:54,04:49,BOM,DEL,321
-11/01/2026,2052,,12:06,14:15,DEL,HYD,321
-11/01/2026,2073,,15:53,17:30,HYD,TRZ,320
-12/01/2026,770,,05:27,08:19,TRZ,DEL,320
-15/01/2026,5037,,04:32,05:15,DEL,JAI,321
-16/01/2026,752,,05:52,07:48,JAI,HYD,321
-17/01/2026,424,,05:49,07:51,HYD,DEL,321
-17/01/2026,6328,,10:11,12:56,DEL,BOM,321
-17/01/2026,615,,14:01,16:09,BOM,DEL,321
-19/01/2026,6731,,14:25,16:19,DEL,RDP,321
-19/01/2026,6732,,16:47,19:13,RDP,DEL,321
-19/01/2026,6733,,20:18,21:56,DEL,AMD,320
-19/01/2026,6794,,23:37,01:23,AMD,BOM,320
-20/01/2026,359,DHF,16:32,18:36,BOM,DEL,321
-23/01/2026,6762,,13:20,14:49,DEL,IXJ,321
-23/01/2026,2044,,16:14,18:01,IXJ,DEL,321
-24/01/2026,6188,DHF,13:04,15:43,DEL,BLR,321
-24/01/2026,451,,17:25,20:00,BLR,LKO,320
-24/01/2026,6354,,21:00,23:34,LKO,BLR,320
-25/01/2026,6034,DHF,18:00,20:54,BLR,DEL,321
-26/01/2026,2145,,16:21,19:18,DEL,CCJ,321
-26/01/2026,2773,DHF,19:54,22:56,CCJ,DEL,321
-27/01/2026,759,,17:32,18:28,DEL,IXC,321
-27/01/2026,760,,19:08,20:20,IXC,DEL,321
-27/01/2026,761,,20:59,23:15,DEL,BBI,321
-27/01/2026,806,,23:43,02:05,BBI,DEL,321
-30/01/2026,1103,,12:41,15:25,DEL,DAC,321
-30/01/2026,1104,,16:24,18:43,DAC,DEL,321
-31/01/2026,6711,,13:09,15:26,DEL,CCU,321
-31/01/2026,6721,,16:09,18:37,CCU,DEL,321
-31/01/2026,6722,,19:24,21:34,DEL,CCU,321`;
-
-// Sample SV CSV — matches format exported from 6eBreeze > Departments – OCC > Sector Pay
-// Columns: Flight_No, DEP_AIRPORT, ARR_AIRPORT, DEP_HOUR_SLOT, SV_MINS
-// DEP_HOUR_SLOT = STD hour in IST (e.g. "2" = scheduled departure 02:00–02:59 IST)
-// SV_MINS = Sector Value in whole minutes (IndiGo 90-day trimmed mean, per PAH §9.0)
-// NOTE: These sample SVs match the SAMPLE_SCHEDULE STD times exactly.
-const SAMPLE_SV = `Flight_No,DEP_AIRPORT,ARR_AIRPORT,DEP_HOUR_SLOT,SV_MINS
-6327,DEL,DED,8,47
-2312,DED,DEL,9,53
-2230,DEL,KNU,12,71
-2158,KNU,DEL,14,79
-6836,DEL,CCU,6,123
-5077,CCU,DEL,9,140
-6843,DEL,UDR,12,77
-6844,UDR,DEL,13,73
-6845,DEL,STV,16,102
-6846,STV,DEL,18,107
-519,DEL,BOM,23,132
-6045,BOM,DEL,2,130
-2052,DEL,HYD,12,129
-2073,HYD,TRZ,15,97
-770,TRZ,DEL,5,180
-5037,DEL,JAI,4,52
-752,JAI,HYD,5,113
-424,HYD,DEL,5,132
-6328,DEL,BOM,10,165
-615,BOM,DEL,14,128
-6731,DEL,RDP,13,114
-6732,RDP,DEL,16,146
-6733,DEL,AMD,20,98
-6794,AMD,BOM,23,89
-359,BOM,DEL,16,124
-6762,DEL,IXJ,13,89
-2044,IXJ,DEL,16,107
-6188,DEL,BLR,13,159
-451,BLR,LKO,17,155
-6354,LKO,BLR,21,154
-6034,BLR,DEL,18,174
-2145,DEL,CCJ,16,177
-2773,CCJ,DEL,19,182
-759,DEL,IXC,17,56
-760,IXC,DEL,19,72
-761,DEL,BBI,20,136
-806,BBI,DEL,23,144
-1103,DEL,DAC,12,134
-1104,DAC,DEL,16,169
-6711,DEL,CCU,13,123
-6721,CCU,DEL,16,148
-6722,DEL,CCU,19,123`;
+const t2m = t => {
+  if (!t || !String(t).includes(":")) return 0;
+  const [h, m] = String(t).split(":").map(Number);
+  return h * 60 + (m || 0);
+};
+const toIST     = utcMins => (utcMins + 330 + 2880) % 1440;
+const fmtHM     = m => { const h = Math.floor(Math.abs(m)/60), mn = Math.round(Math.abs(m)%60); return h+"h "+mn.toString().padStart(2,"0")+"m"; };
+const fmtINR    = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
+const fmtIST    = utcStr => { const i = toIST(t2m(utcStr)); return String(Math.floor(i/60)).padStart(2,"0")+":"+String(i%60).padStart(2,"0"); };
+const istStr    = mins => String(Math.floor(((mins%1440)+1440)%1440/60)).padStart(2,"0")+":"+String(((mins%1440)+1440)%1440%60).padStart(2,"0");
 
 /* ═══════════════════════════════════════════════════════════════════
-   CALCULATION ENGINE
+   SECTOR VALUE LOOKUP  (handoff spec — UTC time-slot based)
 ═══════════════════════════════════════════════════════════════════ */
-const parseCSV = t => { const l=t.trim().split(/\r?\n/); const h=l[0].split(",").map(x=>x.trim().replace(/^"|"$/g,"")); return l.slice(1).filter(x=>x.trim()).map(r=>{const v=r.split(",").map(x=>x.trim().replace(/^"|"$/g,""));return Object.fromEntries(h.map((k,i)=>[k,v[i]??""]));}); };
-const t2m = t => { if(!t||!t.includes(":"))return 0; const[h,m]=t.split(":").map(Number); return h*60+(m||0); };
-const toIST = u => (u+330+2880)%1440;
-const fmtHM = m => { const h=Math.floor(Math.abs(m)/60),mn=Math.round(Math.abs(m)%60); return h+"h "+mn.toString().padStart(2,"0")+"m"; };
-const fmtIST = u => { const i=toIST(t2m(u)); return String(Math.floor(i/60)).padStart(2,"0")+":"+String(i%60).padStart(2,"0"); };
-const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
-const parseDate = s => { if(!s)return null; const[d,mo,y]=s.split("/").map(Number); return new Date(y<100?2000+y:y,mo-1,d); };
-// Night allowance per PAH §9.0: STD (IST) + Sector Value → intersect with 00:01–06:00 IST
-// std_ist_mins: STD in IST as total minutes from midnight (e.g. 02:45 = 165)
-// sv_mins: Sector Value from 6eBreeze in whole minutes
-const nightMinsFromSTDSV = (std_ist_mins, sv_mins) => {
-  const NIGHT_START = 1;    // 00:01 IST
-  const NIGHT_END   = 360;  // 06:00 IST
-  const sta = std_ist_mins + sv_mins;
-  if (std_ist_mins >= NIGHT_END) {
-    // STD is at or after 06:00 — only counts if cross-midnight into next day
-    if (sta > 1440) {
-      const post = sta - 1440;
-      return Math.max(0, Math.min(NIGHT_END, post) - NIGHT_START);
-    }
+function getSV(svData, flightNum, dep, arr, stdIst) {
+  if (!svData?.length || !stdIst) return null;
+  const [h, m] = stdIst.split(":").map(Number);
+  const utcMins = (h * 60 + m - 330 + 1440) % 1440;
+  const utcHour = Math.floor(utcMins / 60);
+  const slot = `${utcHour}_${utcHour + 1}`;
+  const fltNum = String(flightNum).replace(/^6E/i, "");
+  const match = svData.find(row =>
+    String(row.FLTNBR) === fltNum &&
+    String(row.DEP).trim() === dep &&
+    String(row.ARR).trim() === arr &&
+    String(row.Time_Slot) === slot
+  );
+  if (match) return Number(match.SectorValue);
+  const fallback = svData.find(r =>
+    String(r.FLTNBR) === fltNum &&
+    String(r.DEP).trim() === dep &&
+    String(r.ARR).trim() === arr
+  );
+  return fallback ? Number(fallback.SectorValue) : null;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   NIGHT FLYING MINUTES  (PAH §9.0: STD-IST + SV)
+═══════════════════════════════════════════════════════════════════ */
+function nightMins(stdIstStr, svMins) {
+  if (!stdIstStr || svMins == null) return 0;
+  const stdM = t2m(stdIstStr);
+  const staM = stdM + svMins;
+  const NIGHT_END = 360; // 06:00 IST in mins
+  if (stdM >= NIGHT_END) {
+    // Flight departs after 06:00 — only wraps into next night if sta > 1440
+    if (staM > 1440) return Math.max(0, Math.min(NIGHT_END, staM - 1440));
     return 0;
   }
-  // STD is before 06:00
-  return Math.max(0, Math.min(NIGHT_END, sta) - Math.max(NIGHT_START, std_ist_mins));
-};
+  return Math.max(0, Math.min(NIGHT_END, staM) - stdM);
+}
 
-// Build SV lookup from 6eBreeze CSV: key = "FlightNo_DEP_ARR_HourSlot"
-const buildSVLookup = (svCSV) => {
-  if (!svCSV) return {};
-  const rows = parseCSV(svCSV);
-  const map = {};
-  rows.forEach(r => {
-    const key = [r.Flight_No, r.DEP_AIRPORT, r.ARR_AIRPORT, r.DEP_HOUR_SLOT].join("_");
-    const sv = parseInt(r.SV_MINS, 10);
-    if (!isNaN(sv)) map[key] = sv;
+/* ═══════════════════════════════════════════════════════════════════
+   CORE CALCULATION ENGINE  (PCSR-based)
+═══════════════════════════════════════════════════════════════════ */
+function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
+  const R   = rates;
+  const bkt = rankBucket(rank);
+  const dhR = R.deadhead[bkt], nR = R.night[bkt], tsR = R.tailSwap[bkt], trR = R.transit[bkt], lvR = R.layover[bkt];
+
+  const res = {
+    pilot: { rank, homeBase },
+    period: "",
+    deadhead: { sectors: [], total_mins: 0, amount: 0 },
+    night:    { sectors: [], total_mins: 0, amount: 0 },
+    layover:  { events: [], amount: 0 },
+    tailSwap: { swaps: [], count: 0, amount: 0 },
+    transit:  { halts: [], amount: 0 },
+    sv_used: svData?.length > 0,
+    total: 0,
+  };
+
+  if (!sectors?.length) return res;
+
+  // Sort by date then STD
+  const sorted = [...sectors].sort((a, b) => {
+    const dc = (a.date || "").localeCompare(b.date || "");
+    if (dc !== 0) return dc;
+    return t2m(a.std_local || a.atd_local || "00:00") - t2m(b.std_local || b.atd_local || "00:00");
   });
-  return map;
-};
 
-const lookupSV = (svMap, flightNo, dep, arr, stdIST_mins) => {
-  const hour = Math.floor(stdIST_mins / 60) % 24;
-  const key  = [flightNo, dep, arr, String(hour)].join("_");
-  return svMap[key] ?? null;
-};
-
-const runCalc = (logCSV, schedCSV, svCSV, rank, rates) => {
-  // ── Column name normalization: handle common AIMS export variations ──────
-  // AIMS exports may use different capitalisation or spacing. We normalise
-  // each row's keys to the canonical names the engine expects.
-  const COL_MAP = {
-    // Logbook
-    "date":"Date","flight_no":"Flight_No","flightno":"Flight_No","flight":"Flight_No",
-    "dep_airport":"Dep_Airport","departure_airport":"Dep_Airport","from":"Dep_Airport","from_airport":"Dep_Airport",
-    "dep_time_utc":"Dep_Time_UTC","departure_time_utc":"Dep_Time_UTC","atd_utc":"Dep_Time_UTC","off_utc":"Dep_Time_UTC",
-    "arr_airport":"Arr_Airport","arrival_airport":"Arr_Airport","to":"Arr_Airport","to_airport":"Arr_Airport",
-    "arr_time_utc":"Arr_Time_UTC","arrival_time_utc":"Arr_Time_UTC","ata_utc":"Arr_Time_UTC","on_utc":"Arr_Time_UTC",
-    "aircraft_type":"Aircraft_Type","actype":"Aircraft_Type",
-    "aircraft_reg":"Aircraft_Reg","registration":"Aircraft_Reg","reg":"Aircraft_Reg","tail":"Aircraft_Reg",
-    "block_time":"Block_Time","block":"Block_Time","blk":"Block_Time",
-    "operated_as":"Operated_As","role":"Operated_As","duty":"Operated_As","function":"Operated_As","capacity":"Operated_As",
-    "home_base":"Home_Base","base":"Home_Base",
-    // Schedule
-    "std_local":"STD_Local","std":"STD_Local","scheduled_departure":"STD_Local","sched_dep":"STD_Local",
-    "sta_local":"STA_Local","sta":"STA_Local","scheduled_arrival":"STA_Local","sched_arr":"STA_Local",
-    "duty_code":"Duty_Code","dutycode":"Duty_Code",
-  };
-  const normaliseRow = row => {
-    const out = {};
-    Object.entries(row).forEach(([k, v]) => {
-      const norm = COL_MAP[k.toLowerCase().replace(/\s+/g,"_")] || k;
-      out[norm] = v;
-    });
-    return out;
-  };
-
-  const rawLog   = parseCSV(logCSV).map(normaliseRow);
-  const rawSched = parseCSV(schedCSV).map(normaliseRow);
-
-  // ── Column validation ────────────────────────────────────────────────────
-  const REQUIRED_LOG   = ["Date","Flight_No","Dep_Airport","Dep_Time_UTC","Arr_Airport","Arr_Time_UTC","Aircraft_Reg","Operated_As","Home_Base"];
-  const REQUIRED_SCHED = ["Flight_No","STD_Local","STA_Local"];
-  if(rawLog.length === 0) throw new Error("Logbook CSV appears empty — check file format.");
-  const missingLog = REQUIRED_LOG.filter(c => rawLog[0][c] === undefined);
-  if(missingLog.length) throw new Error("Logbook CSV is missing required column(s): "+missingLog.join(", ")+". Check column names match the template.");
-  const missingSched = REQUIRED_SCHED.filter(c => rawSched[0]?.[c] === undefined);
-  if(missingSched.length) throw new Error("Schedule CSV is missing required column(s): "+missingSched.join(", ")+". Check column names match the template.");
-
-  // ── Validate Operated_As values are recognisable ─────────────────────────
-  const OPS_VALUES  = ["PIC","FO","SIC","CP","FP","TRAINING","TRG"];
-  const DH_VALUES   = ["DHF","DHT","DH","DEADHEAD"];
-  const knownOpAs   = new Set([...OPS_VALUES,...DH_VALUES]);
-  const sampleOpAs  = [...new Set(rawLog.map(r=>r.Operated_As).filter(Boolean))];
-  if(sampleOpAs.length && !sampleOpAs.some(v=>knownOpAs.has(v.toUpperCase()))) {
-    throw new Error("Operated_As column has unrecognised values: "+sampleOpAs.slice(0,5).join(", ")+". Expected values like PIC, DHF, DHT, FO. Check your logbook export settings.");
+  // Determine period
+  const dates = sorted.map(s => s.date).filter(Boolean);
+  if (dates.length) {
+    const first = new Date(dates[0]);
+    res.period = first.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
   }
 
-  const log=rawLog.sort((a,b)=>{const da=parseDate(a.Date),db=parseDate(b.Date);return da-db||t2m(a.Dep_Time_UTC)-t2m(b.Dep_Time_UTC);});
-  const sched=rawSched;
-  const svMap=buildSVLookup(svCSV);
-  const hasSV=Object.keys(svMap).length>0;
-  const homeBase=log[0]?.Home_Base||"DEL";
-  // Normalise DHF/DHT detection — handle common variations
-  const isDH=r=>{const v=(r.Operated_As||"").toUpperCase();return v==="DHF"||v==="DHT"||v==="DH"||v==="DEADHEAD";};
-  const R=rates;
-  const dhR=R.deadhead[rank],nR=R.night[rank],tsR=R.tailSwap[rank],trR=R.transit[rank],lvR=R.layover[rank];
-  const res={pilot:{rank,homeBase},period:"",sv_uploaded:hasSV,night_warnings:[],deadhead:{sectors:[],total_mins:0,amount:0},night:{sectors:[],total_mins:0,amount:0},layover:{events:[],amount:0},tailSwap:{swaps:[],count:0,amount:0},transit:{halts:[],amount:0},total:0};
-  const dates=log.map(r=>parseDate(r.Date)).filter(Boolean);
-  if(dates.length){const mn=new Date(Math.min(...dates));res.period=mn.toLocaleDateString("en-IN",{month:"long",year:"numeric"});}
-  log.filter(isDH).forEach(s=>{const sc=sched.find(r=>r.Flight_No===s.Flight_No);let bm;if(sc){let d=t2m(sc.STA_Local)-t2m(sc.STD_Local);if(d<0)d+=1440;bm=d;}else{bm=t2m(s.Block_Time);}if(!dhR||!bm)return;const amt=(bm/60)*dhR;res.deadhead.sectors.push({date:s.Date,flight:s.Flight_No,from:s.Dep_Airport,to:s.Arr_Airport,scheduled_block_mins:bm,amount:amt});res.deadhead.total_mins+=bm;res.deadhead.amount+=amt;});
-  log.filter(s=>!isDH(s)).forEach(s=>{
-    if(!nR)return;
-    const sc=sched.find(r=>r.Flight_No===s.Flight_No&&r.From_Airport===s.Dep_Airport);
-    const stdStr=sc?.STD_Local||"";
-    const stdIST=t2m(stdStr);
-    const sv=lookupSV(svMap,s.Flight_No,s.Dep_Airport,s.Arr_Airport,stdIST);
-    let nm=0,method="",svUsed=null,noSVWarning=false;
-    if(hasSV&&sv!==null&&stdStr){
-      // PAH §9.0 method: STD + SV
-      nm=nightMinsFromSTDSV(stdIST,sv);
-      method="STD+SV";svUsed=sv;
-    } else if(stdStr&&hasSV){
-      // SV uploaded but no match for this flight — flag it, fall back to actual
-      noSVWarning=true;
-      const dI=toIST(t2m(s.Dep_Time_UTC)),aI_raw=toIST(t2m(s.Arr_Time_UTC));
-      let aI=aI_raw<=dI?aI_raw+1440:aI_raw;
-      nm=[[0,360],[1440,1800]].reduce((a,[ws,we])=>a+Math.max(0,Math.min(aI,we)-Math.max(dI,ws)),0);
-      method="Actual (no SV match)";
-      res.night_warnings.push(s.Flight_No+" "+s.Dep_Airport+"→"+s.Arr_Airport+": no SV found in uploaded file");
-    } else {
-      // No SV file — use actual ATD/ATA as best estimate
-      const dI=toIST(t2m(s.Dep_Time_UTC)),aI_raw=toIST(t2m(s.Arr_Time_UTC));
-      let aI=aI_raw<=dI?aI_raw+1440:aI_raw;
-      nm=[[0,360],[1440,1800]].reduce((a,[ws,we])=>a+Math.max(0,Math.min(aI,we)-Math.max(dI,ws)),0);
-      method="Actual (no SV file)";
-    }
-    if(nm>0){
-      const amt=(nm/60)*nR;
-      const staTotal = stdIST + (sv || 0);
-      const staIST = hasSV && sv !== null
-        ? String(Math.floor(staTotal / 60) % 24).padStart(2, "0") + ":" + String(staTotal % 60).padStart(2, "0")
-        : fmtIST(s.Arr_Time_UTC);
-      res.night.sectors.push({date:s.Date,flight:s.Flight_No,from:s.Dep_Airport,to:s.Arr_Airport,std_ist:stdStr||"—",sta_ist:staIST,night_mins:Math.round(nm),amount:amt,method,sv_used:svUsed,no_sv_warning:noSVWarning});
-      res.night.total_mins+=nm;res.night.amount+=amt;
-    }
+  // Enrich sectors with schedule data
+  const enriched = sorted.map(s => {
+    const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
+    const sd = schedMap?.[key] || {};
+    return {
+      ...s,
+      std_local:    s.std_local    || sd.std_local    || null,
+      sta_local:    s.sta_local    || sd.sta_local    || null,
+      atd_local:    s.atd_local    || sd.atd_local    || null,
+      ata_local:    s.ata_local    || sd.ata_local    || null,
+      aircraft_reg: s.aircraft_reg || sd.aircraft_reg || null,
+    };
   });
-  // TAIL SWAP — PAH §6.0: OP+OP or OP+DHF within same duty period. DHT and DHF+DHF excluded.
-  // "Same duty period" includes cross-date consecutive sectors at OUTSTATION (not home base).
-  // Two sectors are consecutive if they share the same station with no intervening layover.
-  for(let i=0;i<log.length-1;i++){
-    const a=log[i],b=log[i+1];
-    if(isDH(a)&&isDH(b))continue;           // DHF+DHF excluded
-    if(["DHT"].includes(a.Operated_As)||["DHT"].includes(b.Operated_As))continue; // DHT excluded
-    if(a.Arr_Airport!==b.Dep_Airport)continue;
-    if(a.Aircraft_Reg===b.Aircraft_Reg||!tsR)continue;
-    const sameDate=parseDate(a.Date)?.getTime()===parseDate(b.Date)?.getTime();
-    const crossDate=!sameDate;
-    // For cross-date: only count if away from home base (outstation overnight within same duty)
-    // and the gap is short enough to be same duty (< layoverMinHours threshold)
-    if(crossDate){
-      if(a.Arr_Airport===homeBase)continue; // home base cross-date changes are separate duties
-      const dA=parseDate(a.Date),dB=parseDate(b.Date);
-      if(!dA||!dB)continue;
-      const dayDiff=Math.round((dB-dA)/86400000);
-      if(dayDiff>2)continue; // >2 days apart — definitely not same duty
-      // Check gap duration: if it's a layover (>layoverMinHours) it's a separate duty, not a swap
-      const gapMins=(dayDiff*1440+t2m(b.Dep_Time_UTC)-t2m(a.Arr_Time_UTC));
-      if(gapMins/60>=R.layoverMinHours)continue; // genuine layover = different duty period
+
+  // ── 1. DEADHEAD (DHF only) ────────────────────────────────────────
+  for (const s of enriched) {
+    if (!s.is_dhf) continue;
+    if (!dhR) continue;
+    let bm = 0;
+    if (s.std_local && s.sta_local) {
+      bm = t2m(s.sta_local) - t2m(s.std_local);
+      if (bm < 0) bm += 1440;
+    }
+    if (!bm) continue;
+    const amt = (bm / 60) * dhR;
+    res.deadhead.sectors.push({ date: s.date, flight: s.flight_no, from: s.dep, to: s.arr, scheduled_block_mins: bm, amount: amt });
+    res.deadhead.total_mins += bm;
+    res.deadhead.amount += amt;
+  }
+
+  // ── 2. NIGHT FLYING (operating sectors only) ─────────────────────
+  for (const s of enriched) {
+    if (s.is_dhf || s.is_dht) continue;
+    if (!nR) continue;
+    const std = s.std_local;
+    if (!std) continue;
+    const stdIST = fmtIST(null) === "05:30"
+      ? std  // already IST if AeroDataBox returns local IST
+      : std;  // AeroDataBox std_local is already local (IST for domestic)
+    const sv = getSV(svData, s.flight_no, s.dep, s.arr, stdIST);
+    const nm = sv != null ? nightMins(stdIST, sv) : 0;
+    if (nm <= 0) continue;
+    const sta = sv != null ? istStr(t2m(stdIST) + sv) : s.sta_local;
+    const amt = (nm / 60) * nR;
+    res.night.sectors.push({ date: s.date, flight: s.flight_no, from: s.dep, to: s.arr, std_ist: stdIST, sta_ist: sta, night_mins: Math.round(nm), sv_used: sv, amount: amt });
+    res.night.total_mins += nm;
+    res.night.amount += amt;
+  }
+
+  // ── 3. TAIL SWAP ─────────────────────────────────────────────────
+  const opSectors = enriched.filter(s => !s.is_dht);
+  for (let i = 0; i < opSectors.length - 1; i++) {
+    const a = opSectors[i], b = opSectors[i + 1];
+    if (a.is_dhf && b.is_dhf) continue;       // DHF+DHF excluded
+    if (!a.aircraft_reg || !b.aircraft_reg) continue;
+    if (a.aircraft_reg === b.aircraft_reg) continue;
+    if (!tsR) continue;
+    // Must be connected (arrival airport = departure airport)
+    if (a.arr !== b.dep) continue;
+    // Same calendar day, or cross-date outstation (not at home base, within layover threshold)
+    const sameDay = a.date === b.date;
+    if (!sameDay) {
+      if (a.arr === homeBase) continue;
+      const dA = new Date(a.date), dB = new Date(b.date);
+      const dayDiff = Math.round((dB - dA) / 86400000);
+      if (dayDiff > 2) continue;
+      // Cross-date gap must be within layover threshold (not a full layover)
+      const ata = t2m(a.ata_local || a.sta_local || "00:00");
+      const atd = t2m(b.atd_local || b.std_local || "00:00");
+      const gapMins = dayDiff * 1440 + atd - ata;
+      if (gapMins / 60 >= R.layoverMinHours) continue;
     }
     res.tailSwap.swaps.push({
-      date:a.Date+(crossDate?" → "+b.Date:""),
-      sector_pair:a.Flight_No+"→"+b.Flight_No,
-      station:a.Arr_Airport,
-      reg_out:a.Aircraft_Reg,reg_in:b.Aircraft_Reg,
-      is_dh_involved:isDH(a)||isDH(b),
-      cross_date:crossDate,
-      amount:tsR
+      date: sameDay ? a.date : `${a.date} → ${b.date}`,
+      sector_pair: `${a.flight_no}→${b.flight_no}`,
+      station: a.arr,
+      reg_out: a.aircraft_reg,
+      reg_in: b.aircraft_reg,
+      is_dh_involved: a.is_dhf || b.is_dhf,
+      cross_date: !sameDay,
+      amount: tsR,
     });
-    res.tailSwap.amount+=tsR;
+    res.tailSwap.amount += tsR;
   }
-  res.tailSwap.count=res.tailSwap.swaps.length;
+  res.tailSwap.count = res.tailSwap.swaps.length;
 
-  // TRANSIT — PAH §7.0: halt ≥90 mins at domestic outstation, capped 4 hrs. DHT excluded.
-  // Primary basis: SCHEDULED halt (STA→STD from schedule CSV). Actual used if:
-  //   (a) no schedule data, OR
-  //   (b) actual differs from scheduled by >15 mins AND actual ≥90 mins
-  for(let i=0;i<log.length-1;i++){
-    const a=log[i],b=log[i+1];
-    if(["DHT"].includes(a.Operated_As)||["DHT"].includes(b.Operated_As))continue; // DHT excluded
-    if(a.Arr_Airport!==b.Dep_Airport||a.Arr_Airport===homeBase)continue;
-    if(parseDate(a.Date)?.getTime()!==parseDate(b.Date)?.getTime())continue; // must be same calendar date
-    // Actual gap from logbook (UTC, then derive IST gap)
-    let actualGap=t2m(b.Dep_Time_UTC)-t2m(a.Arr_Time_UTC);
-    if(actualGap<0)actualGap+=1440;
-    // Scheduled gap from schedule CSV
-    const scA=sched.find(r=>r.Flight_No===a.Flight_No&&r.From_Airport===a.Dep_Airport);
-    const scB=sched.find(r=>r.Flight_No===b.Flight_No&&r.From_Airport===b.Dep_Airport);
-    let schedGap=null,usingScheduled=false;
-    if(scA?.STA_Local&&scB?.STD_Local){
-      let sg=t2m(scB.STD_Local)-t2m(scA.STA_Local);
-      if(sg<0)sg+=1440;
-      schedGap=sg;
+  // ── 4. TRANSIT ───────────────────────────────────────────────────
+  for (let i = 0; i < enriched.length - 1; i++) {
+    const a = enriched[i], b = enriched[i + 1];
+    if (a.is_dht || b.is_dht) continue;
+    if (a.arr !== b.dep) continue;
+    if (a.date !== b.date) continue;       // transit = same calendar day
+    if (!trR) continue;
+
+    const staA = t2m(a.sta_local || a.ata_local || "00:00");
+    const stdB = t2m(b.std_local || b.atd_local || "00:00");
+    let schedGap = staA <= stdB ? stdB - staA : stdB + 1440 - staA;
+
+    const ataA = a.ata_local ? t2m(a.ata_local) : null;
+    const atdB = b.atd_local ? t2m(b.atd_local) : null;
+    let actualGap = null;
+    if (ataA != null && atdB != null) {
+      actualGap = atdB >= ataA ? atdB - ataA : atdB + 1440 - ataA;
     }
-    let gap=actualGap,basisLabel="actual";
-    if(schedGap!==null){
-      const diff=Math.abs(actualGap-schedGap);
-      if(schedGap>=90&&diff<=15){
-        // Scheduled ≥90 and actual is close → use scheduled (PAH primary basis)
-        gap=schedGap;basisLabel="scheduled";usingScheduled=true;
-      } else if(actualGap>=90&&diff>15){
-        // Actual differs by >15 mins → use actual
-        gap=actualGap;basisLabel="actual (varied >15m)";
-      } else if(schedGap<90&&actualGap>=90&&diff>15){
-        // Scheduled <90 but actual reached ≥90 and differs >15 → use actual
-        gap=actualGap;basisLabel="actual (sched<90)";
-      } else if(schedGap>=90){
-        gap=schedGap;basisLabel="scheduled";usingScheduled=true;
-      }
+
+    let gap = schedGap, basis = "scheduled";
+    if (actualGap != null && Math.abs(actualGap - schedGap) > 15) {
+      gap = actualGap; basis = "actual (varied >15m)";
     }
-    if(gap<90||!trR)continue;
-    const bill=Math.min(gap,240),amt=(bill/60)*trR;
+
+    if (gap < 90) continue;
+    const bill = Math.min(gap, 240);
+    const amt  = (bill / 60) * trR;
     res.transit.halts.push({
-      date:a.Date,station:a.Arr_Airport,
-      arrived_ist:fmtIST(a.Arr_Time_UTC),departed_ist:fmtIST(b.Dep_Time_UTC),
-      halt_mins:Math.round(gap),actual_mins:Math.round(actualGap),
-      billable_mins:Math.round(bill),basis:basisLabel,amount:amt
+      date: a.date,
+      station: a.arr,
+      arrived_ist:   istStr(t2m(a.sta_local || a.ata_local || "00:00")),
+      departed_ist:  istStr(t2m(b.std_local || b.atd_local || "00:00")),
+      halt_mins:     Math.round(gap),
+      actual_mins:   actualGap != null ? Math.round(actualGap) : null,
+      billable_mins: Math.round(bill),
+      basis,
+      amount: amt,
     });
-    res.transit.amount+=amt;
+    res.transit.amount += amt;
   }
-  const opLog=log.filter(s=>!isDH(s));
-  for(let i=0;i<opLog.length-1;i++){const a=opLog[i],b=opLog[i+1];if(a.Arr_Airport===homeBase||b.Dep_Airport!==a.Arr_Airport)continue;const dA=parseDate(a.Date),dB=parseDate(b.Date);if(!dA||!dB||dA.getTime()===dB.getTime())continue;const gapHrs=(Math.round((dB-dA)/86400000)*1440+t2m(b.Dep_Time_UTC)-t2m(a.Arr_Time_UTC))/60;if(gapHrs<R.layoverMinHours||!lvR)continue;const baseAmt=lvR.base,extraAmt=Math.max(0,(gapHrs-24)*lvR.beyondRate);res.layover.events.push({station:a.Arr_Airport,date_in:a.Date,date_out:b.Date,check_in_ist:fmtIST(a.Arr_Time_UTC),check_out_ist:fmtIST(b.Dep_Time_UTC),duration_hrs:Math.round(gapHrs*100)/100,base_amount:baseAmt,extra_amount:extraAmt,total:baseAmt+extraAmt});res.layover.amount+=baseAmt+extraAmt;}
-  res.total=res.deadhead.amount+res.night.amount+res.layover.amount+res.tailSwap.amount+res.transit.amount;
+
+  // ── 5. LAYOVER ───────────────────────────────────────────────────
+  const opEnriched = enriched.filter(s => !s.is_dhf && !s.is_dht);
+  for (let i = 0; i < opEnriched.length - 1; i++) {
+    const a = opEnriched[i], b = opEnriched[i + 1];
+    if (a.arr === homeBase || b.dep !== a.arr) continue;
+    if (a.date === b.date) continue;
+    if (!lvR) continue;
+    const dA = new Date(a.date), dB = new Date(b.date);
+    if (!dA || !dB) continue;
+    const dayDiff = Math.round((dB - dA) / 86400000);
+    const ataM  = t2m(a.ata_local || a.sta_local || "00:00");
+    const atdM  = t2m(b.atd_local || b.std_local || "00:00");
+    const gapHrs = (dayDiff * 1440 + atdM - ataM) / 60;
+    if (gapHrs < R.layoverMinHours) continue;
+    const baseAmt   = lvR.base;
+    const extraHrs  = gapHrs > 24 ? Math.ceil(gapHrs - 24) : 0;
+    const extraAmt  = extraHrs * lvR.beyondRate;
+    res.layover.events.push({
+      station: a.arr,
+      date_in: a.date, date_out: b.date,
+      check_in_ist:  istStr(ataM),
+      check_out_ist: istStr(atdM),
+      duration_hrs: Math.round(gapHrs * 100) / 100,
+      base_amount: baseAmt, extra_amount: extraAmt, total: baseAmt + extraAmt,
+    });
+    res.layover.amount += baseAmt + extraAmt;
+  }
+
+  res.total = res.deadhead.amount + res.night.amount + res.layover.amount + res.tailSwap.amount + res.transit.amount;
   return res;
-};
+}
 
-const dlCSV = (res, pilot) => {
-  const rows=[],add=(...r)=>rows.push(r.join(","));
-  add("Crew Allowance Statement - "+res.period);
-  add("Pilot: "+pilot.name,"ID: "+pilot.empId,"Rank: "+pilot.rank);
-  add();add("DEADHEAD");add("Date","Flight","From","To","Sched Block (mins)","Amount (INR)");
-  res.deadhead.sectors.forEach(s=>add(s.date,s.flight,s.from,s.to,s.scheduled_block_mins,Math.round(s.amount)));
-  add("TOTAL","","","","",Math.round(res.deadhead.amount));add();
-  add("NIGHT FLYING (0000-0600 IST, PAH §9.0: STD + Sector Value)");add("Date","Flight","From","To","STD (IST)","Est ATA (IST)","Night Mins","SV Used","Method","Amount (INR)");
-  res.night.sectors.forEach(s=>add(s.date,s.flight,s.from,s.to,s.std_ist,s.sta_ist,s.night_mins,s.sv_used!==null?s.sv_used+"m":"—",s.method,Math.round(s.amount)));
-  add("TOTAL","","","","","","",Math.round(res.night.amount));add();
-  add("LAYOVER");add("Station","Date In","Date Out","Check-In","Check-Out","Hrs","Base","Extra","Total (INR)");
-  res.layover.events.forEach(e=>add(e.station,e.date_in,e.date_out,e.check_in_ist,e.check_out_ist,e.duration_hrs,Math.round(e.base_amount),Math.round(e.extra_amount),Math.round(e.total)));
-  add("TOTAL","","","","","","","",Math.round(res.layover.amount));add();
-  add("TAIL-SWAP");add("Date","Sectors","Reg Out","Reg In","DH?","Amount (INR)");
-  res.tailSwap.swaps.forEach(s=>add(s.date,s.sector_pair,s.reg_out,s.reg_in,s.is_dh_involved?"Yes":"No",Math.round(s.amount)));
-  add("TOTAL","","","","",Math.round(res.tailSwap.amount));add();
-  add("TRANSIT");add("Date","Station","Arrived","Departed","Halt (mins)","Actual (mins)","Basis","Billable","Amount (INR)");
-  res.transit.halts.forEach(h=>add(h.date,h.station,h.arrived_ist,h.departed_ist,h.halt_mins,h.actual_mins,h.basis,h.billable_mins,Math.round(h.amount)));
-  add("TOTAL","","","","","",Math.round(res.transit.amount));add();
-  add("GRAND TOTAL INR",Math.round(res.total));
-  const blob=new Blob([rows.join("\n")],{type:"text/csv;charset=utf-8;"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-  a.download="CrewAllowance_"+pilot.empId+"_"+res.period?.replace(/\s/g,"_")+".csv";a.click();
-};
+/* ═══════════════════════════════════════════════════════════════════
+   AERO DATABOX API  (via serverless proxy, with Supabase cache)
+═══════════════════════════════════════════════════════════════════ */
+async function fetchWithCache(flight, dep, arr, date) {
+  if (supabase) {
+    const { data } = await supabase.from("flight_schedule_cache")
+      .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", date).maybeSingle();
+    if (data) return data;
+  }
+  const url = `/api/aerodatabox?flight=${encodeURIComponent(flight)}&dep=${encodeURIComponent(dep)}&arr=${encodeURIComponent(arr)}&date=${encodeURIComponent(date)}`;
+  const resp = await fetch(url);
+  if (!resp.ok) return null;
+  const json = await resp.json();
+  if (supabase && json?.std_local) {
+    await supabase.from("flight_schedule_cache").upsert({
+      flight_no: flight, dep, arr, date,
+      std_local: json.std_local, sta_local: json.sta_local,
+      atd_local: json.atd_local, ata_local: json.ata_local,
+      aircraft_reg: json.aircraft_reg,
+      fetched_at: new Date().toISOString(),
+    }, { onConflict: "flight_no,dep,arr,date" });
+  }
+  return json;
+}
 
-const dlTemplate = (csv, name) => {
-  const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();
-};
+async function buildSchedMap(sectors, onProgress) {
+  const map = {};
+  const unique = [];
+  const seen = new Set();
+  for (const s of sectors) {
+    const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
+    if (!seen.has(key)) { seen.add(key); unique.push(s); }
+  }
+  for (let i = 0; i < unique.length; i++) {
+    const s = unique[i];
+    onProgress?.(i + 1, unique.length, s.flight_no);
+    const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
+    try {
+      const d = await fetchWithCache(s.flight_no, s.dep, s.arr, s.date);
+      if (d) map[key] = d;
+    } catch { /* skip */ }
+    if (i < unique.length - 1) await new Promise(r => setTimeout(r, 600));
+  }
+  return map;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CSV DOWNLOAD
+═══════════════════════════════════════════════════════════════════ */
+function dlCSV(res, pilot) {
+  const rows = [], add = (...r) => rows.push(r.join(","));
+  add("Crew Allowance Statement - " + res.period);
+  add("Pilot: " + pilot.name, "ID: " + pilot.emp_id, "Rank: " + pilot.rank);
+  add(); add("DEADHEAD"); add("Date","Flight","From","To","Sched Block (mins)","Amount (INR)");
+  res.deadhead.sectors.forEach(s => add(s.date, s.flight, s.from, s.to, s.scheduled_block_mins, Math.round(s.amount)));
+  add("TOTAL","","","","", Math.round(res.deadhead.amount)); add();
+  add("NIGHT FLYING (00:00–06:00 IST, PAH §9.0)"); add("Date","Flight","From","To","STD IST","STA IST","Night Mins","SV","Amount (INR)");
+  res.night.sectors.forEach(s => add(s.date, s.flight, s.from, s.to, s.std_ist, s.sta_ist, s.night_mins, s.sv_used ?? "—", Math.round(s.amount)));
+  add("TOTAL","","","","","","", Math.round(res.night.amount)); add();
+  add("LAYOVER"); add("Station","Date In","Date Out","Check-In","Check-Out","Hrs","Base","Extra","Total (INR)");
+  res.layover.events.forEach(e => add(e.station, e.date_in, e.date_out, e.check_in_ist, e.check_out_ist, e.duration_hrs, Math.round(e.base_amount), Math.round(e.extra_amount), Math.round(e.total)));
+  add("TOTAL","","","","","","","", Math.round(res.layover.amount)); add();
+  add("TAIL-SWAP"); add("Date","Sectors","Station","Reg Out","Reg In","Amount (INR)");
+  res.tailSwap.swaps.forEach(s => add(s.date, s.sector_pair, s.station, s.reg_out, s.reg_in, Math.round(s.amount)));
+  add("TOTAL","","","","", Math.round(res.tailSwap.amount)); add();
+  add("TRANSIT"); add("Date","Station","Arrived","Departed","Halt (mins)","Billable (mins)","Basis","Amount (INR)");
+  res.transit.halts.forEach(h => add(h.date, h.station, h.arrived_ist, h.departed_ist, h.halt_mins, h.billable_mins, h.basis, Math.round(h.amount)));
+  add("TOTAL","","","","","","", Math.round(res.transit.amount)); add();
+  add("GRAND TOTAL INR", Math.round(res.total));
+  const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `CrewAllowance_${pilot.emp_id}_${res.period?.replace(/\s/g, "_")}.csv`;
+  a.click();
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    DESIGN TOKENS
@@ -492,24 +406,22 @@ const C = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
-   SHARED UI
+   SHARED UI COMPONENTS
 ═══════════════════════════════════════════════════════════════════ */
 function FInput({ label, type="text", value, onChange, placeholder, autoComplete, hint, readOnly }) {
   const [f, setF] = useState(false);
   return (
     <div style={{ marginBottom: 16 }}>
       {label && <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:5 }}>{label}</label>}
-      <input
-        type={type} value={value}
+      <input type={type} value={value}
         onChange={e => onChange && onChange(e.target.value)}
         placeholder={placeholder} autoComplete={autoComplete} readOnly={readOnly}
         onFocus={() => setF(true)} onBlur={() => setF(false)}
         style={{ width:"100%", background: readOnly ? "#f8fafc" : C.white,
-          border: "1.5px solid "+(f ? C.blue : C.border), borderRadius:10,
+          border:"1.5px solid "+(f ? C.blue : C.border), borderRadius:10,
           padding:"12px 14px", color:C.text, fontFamily:"inherit", fontSize:15,
           outline:"none", transition:"all 0.15s", boxSizing:"border-box",
-          boxShadow: f ? "0 0 0 3px "+C.blueLight : "none" }}
-      />
+          boxShadow: f ? "0 0 0 3px "+C.blueLight : "none" }} />
       {hint && <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>{hint}</div>}
     </div>
   );
@@ -541,9 +453,9 @@ function Btn({ children, onClick, variant="primary", small, disabled, full=true,
   const s = disabled ? BtnS.disabled : (BtnS[variant] || BtnS.primary);
   return (
     <button onClick={disabled ? undefined : onClick}
-      style={{ ...s, width: full?"100%":"auto", padding: small?"8px 14px":"13px 20px",
-        borderRadius:10, fontFamily:"inherit", fontSize: small?12:14, fontWeight:700,
-        letterSpacing:"0.02em", cursor: disabled?"not-allowed":"pointer",
+      style={{ ...s, width:full?"100%":"auto", padding:small?"8px 14px":"13px 20px",
+        borderRadius:10, fontFamily:"inherit", fontSize:small?12:14, fontWeight:700,
+        letterSpacing:"0.02em", cursor:disabled?"not-allowed":"pointer",
         transition:"all 0.15s", display:"inline-flex", alignItems:"center",
         justifyContent:"center", gap:6, boxSizing:"border-box" }}>
       {icon && <span>{icon}</span>}{children}
@@ -552,7 +464,7 @@ function Btn({ children, onClick, variant="primary", small, disabled, full=true,
 }
 
 function Card({ children, style, color }) {
-  const b = color==="gold" ? C.goldBorder : color==="blue" ? C.blue : color==="green" ? C.green : C.border;
+  const b  = color==="gold" ? C.goldBorder : color==="blue" ? C.blue : color==="green" ? C.green : C.border;
   const bg = color==="gold" ? C.goldBg : color==="blue" ? C.blueXLight : color==="green" ? C.greenBg : C.white;
   return <div style={{ background:bg, border:"1.5px solid "+b, borderRadius:14, padding:"16px", boxShadow:C.shadow, ...style }}>{children}</div>;
 }
@@ -561,35 +473,6 @@ function Badge({ children, color="blue" }) {
   const m = { blue:{bg:C.blueLight,c:C.blue}, green:{bg:C.greenBg,c:C.green}, red:{bg:C.redBg,c:C.red}, gold:{bg:C.goldBg,c:C.goldText} };
   const t = m[color] || m.blue;
   return <span style={{ display:"inline-block", padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:t.bg, color:t.c }}>{children}</span>;
-}
-
-function DropZone({ label, icon, hint, file, onChange }) {
-  const [drag, setDrag] = useState(false);
-  const ref = useRef();
-  const handle = useCallback(f => {
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = e => onChange(f, e.target.result);
-    r.readAsText(f);
-  }, [onChange]);
-  const onDrop = useCallback(e => { e.preventDefault(); setDrag(false); handle(e.dataTransfer.files[0]); }, [handle]);
-  return (
-    <div onClick={() => ref.current.click()}
-      onDragOver={e => { e.preventDefault(); setDrag(true); }}
-      onDragLeave={() => setDrag(false)} onDrop={onDrop}
-      style={{ background: file ? C.blueXLight : drag ? C.blueLight : C.sky,
-        border: "2px dashed "+(file ? C.blueMid : drag ? C.blue : C.borderMid),
-        borderRadius:14, padding:"18px 12px", cursor:"pointer", transition:"all 0.2s", textAlign:"center" }}>
-      <div style={{ fontSize:28, marginBottom:6 }}>{icon}</div>
-      <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:3 }}>{label}</div>
-      <div style={{ fontSize:11, color:C.textMid, marginBottom:6 }}>{hint}</div>
-      {file
-        ? <div style={{ fontSize:11, color:C.blue, fontWeight:600 }}>✓ {file.name}</div>
-        : <div style={{ fontSize:11, color:C.textLo }}>Click or drag CSV here</div>}
-      <input ref={ref} type="file" accept=".csv,text/csv" style={{ display:"none" }}
-        onChange={e => { if (e.target.files[0]) handle(e.target.files[0]); }} />
-    </div>
-  );
 }
 
 function CollapsibleTable({ title, total, note, headers, rows, renderRow }) {
@@ -602,7 +485,7 @@ function CollapsibleTable({ title, total, note, headers, rows, renderRow }) {
         <span style={{ fontSize:13, fontWeight:700, color:C.navy }}>{title}</span>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <span style={{ fontSize:15, fontWeight:800, color:C.goldText }}>{fmtINR(total)}</span>
-          <span style={{ color:C.textLo, transition:"transform 0.2s", display:"inline-block", transform: open?"rotate(180deg)":"none" }}>▾</span>
+          <span style={{ color:C.textLo, transition:"transform 0.2s", display:"inline-block", transform:open?"rotate(180deg)":"none" }}>▾</span>
         </div>
       </div>
       {open && (
@@ -631,17 +514,14 @@ function CollapsibleTable({ title, total, note, headers, rows, renderRow }) {
 
 function TC({ children, i, right, gold }) {
   return (
-    <td style={{ padding:"9px 10px", background: i%2===0 ? C.white : "#f8fbff",
-      borderBottom:"1px solid "+C.border, color: gold ? C.goldText : C.text,
-      fontWeight: gold ? 700 : 400, textAlign: right ? "right" : "left", whiteSpace:"nowrap" }}>
+    <td style={{ padding:"9px 10px", background:i%2===0 ? C.white : "#f8fbff",
+      borderBottom:"1px solid "+C.border, color:gold ? C.goldText : C.text,
+      fontWeight:gold ? 700 : 400, textAlign:right ? "right" : "left", whiteSpace:"nowrap" }}>
       {children}
     </td>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   AUTH SHELL
-═══════════════════════════════════════════════════════════════════ */
 function AuthShell({ children, title, sub, wide }) {
   return (
     <div style={{ minHeight:"100vh",
@@ -655,7 +535,7 @@ function AuthShell({ children, title, sub, wide }) {
         <div style={{ fontSize:22, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
         <div style={{ fontSize:11, color:C.blue, letterSpacing:"0.12em", textTransform:"uppercase", marginTop:2, opacity:0.75 }}>{CONFIG.airline} · {CONFIG.tagline}</div>
       </div>
-      <div style={{ width:"100%", maxWidth: wide ? 520 : 420, background:C.white, borderRadius:22,
+      <div style={{ width:"100%", maxWidth:wide ? 520 : 420, background:C.white, borderRadius:22,
         boxShadow:"0 12px 48px rgba(26,111,212,0.14)", padding:"28px 24px", border:"1px solid "+C.border }}>
         <h2 style={{ margin:"0 0 4px", fontSize:20, color:C.navy, fontWeight:900, letterSpacing:"-0.01em" }}>{title}</h2>
         {sub && <p style={{ margin:"0 0 20px", fontSize:13, color:C.textMid }}>{sub}</p>}
@@ -663,9 +543,62 @@ function AuthShell({ children, title, sub, wide }) {
       </div>
       <div style={{ marginTop:24, display:"flex", gap:6, alignItems:"center", opacity:0.3 }}>
         {Array.from({ length:9 }).map((_, i) => (
-          <div key={i} style={{ width: i%3===1 ? 28 : 16, height:4, borderRadius:2, background:C.blue }} />
+          <div key={i} style={{ width:i%3===1?28:16, height:4, borderRadius:2, background:C.blue }} />
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PDF DROP ZONE  (PCSR)
+═══════════════════════════════════════════════════════════════════ */
+function PcsrDropZone({ file, onParsed, onFail }) {
+  const [drag, setDrag]       = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const ref = useRef();
+
+  const ingest = useCallback(async f => {
+    if (!f) return;
+    if (!String(f.name || "").toLowerCase().endsWith(".pdf")) {
+      onFail("Please choose a PDF file."); return;
+    }
+    setParsing(true);
+    try {
+      const { parsePcsrPdf } = await import("./pdf/pcsrParser.js");
+      const result = await parsePcsrPdf(await f.arrayBuffer());
+      onParsed({ name: f.name }, result);
+    } catch (e) {
+      onFail(e?.message || String(e));
+    } finally {
+      setParsing(false);
+    }
+  }, [onParsed, onFail]);
+
+  const onDrop = useCallback(e => { e.preventDefault(); setDrag(false); if (!parsing) ingest(e.dataTransfer.files[0]); }, [ingest, parsing]);
+
+  return (
+    <div onClick={() => !parsing && ref.current?.click()}
+      onDragOver={e => { e.preventDefault(); setDrag(true); }}
+      onDragLeave={() => setDrag(false)} onDrop={onDrop}
+      style={{ background:file ? C.blueXLight : drag ? C.blueLight : C.sky,
+        border:"2px dashed "+(file ? C.blueMid : drag ? C.blue : C.borderMid),
+        borderRadius:16, padding:"28px 20px", cursor:parsing?"wait":"pointer",
+        transition:"all 0.2s", textAlign:"center", opacity:parsing?0.75:1 }}>
+      <div style={{ fontSize:40, marginBottom:10 }}>📄</div>
+      <div style={{ fontSize:15, fontWeight:800, color:C.navy, marginBottom:4 }}>
+        {file ? "PCSR loaded ✓" : "Upload your PCSR PDF"}
+      </div>
+      <div style={{ fontSize:12, color:C.textMid, marginBottom:8 }}>
+        Personal Crew Schedule Report — both EOM and grid formats supported
+      </div>
+      {parsing
+        ? <div style={{ fontSize:12, color:C.blue, fontWeight:700 }}>Reading PDF...</div>
+        : file
+          ? <div style={{ fontSize:12, color:C.blue, fontWeight:600 }}>✓ {file.name}</div>
+          : <div style={{ fontSize:12, color:C.textLo }}>Click or drag PDF here</div>}
+      <input ref={ref} type="file" accept=".pdf,application/pdf" style={{ display:"none" }} disabled={parsing}
+        onChange={e => { if (e.target.files[0]) ingest(e.target.files[0]); }} />
     </div>
   );
 }
@@ -675,21 +608,20 @@ function AuthShell({ children, title, sub, wide }) {
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
   const steps = [
-    { icon:"📥", title:"Export from AIMS & 6eBreeze", body:"Download your monthly Pilot Logbook Report and Crew Schedule as CSV from AIMS. Also export your Sector Values from 6eBreeze → Departments – OCC → Sector Pay. Takes under two minutes." },
-    { icon:"📤", title:"Upload all three files", body:"Drop your Logbook CSV, Schedule CSV, and Sector Values CSV into the app. The Sector Values are essential for accurate Night Allowance calculation per PAH §9.0." },
-    { icon:"⚡", title:"Instant calculation", body:"Our engine applies all IndiGo allowance rules automatically: Deadhead, Night Flying, Layover, Tail-Swap, and Transit — every rupee, every rule." },
-    { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown, ready to compare against your payslip or share with your crew rep if there's a discrepancy." },
+    { icon:"📄", title:"Export your PCSR from AIMS", body:"Download your Personal Crew Schedule Report as a PDF from AIMS. Both end-of-month (EOM) tabular format and monthly grid format are supported." },
+    { icon:"⬆", title:"Upload your PCSR PDF", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
+    { icon:"⚡", title:"Instant enrichment & calculation", body:"The app fetches scheduled times and aircraft registrations automatically from AeroDataBox, then applies all IndiGo allowance rules instantly." },
+    { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown of every allowance for the month — ready to verify against your payslip." },
   ];
   const allowances = [
-    { name:"Deadhead",    icon:"🛫", desc:"Per scheduled block hour when positioned as non-operating crew", captain:"₹4,000/hr",  fo:"₹2,000/hr"  },
-    { name:"Night Flying",icon:"🌙", desc:"For each hour flown between 0000–0600 IST",                   captain:"₹2,000/hr",  fo:"₹1,000/hr"  },
-    { name:"Layover",     icon:"🏨", desc:"For stays away from home base exceeding 10h 01m",             captain:"₹3,000 base",fo:"₹1,500 base" },
-    { name:"Tail-Swap",   icon:"✈️", desc:"When aircraft registration changes between sectors in same duty", captain:"₹1,500/swap",fo:"₹750/swap"  },
-    { name:"Transit",     icon:"⏱", desc:"Pro-rata for domestic halts beyond 90 mins, up to 4 hrs",     captain:"₹1,000/hr",  fo:"₹500/hr"    },
+    { name:"Deadhead",    icon:"🛫", desc:"Per scheduled block hour when positioned as non-operating crew",       captain:"₹4,000/hr",  fo:"₹2,000/hr"  },
+    { name:"Night Flying",icon:"🌙", desc:"For each hour flown between 0000–0600 IST per PAH §9.0",              captain:"₹2,000/hr",  fo:"₹1,000/hr"  },
+    { name:"Layover",     icon:"🏨", desc:"For stays away from home base exceeding 10 hours 01 minute",          captain:"₹3,000 base",fo:"₹1,500 base" },
+    { name:"Tail-Swap",   icon:"✈️", desc:"When aircraft registration changes between consecutive sectors",       captain:"₹1,500/swap",fo:"₹750/swap"  },
+    { name:"Transit",     icon:"⏱",  desc:"Pro-rata for domestic halts between 90 mins and 4 hrs (PAH §7.0)",   captain:"₹1,000/hr",  fo:"₹500/hr"    },
   ];
   return (
     <div style={{ background:C.white, fontFamily:"'Nunito','Segoe UI',sans-serif", color:C.text }}>
-      {/* NAV */}
       <div style={{ position:"sticky", top:0, zIndex:20, background:"rgba(255,255,255,0.95)",
         backdropFilter:"blur(10px)", borderBottom:"1px solid "+C.border,
         padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
@@ -708,23 +640,19 @@ function LandingPage({ goLogin, goSignup }) {
             cursor:"pointer", fontWeight:700, fontFamily:"inherit", boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>Get started →</button>
         </div>
       </div>
-
-      {/* HERO */}
       <div style={{ background:"linear-gradient(160deg,"+C.navy+" 0%,"+C.blue+" 60%,"+C.blueMid+" 100%)",
         padding:"60px 20px 80px", textAlign:"center", position:"relative", overflow:"hidden" }}>
-        <div style={{ position:"absolute", top:-60, right:-60, width:300, height:300, borderRadius:"50%", background:"rgba(255,255,255,0.04)" }} />
-        <div style={{ position:"absolute", bottom:-80, left:-40, width:240, height:240, borderRadius:"50%", background:"rgba(255,255,255,0.03)" }} />
         <div style={{ position:"relative", maxWidth:640, margin:"0 auto" }}>
           <div style={{ display:"inline-block", background:"rgba(255,255,255,0.12)", borderRadius:20,
             padding:"4px 14px", fontSize:12, color:"rgba(255,255,255,0.9)", fontWeight:700,
-            letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:20 }}>For IndiGo Cockpit & Cabin Crew</div>
+            letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:20 }}>For IndiGo Cockpit Crew</div>
           <h1 style={{ fontSize:"clamp(28px,6vw,48px)", fontWeight:900, color:C.white,
             lineHeight:1.1, letterSpacing:"-0.02em", margin:"0 0 18px" }}>
             Know exactly what<br />allowances you're owed
           </h1>
           <p style={{ fontSize:"clamp(14px,2.5vw,18px)", color:"rgba(255,255,255,0.75)",
             maxWidth:480, margin:"0 auto 32px", lineHeight:1.6 }}>
-            Upload your AIMS exports. Get an instant, itemised breakdown of every allowance for the month — Deadhead, Night Flying, Layover, Tail-Swap, and Transit.
+            Upload your PCSR PDF. Get an instant, itemised breakdown of every allowance — Deadhead, Night Flying, Layover, Tail-Swap, and Transit.
           </p>
           <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
             <button onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
@@ -739,24 +667,20 @@ function LandingPage({ goLogin, goSignup }) {
           <div style={{ marginTop:20, fontSize:12, color:"rgba(255,255,255,0.5)" }}>No credit card required to try · Cancel anytime</div>
         </div>
       </div>
-
-      {/* STATS */}
       <div style={{ background:C.sky, borderTop:"1px solid "+C.border, borderBottom:"1px solid "+C.border,
         padding:"20px", display:"flex", justifyContent:"center", gap:"clamp(20px,4vw,60px)", flexWrap:"wrap" }}>
-        {[["5","Allowance types"],["Jan 2026","Rules in effect"],["100%","In-browser"],["CSV","AIMS compatible"]].map(([n,l]) => (
+        {[["1","File to upload"],["5","Allowance types"],["Jan 2026","Rules in effect"],["Auto","Schedule data"]].map(([n,l]) => (
           <div key={l} style={{ textAlign:"center" }}>
             <div style={{ fontSize:22, fontWeight:900, color:C.blue }}>{n}</div>
             <div style={{ fontSize:12, color:C.textMid, marginTop:2 }}>{l}</div>
           </div>
         ))}
       </div>
-
-      {/* HOW IT WORKS */}
       <div style={{ maxWidth:700, margin:"0 auto", padding:"60px 20px" }}>
         <div style={{ textAlign:"center", marginBottom:40 }}>
           <div style={{ fontSize:12, fontWeight:700, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>How it works</div>
           <h2 style={{ fontSize:"clamp(22px,4vw,32px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>
-            From AIMS export to full breakdown<br />in under 60 seconds
+            One file. Instant breakdown.
           </h2>
         </div>
         <div style={{ display:"grid", gap:16 }}>
@@ -779,14 +703,11 @@ function LandingPage({ goLogin, goSignup }) {
           ))}
         </div>
       </div>
-
-      {/* ALLOWANCES */}
       <div style={{ background:C.sky, padding:"60px 20px" }}>
         <div style={{ maxWidth:700, margin:"0 auto" }}>
           <div style={{ textAlign:"center", marginBottom:32 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>What we calculate</div>
             <h2 style={{ fontSize:"clamp(22px,4vw,30px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>All five IndiGo allowances covered</h2>
-            <p style={{ fontSize:13, color:C.textMid, marginTop:8 }}>Rates effective 1 January 2026 per the IndiGo Revised Cockpit Crew Allowances circular</p>
+            <p style={{ fontSize:13, color:C.textMid, marginTop:8 }}>Rates effective 1 January 2026</p>
           </div>
           <div style={{ display:"grid", gap:10 }}>
             {allowances.map((a, i) => (
@@ -814,20 +735,16 @@ function LandingPage({ goLogin, goSignup }) {
           </div>
         </div>
       </div>
-
-      {/* PRICING */}
       <div style={{ maxWidth:480, margin:"0 auto", padding:"60px 20px", textAlign:"center" }}>
-        <div style={{ fontSize:12, fontWeight:700, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>Pricing</div>
         <h2 style={{ fontSize:"clamp(22px,4vw,30px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em", marginBottom:24 }}>Simple, affordable, monthly</h2>
         <div style={{ background:C.white, borderRadius:20, padding:"32px 28px",
           border:"2px solid "+C.blue, boxShadow:C.shadowMd, marginBottom:20 }}>
-          <div style={{ fontSize:13, fontWeight:700, color:C.blue, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.06em" }}>Monthly Subscription</div>
           <div style={{ fontSize:48, fontWeight:900, color:C.navy, letterSpacing:"-0.02em" }}>
             ₹299<span style={{ fontSize:16, fontWeight:600, color:C.textMid }}>/month</span>
           </div>
           <div style={{ fontSize:13, color:C.textMid, margin:"12px 0 24px" }}>Per crew member · Cancel anytime</div>
           <div style={{ display:"grid", gap:8, marginBottom:24, textAlign:"left" }}>
-            {["All 5 allowance types","Captains, F/O & Cabin Crew","Instant in-browser calculation","CSV breakdown download","Rates kept up-to-date"].map(f => (
+            {["Upload only your PCSR PDF","All 5 allowance types","Auto schedule data via AeroDataBox","CSV breakdown download","Rates kept up-to-date"].map(f => (
               <div key={f} style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:C.text }}>
                 <span style={{ color:C.green, fontWeight:800, fontSize:15 }}>✓</span>{f}
               </div>
@@ -838,21 +755,15 @@ function LandingPage({ goLogin, goSignup }) {
             cursor:"pointer", fontWeight:800, fontFamily:"inherit", boxShadow:"0 3px 12px rgba(26,111,212,0.3)" }}>
             Get started →
           </button>
-          <div style={{ marginTop:12, fontSize:12, color:C.textLo }}>Have a discount code? You'll enter it at checkout.</div>
         </div>
       </div>
-
-      {/* FOOTER CTA */}
       <div style={{ background:"linear-gradient(135deg,"+C.navy+","+C.blue+")", padding:"50px 20px", textAlign:"center" }}>
         <h2 style={{ fontSize:"clamp(20px,4vw,28px)", fontWeight:900, color:C.white, letterSpacing:"-0.01em", marginBottom:12 }}>
           Ready to know what you're owed?
         </h2>
-        <p style={{ fontSize:14, color:"rgba(255,255,255,0.7)", marginBottom:28, maxWidth:400, margin:"0 auto 28px" }}>
-          Join IndiGo crew members who use Crew Allowance to verify their monthly pay.
-        </p>
         <button onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
           color:C.blue, fontSize:15, padding:"14px 32px", cursor:"pointer", fontWeight:800,
-          fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)" }}>
+          fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", marginTop:16 }}>
           Create your account →
         </button>
         <div style={{ marginTop:28, fontSize:11, color:"rgba(255,255,255,0.4)", letterSpacing:"0.06em" }}>
@@ -869,7 +780,7 @@ function LandingPage({ goLogin, goSignup }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   LOGIN
+   AUTH SCREENS (Login, Signup, Checkout, Forgot, ResetPassword)
 ═══════════════════════════════════════════════════════════════════ */
 function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
   const [email, setEmail] = useState("");
@@ -882,7 +793,6 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
     if (!supabase) { sbWarn(); setErr("Database not configured."); setBusy(false); return; }
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) { setErr("Invalid email or password."); setBusy(false); return; }
-    // Fetch profile
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
     if (!profile) { setErr("Account not found. Please contact admin."); setBusy(false); return; }
     if (!profile.is_active) { setErr("Your account is not yet active. Please wait for admin approval."); setBusy(false); return; }
@@ -910,14 +820,12 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   SIGNUP
-═══════════════════════════════════════════════════════════════════ */
 function SignupScreen({ goLogin, goLanding, goCheckout }) {
   const [name,    setName]    = useState("");
   const [email,   setEmail]   = useState("");
   const [empId,   setEmpId]   = useState("");
   const [rank,    setRank]    = useState("Captain");
+  const [base,    setBase]    = useState("DEL");
   const [pass,    setPass]    = useState("");
   const [confirm, setConfirm] = useState("");
   const [err,     setErr]     = useState("");
@@ -931,12 +839,12 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
     if (!supabase) { sbWarn(); setErr("Database not configured."); setBusy(false); return; }
     const { data, error } = await supabase.auth.signUp({ email, password: pass });
     if (error) { setErr(error.message); setBusy(false); return; }
-    // Insert profile row
     await supabase.from("profiles").insert({
-      id: data.user.id, name, emp_id: empId, rank, is_admin: false, is_active: false,
+      id: data.user.id, name, emp_id: empId, rank, home_base: base.toUpperCase().slice(0, 3),
+      is_admin: false, is_active: false,
     });
     setBusy(false);
-    goCheckout({ id: data.user.id, name, email, emp_id: empId, empId, rank });
+    goCheckout({ id: data.user.id, name, email, emp_id: empId, rank, home_base: base });
   };
 
   return (
@@ -945,6 +853,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
       <FInput label="IndiGo email address" type="email" value={email} onChange={setEmail} placeholder="Your official IndiGo email address" />
       <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your IndiGo employee number" />
       <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
+      <FInput label="Home Base (IATA)" value={base} onChange={setBase} placeholder="e.g. DEL" hint="3-letter IATA code of your home airport" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Choose a strong password (min 8 characters)" />
       <FInput label="Confirm password" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat your password" />
       {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -960,9 +869,6 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   CHECKOUT  — real Stripe Elements integration
-═══════════════════════════════════════════════════════════════════ */
 function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   const [code,     setCode]     = useState("");
   const [discount, setDiscount] = useState(null);
@@ -972,7 +878,6 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   const [payErr,   setPayErr]   = useState("");
   const [stripeReady, setStripeReady] = useState(false);
 
-  // Refs for Stripe objects
   const stripeRef      = useRef(null);
   const cardElementRef = useRef(null);
   const cardDivRef     = useRef(null);
@@ -980,73 +885,39 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   const finalPrice = discount ? Math.round(PRICE_INR * (1 - discount.pct / 100)) : PRICE_INR;
   const isFree     = finalPrice === 0;
 
-  // Load Stripe.js and mount the card element
   useEffect(() => {
     const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
-
     const mountCard = () => {
       if (!STRIPE_PK || !cardDivRef.current || cardElementRef.current) return;
-      const stripe  = window.Stripe(STRIPE_PK);
+      const stripe   = window.Stripe(STRIPE_PK);
       const elements = stripe.elements();
       const card = elements.create("card", {
-        style: {
-          base: {
-            fontFamily: "'Nunito', 'Segoe UI', sans-serif",
-            fontSize: "15px",
-            color: "#1e293b",
-            "::placeholder": { color: "#94a3b8" },
-          },
-          invalid: { color: "#c0132a" },
-        },
+        style: { base: { fontFamily:"'Nunito','Segoe UI',sans-serif", fontSize:"15px", color:"#1e293b", "::placeholder":{ color:"#94a3b8" } }, invalid:{ color:"#c0132a" } },
         hidePostalCode: true,
       });
       card.mount(cardDivRef.current);
-      stripeRef.current      = stripe;
-      cardElementRef.current = card;
-      setStripeReady(true);
+      stripeRef.current = stripe; cardElementRef.current = card; setStripeReady(true);
     };
-
     if (!window.Stripe) {
       const script = document.createElement("script");
-      script.src = "https://js.stripe.com/v3/";
-      script.onload = mountCard;
+      script.src = "https://js.stripe.com/v3/"; script.onload = mountCard;
       document.head.appendChild(script);
-    } else {
-      mountCard();
-    }
-
-    return () => {
-      // Unmount card element on cleanup to avoid double-mount
-      if (cardElementRef.current) {
-        cardElementRef.current.unmount();
-        cardElementRef.current = null;
-      }
-    };
+    } else { mountCard(); }
+    return () => { if (cardElementRef.current) { cardElementRef.current.unmount(); cardElementRef.current = null; } };
   }, []);
 
-  // Re-mount card element when switching from free → paid
   useEffect(() => {
     if (!isFree && !cardElementRef.current && window.Stripe && cardDivRef.current) {
       const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
       if (!STRIPE_PK) return;
-      const stripe   = window.Stripe(STRIPE_PK);
+      const stripe = window.Stripe(STRIPE_PK);
       const elements = stripe.elements();
       const card = elements.create("card", {
-        style: {
-          base: {
-            fontFamily: "'Nunito', 'Segoe UI', sans-serif",
-            fontSize: "15px",
-            color: "#1e293b",
-            "::placeholder": { color: "#94a3b8" },
-          },
-          invalid: { color: "#c0132a" },
-        },
+        style: { base: { fontFamily:"'Nunito','Segoe UI',sans-serif", fontSize:"15px", color:"#1e293b", "::placeholder":{ color:"#94a3b8" } }, invalid:{ color:"#c0132a" } },
         hidePostalCode: true,
       });
       card.mount(cardDivRef.current);
-      stripeRef.current      = stripe;
-      cardElementRef.current = card;
-      setStripeReady(true);
+      stripeRef.current = stripe; cardElementRef.current = card; setStripeReady(true);
     }
   }, [isFree]);
 
@@ -1058,72 +929,36 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   };
 
   const activateUser = async () => {
-    if (supabase && pendingUser?.id) {
-      await supabase.from("profiles").update({ is_active: true }).eq("id", pendingUser.id);
-    }
-    onActivate(pendingUser);
-    setDone(true);
+    if (supabase && pendingUser?.id) await supabase.from("profiles").update({ is_active: true }).eq("id", pendingUser.id);
+    onActivate(pendingUser); setDone(true);
   };
 
   const handlePay = async () => {
     setPayErr(""); setLoading(true);
-
-    // ── Free path ──────────────────────────────────────────────────
-    if (isFree) {
-      await activateUser();
-      setLoading(false);
-      return;
-    }
-
-    // ── Paid path ──────────────────────────────────────────────────
-    if (!stripeRef.current || !cardElementRef.current) {
-      setPayErr("Payment form not ready. Please wait a moment and try again.");
-      setLoading(false);
-      return;
-    }
-
+    if (isFree) { await activateUser(); setLoading(false); return; }
+    if (!stripeRef.current || !cardElementRef.current) { setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return; }
     try {
-      // 1. Ask our serverless function for a PaymentIntent client secret
       const resp = await fetch("/api/create-payment-intent", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount:       finalPrice,
-          discountCode: discount?.code || "",
-          userId:       pendingUser?.id    || "",
-          email:        pendingUser?.email || "",
-        }),
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ amount:finalPrice, discountCode:discount?.code||"", userId:pendingUser?.id||"", email:pendingUser?.email||"" }),
       });
       const { clientSecret, error: serverErr } = await resp.json();
       if (serverErr) throw new Error(serverErr);
-
-      // 2. Confirm the payment with the Stripe card element
-      const { paymentIntent, error: stripeErr } = await stripeRef.current.confirmCardPayment(
-        clientSecret,
-        { payment_method: { card: cardElementRef.current } }
-      );
-
+      const { paymentIntent, error: stripeErr } = await stripeRef.current.confirmCardPayment(clientSecret, { payment_method:{ card:cardElementRef.current } });
       if (stripeErr) throw new Error(stripeErr.message);
       if (paymentIntent.status !== "succeeded") throw new Error("Payment did not complete. Please try again.");
-
-      // 3. Activate the account
       await activateUser();
-    } catch (err) {
-      setPayErr(err.message);
-    }
-
+    } catch (err) { setPayErr(err.message); }
     setLoading(false);
   };
 
-  // ── Done state ─────────────────────────────────────────────────────
   if (done) return (
     <AuthShell title="You're all set! 🎉" sub="">
       <div style={{ textAlign:"center", padding:"8px 0 18px" }}>
-        <div style={{ width:60, height:60, borderRadius:"50%", background:C.greenBg,
-          border:"2px solid "+C.green, display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:28, margin:"0 auto 16px" }}>✓</div>
+        <div style={{ width:60, height:60, borderRadius:"50%", background:C.greenBg, border:"2px solid "+C.green,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, margin:"0 auto 16px" }}>✓</div>
         <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
-          {isFree ? "Your free account is activated and ready to use." : "Payment confirmed. Your account is now active."}
+          {isFree ? "Your free account is activated." : "Payment confirmed. Your account is now active."}
           <br />Welcome to Crew Allowance, {pendingUser?.name?.split(" ")[0]}!
         </p>
       </div>
@@ -1133,10 +968,8 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
 
   return (
     <AuthShell title="Complete your subscription" sub={PRICE_LABEL+"/month · Cancel anytime"} wide>
-
-      {/* Order summary */}
       <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:12, padding:"14px 16px", marginBottom:20 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: discount ? 8 : 0 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:discount?8:0 }}>
           <span style={{ fontSize:13, color:C.textMid }}>Crew Allowance — Monthly</span>
           <span style={{ fontSize:14, fontWeight:700, color:C.navy }}>{PRICE_LABEL}/mo</span>
         </div>
@@ -1147,87 +980,46 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
           </div>
         )}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-          paddingTop:8, borderTop:"1px solid "+C.borderMid, marginTop: discount ? 8 : 0 }}>
+          paddingTop:8, borderTop:"1px solid "+C.borderMid, marginTop:discount?8:0 }}>
           <span style={{ fontSize:14, fontWeight:800, color:C.navy }}>Total today</span>
-          <span style={{ fontSize:18, fontWeight:900, color: isFree ? C.green : C.navy }}>
-            {isFree ? "Free" : fmtINR(finalPrice)}
-          </span>
+          <span style={{ fontSize:18, fontWeight:900, color:isFree?C.green:C.navy }}>{isFree?"Free":fmtINR(finalPrice)}</span>
         </div>
       </div>
-
-      {/* Discount code */}
       <div style={{ marginBottom:20 }}>
         <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:5 }}>Discount Code</label>
         <div style={{ display:"flex", gap:8 }}>
-          <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
-            placeholder="Enter code if you have one"
-            onKeyDown={e => e.key === "Enter" && applyCode()}
-            style={{ flex:1, background:C.white,
-              border:"1.5px solid "+(codeErr ? C.red : discount ? C.green : C.border),
-              borderRadius:10, padding:"11px 14px", color:C.text,
-              fontFamily:"inherit", fontSize:14, outline:"none", letterSpacing:"0.06em" }} />
-          <button onClick={applyCode}
-            style={{ background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
-              border:"none", borderRadius:10, color:C.white, fontSize:13,
-              padding:"11px 18px", cursor:"pointer", fontWeight:700,
-              fontFamily:"inherit", whiteSpace:"nowrap" }}>Apply</button>
+          <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="Enter code if you have one"
+            onKeyDown={e => e.key==="Enter" && applyCode()}
+            style={{ flex:1, background:C.white, border:"1.5px solid "+(codeErr?C.red:discount?C.green:C.border),
+              borderRadius:10, padding:"11px 14px", color:C.text, fontFamily:"inherit", fontSize:14, outline:"none", letterSpacing:"0.06em" }} />
+          <button onClick={applyCode} style={{ background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
+            border:"none", borderRadius:10, color:C.white, fontSize:13, padding:"11px 18px",
+            cursor:"pointer", fontWeight:700, fontFamily:"inherit", whiteSpace:"nowrap" }}>Apply</button>
         </div>
         {codeErr  && <div style={{ fontSize:11, color:C.red,   marginTop:4 }}>{codeErr}</div>}
         {discount && <div style={{ fontSize:11, color:C.green, marginTop:4, fontWeight:700 }}>✓ {discount.label} applied</div>}
       </div>
-
-      {/* Stripe card element — hidden when free */}
       {!isFree && (
         <div style={{ marginBottom:16 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-            <div style={{ flex:1, height:1, background:C.border }} />
-            <span style={{ fontSize:11, color:C.textLo, whiteSpace:"nowrap" }}>Payment details</span>
-            <div style={{ flex:1, height:1, background:C.border }} />
-          </div>
-          <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border,
-            borderRadius:10, padding:"10px 14px", marginBottom:14,
-            fontSize:11, color:C.textMid, display:"flex", alignItems:"center", gap:6 }}>
-            🔒 Card details are handled directly by <strong>Stripe</strong>. We never see or store your card number.
+          <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:11, color:C.textMid }}>
+            🔒 Card details handled directly by <strong>Stripe</strong>. We never see or store your card number.
           </div>
           <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:6 }}>Card details</label>
-          {/* Stripe mounts its iframe into this div */}
-          <div ref={cardDivRef}
-            style={{ background:C.white, border:"1.5px solid "+C.border, borderRadius:10,
-              padding:"13px 14px", minHeight:46,
-              boxShadow: "0 0 0 0px "+C.blueLight, transition:"box-shadow 0.15s" }} />
-          {!stripeReady && (
-            <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Loading secure card form...</div>
-          )}
+          <div ref={cardDivRef} style={{ background:C.white, border:"1.5px solid "+C.border, borderRadius:10, padding:"13px 14px", minHeight:46 }} />
+          {!stripeReady && <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Loading secure card form...</div>}
         </div>
       )}
-
-      {payErr && (
-        <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5",
-          borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{payErr}</div>
-      )}
-
-      <Btn onClick={handlePay} variant={isFree ? "gold" : "primary"}
-        disabled={loading || (!isFree && !stripeReady)}
-        icon={loading ? "⟳" : isFree ? "✨" : "🔒"}>
-        {loading
-          ? (isFree ? "Activating..." : "Processing...")
-          : (isFree ? "Activate free account →" : "Pay "+fmtINR(finalPrice)+" & activate →")}
+      {payErr && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{payErr}</div>}
+      <Btn onClick={handlePay} variant={isFree?"gold":"primary"} disabled={loading||(!isFree&&!stripeReady)} icon={loading?"⟳":isFree?"✨":"🔒"}>
+        {loading ? (isFree?"Activating...":"Processing...") : (isFree?"Activate free account →":"Pay "+fmtINR(finalPrice)+" & activate →")}
       </Btn>
-
       <div style={{ marginTop:12, textAlign:"center" }}>
-        <button onClick={goLogin}
-          style={{ background:"none", border:"none", color:C.textLo,
-            fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
-          Already have an account? Sign in
-        </button>
+        <button onClick={goLogin} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Already have an account? Sign in</button>
       </div>
     </AuthShell>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   FORGOT PASSWORD  (fully functional via Supabase)
-═══════════════════════════════════════════════════════════════════ */
 function ForgotScreen({ goLogin }) {
   const [email, setEmail] = useState("");
   const [sent,  setSent]  = useState(false);
@@ -1237,11 +1029,7 @@ function ForgotScreen({ goLogin }) {
   const send = async () => {
     if (!email) { setErr("Please enter your email address."); return; }
     setBusy(true); setErr("");
-    if (supabase) {
-      await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: CONFIG.siteUrl,
-      });
-    }
+    if (supabase) await supabase.auth.resetPasswordForEmail(email, { redirectTo: CONFIG.siteUrl });
     setBusy(false); setSent(true);
   };
 
@@ -1251,7 +1039,7 @@ function ForgotScreen({ goLogin }) {
         <>
           <FInput label="Your registered email address" type="email" value={email} onChange={setEmail} placeholder="The email address on your account" />
           {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
-          <Btn onClick={send} disabled={busy}>{busy ? "Sending..." : "Send Reset Link"}</Btn>
+          <Btn onClick={send} disabled={busy}>{busy?"Sending...":"Send Reset Link"}</Btn>
           <div style={{ marginTop:12, textAlign:"center" }}>
             <button onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>← Back to sign in</button>
           </div>
@@ -1261,7 +1049,7 @@ function ForgotScreen({ goLogin }) {
           <div style={{ textAlign:"center", padding:"8px 0 18px" }}>
             <div style={{ fontSize:44, marginBottom:12 }}>📧</div>
             <p style={{ color:C.textMid, fontSize:14 }}>
-              If an account exists for <strong>{email}</strong>, a password reset link has been sent. Check your inbox.
+              If an account exists for <strong>{email}</strong>, a reset link has been sent. Check your inbox.
             </p>
           </div>
           <Btn onClick={goLogin} variant="ghost">← Back to Sign In</Btn>
@@ -1271,126 +1059,258 @@ function ForgotScreen({ goLogin }) {
   );
 }
 
+function ResetPasswordScreen({ goLogin }) {
+  const [pass,    setPass]    = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [err,     setErr]     = useState("");
+  const [busy,    setBusy]    = useState(false);
+  const [done,    setDone]    = useState(false);
+
+  const submit = async () => {
+    if (!pass || !confirm)    { setErr("Please fill in both fields."); return; }
+    if (pass !== confirm)     { setErr("Passwords do not match."); return; }
+    if (pass.length < 8)      { setErr("Password must be at least 8 characters."); return; }
+    if (!supabase) { setErr("Database not configured."); return; }
+    setBusy(true); setErr("");
+    const { error } = await supabase.auth.updateUser({ password: pass });
+    if (error) { setErr(error.message); setBusy(false); return; }
+    await supabase.auth.signOut();
+    setBusy(false); setDone(true);
+  };
+
+  if (done) return (
+    <AuthShell title="Password updated ✓" sub="">
+      <div style={{ textAlign:"center", padding:"8px 0 18px" }}>
+        <div style={{ width:60, height:60, borderRadius:"50%", background:C.greenBg, border:"2px solid "+C.green,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, margin:"0 auto 16px" }}>✓</div>
+        <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
+          Your password has been updated. Sign in with your new password to continue.
+        </p>
+      </div>
+      <Btn onClick={goLogin}>Sign in →</Btn>
+    </AuthShell>
+  );
+
+  return (
+    <AuthShell title="Set new password" sub="Choose a strong password for your account">
+      <FInput label="New password" type="password" value={pass} onChange={setPass} placeholder="Minimum 8 characters" />
+      <FInput label="Confirm new password" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat your new password" />
+      {err && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
+      <Btn onClick={submit} disabled={busy}>{busy?"Updating password...":"Update password →"}</Btn>
+    </AuthShell>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════
-   CALCULATOR SCREEN
+   PROFILE SCREEN
 ═══════════════════════════════════════════════════════════════════ */
-function CalcScreen({ user, rates }) {
-  const [logFile,   setLogFile]   = useState(null);
-  const [schedFile, setSchedFile] = useState(null);
-  const [svFile,    setSvFile]    = useState(null);
-  const [logCSV,    setLogCSV]    = useState("");
-  const [schedCSV,  setSchedCSV]  = useState("");
-  const [svCSV,     setSvCSV]     = useState("");
-  const [result,    setResult]    = useState(null);
-  const [err,       setErr]       = useState("");
-  const [calcRank,  setCalcRank]  = useState("Captain");
+function ProfileScreen({ user, onSave }) {
+  const [name,  setName]  = useState(user.name  || "");
+  const [empId, setEmpId] = useState(user.emp_id || "");
+  const [rank,  setRank]  = useState(user.rank  || "Captain");
+  const [base,  setBase]  = useState(user.home_base || "DEL");
+  const [err,   setErr]   = useState("");
+  const [busy,  setBusy]  = useState(false);
 
-  const eRank = user.is_admin ? calcRank : user.rank;
+  const incomplete = !name || !empId || !base;
 
-  const loadDemo = () => {
-    setLogFile({ name:"Demo_Logbook_Jan2026.csv" });
-    setSchedFile({ name:"Demo_Schedule_Jan2026.csv" });
-    setSvFile({ name:"Demo_SectorValues_Jan2026.csv" });
-    setLogCSV(SAMPLE_LOGBOOK); setSchedCSV(SAMPLE_SCHEDULE); setSvCSV(SAMPLE_SV);
-    setResult(null); setErr("");
+  const save = async () => {
+    if (!name || !empId || !base) { setErr("Name, Employee ID and Home Base are required."); return; }
+    setBusy(true); setErr("");
+    if (supabase) {
+      const { error } = await supabase.from("profiles").update({
+        name, emp_id: empId, rank, home_base: base.toUpperCase().slice(0, 3),
+      }).eq("id", user.id);
+      if (error) { setErr(error.message); setBusy(false); return; }
+    }
+    onSave({ ...user, name, emp_id: empId, rank, home_base: base.toUpperCase().slice(0, 3) });
+    setBusy(false);
   };
 
-  const calculate = () => {
-    setErr(""); setResult(null);
-    try { setResult(runCalc(logCSV, schedCSV, svCSV, eRank, rates)); }
-    catch (e) { setErr("Could not parse CSVs — check column format. " + e.message); }
+  return (
+    <div style={{ padding:"16px 16px 90px", maxWidth:500, margin:"0 auto" }}>
+      <div style={{ background:"linear-gradient(120deg,"+C.blue+","+C.navy+")", borderRadius:18,
+        padding:"20px", marginBottom:24, boxShadow:"0 4px 20px rgba(26,111,212,0.22)" }}>
+        <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>Pilot Profile</div>
+        <div style={{ fontSize:22, fontWeight:900, color:C.white }}>Complete your profile</div>
+        <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginTop:3 }}>
+          {incomplete ? "Required before you can calculate allowances." : "Your profile is complete — update as needed."}
+        </div>
+      </div>
+      {incomplete && (
+        <div style={{ padding:"12px 14px", background:C.goldBg, border:"1.5px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText, marginBottom:20 }}>
+          ⚠ Your profile is incomplete. Please fill in the fields below before calculating.
+        </div>
+      )}
+      <Card>
+        <FInput label="Full Name" value={name}  onChange={setName}  placeholder="Your name as on IndiGo ID" />
+        <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your IndiGo employee number" />
+        <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
+        <FInput label="Home Base (IATA)" value={base} onChange={v => setBase(v.toUpperCase().slice(0,3))} placeholder="e.g. DEL" hint="3-letter IATA code of your home base airport" />
+        {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
+        <Btn onClick={save} disabled={busy}>{busy?"Saving...":"Save profile →"}</Btn>
+      </Card>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CALC SCREEN  (PCSR-based, single file upload)
+═══════════════════════════════════════════════════════════════════ */
+function CalcScreen({ user, rates, onNeedProfile }) {
+  const [pcsrFile,   setPcsrFile]   = useState(null);
+  const [pcsrData,   setPcsrData]   = useState(null);   // parsed PCSR result
+  const [result,     setResult]     = useState(null);
+  const [err,        setErr]        = useState("");
+  const [phase,      setPhase]      = useState("idle"); // idle | fetching | done
+  const [progress,   setProgress]   = useState({ current:0, total:0, flight:"" });
+  const [svStatus,   setSvStatus]   = useState(null);   // "found" | "missing"
+
+  const homeBase = user.home_base || "DEL";
+  const rank     = user.rank || "Captain";
+
+  // Fetch SV data for a given month from Supabase
+  const fetchSV = async (month) => {
+    if (!supabase) return [];
+    const { data } = await supabase.from("sector_values")
+      .select("data").eq("month", month).order("uploaded_at", { ascending: false }).limit(1).maybeSingle();
+    return data?.data || [];
   };
 
-  const ready = logCSV && schedCSV;
+  const onPcsrParsed = useCallback((file, parsed) => {
+    setErr(""); setPcsrFile(file); setPcsrData(parsed); setResult(null);
+  }, []);
+
+  const calculate = async () => {
+    if (!pcsrData) return;
+    setErr(""); setResult(null); setPhase("fetching");
+
+    try {
+      // 1. Fetch SV data
+      const svData = await fetchSV(pcsrData.month);
+      setSvStatus(svData.length ? "found" : "missing");
+
+      // 2. Fetch schedule + aircraft reg from AeroDataBox (with cache)
+      const schedMap = await buildSchedMap(pcsrData.sectors, (cur, total, flight) => {
+        setProgress({ current: cur, total, flight });
+      });
+
+      // 3. Enrich sectors with parsed pilot data
+      const sectors = pcsrData.sectors.map(s => ({
+        ...s,
+        // AeroDataBox returns local IST times for domestic sectors
+        std_local: schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.std_local || null,
+        sta_local: schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.sta_local || null,
+        atd_local: s.atd_local || schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.atd_local || null,
+        ata_local: s.ata_local || schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.ata_local || null,
+        aircraft_reg: schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`]?.aircraft_reg || null,
+      }));
+
+      // 4. Run calc
+      const res = runCalc(sectors, schedMap, svData, homeBase, rank, rates);
+      setResult(res);
+      setPhase("done");
+    } catch (e) {
+      setErr(e?.message || String(e));
+      setPhase("idle");
+    }
+  };
+
+  const reset = () => {
+    setPcsrFile(null); setPcsrData(null); setResult(null);
+    setErr(""); setPhase("idle"); setProgress({ current:0, total:0, flight:"" });
+  };
+
+  const profileIncomplete = !user.home_base || !user.emp_id;
 
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:680, margin:"0 auto" }}>
-      {/* Hero */}
       <div style={{ background:"linear-gradient(120deg,"+C.blue+","+C.navy+")", borderRadius:18,
         padding:"20px", marginBottom:20, boxShadow:"0 4px 20px rgba(26,111,212,0.22)" }}>
         <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>
-          {user.is_admin ? "Admin · Test Calculator" : (user.rank + " · " + user.emp_id)}
+          {rank} · {user.emp_id || "—"} · {homeBase}
         </div>
-        <div style={{ fontSize:22, fontWeight:900, color:C.white, letterSpacing:"-0.01em" }}>
-          {user.is_admin ? "Calculator" : "Hi, " + user.name.split(" ")[0] + " 👋"}
+        <div style={{ fontSize:22, fontWeight:900, color:C.white }}>Hi, {user.name?.split(" ")[0]} 👋</div>
+        <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginTop:3 }}>
+          Upload your PCSR PDF to calculate this month's allowances.
         </div>
-        <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginTop:3 }}>Upload your CSVs to calculate monthly allowances</div>
       </div>
 
-      {/* Admin rank picker */}
-      {user.is_admin && (
-        <Card color="gold" style={{ marginBottom:16 }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.goldText, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:10 }}>⚙ Calculate as Rank</div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            {RANKS.map(r => (
-              <button key={r} onClick={() => { setCalcRank(r); setResult(null); }}
-                style={{ padding:"8px 16px", borderRadius:9, fontFamily:"inherit", fontSize:13, fontWeight:700,
-                  cursor:"pointer", border:"1.5px solid "+(calcRank===r ? C.goldText : C.borderMid),
-                  background: calcRank===r ? C.white : "transparent",
-                  color: calcRank===r ? C.goldText : C.textMid, transition:"all 0.15s" }}>
-                {r}
-              </button>
-            ))}
-          </div>
-        </Card>
+      {profileIncomplete && (
+        <div style={{ padding:"12px 14px", background:C.goldBg, border:"1.5px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText, marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+          <span>⚠ Your pilot profile is incomplete — home base or employee ID missing.</span>
+          <button onClick={onNeedProfile} style={{ background:"none", border:"1px solid "+C.goldBorder, borderRadius:8, padding:"4px 10px", color:C.goldText, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Complete profile →</button>
+        </div>
       )}
 
-      {/* Templates */}
-      <Card style={{ marginBottom:16 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:C.navy, marginBottom:4 }}>Templates & Demo Data</div>
-        <div style={{ fontSize:12, color:C.textMid, marginBottom:12 }}>
-          Download CSV templates for your AIMS exports and Sector Values, or load demo data to test.
-          <br />
-          <span style={{ color:C.blue, fontWeight:700 }}>Sector Values</span> come from: <span style={{ fontFamily:"monospace", fontSize:11 }}>6eBreeze → Departments – OCC → Sector Pay</span> — export as CSV for the month.
-        </div>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          <Btn onClick={() => dlTemplate(SAMPLE_LOGBOOK,  "Logbook_Template.csv")}  variant="ghost" small full={false} icon="↓">Logbook CSV</Btn>
-          <Btn onClick={() => dlTemplate(SAMPLE_SCHEDULE, "Schedule_Template.csv")} variant="ghost" small full={false} icon="↓">Schedule CSV</Btn>
-          <Btn onClick={() => dlTemplate(SAMPLE_SV,       "SectorValues_Template.csv")} variant="ghost" small full={false} icon="↓">Sector Values CSV</Btn>
-          <Btn onClick={loadDemo} small full={false} icon="⬦">Load Demo Data</Btn>
-        </div>
-      </Card>
+      {!result && phase !== "fetching" && (
+        <>
+          <PcsrDropZone file={pcsrFile} onParsed={onPcsrParsed} onFail={setErr} />
 
-      {/* Upload — 3 files */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
-        <DropZone label="Logbook CSV"  icon="📓" hint="Pilot Logbook Report (AIMS)"  file={logFile}   onChange={(f,csv) => { setLogFile(f);   setLogCSV(csv);   }} />
-        <DropZone label="Schedule CSV" icon="📋" hint="Crew Schedule with STD times" file={schedFile} onChange={(f,csv) => { setSchedFile(f); setSchedCSV(csv); }} />
-      </div>
-      <div style={{ marginBottom:16 }}>
-        <DropZone
-          label="Sector Values CSV 🌙"
-          icon="📊"
-          hint="From 6eBreeze → OCC → Sector Pay — required for accurate Night Allowance"
-          file={svFile}
-          onChange={(f,csv) => { setSvFile(f); setSvCSV(csv); }}
-        />
-        {!svFile && (
-          <div style={{ marginTop:6, padding:"8px 12px", background:C.goldBg, border:"1px solid "+C.goldBorder,
-            borderRadius:8, fontSize:11, color:C.goldText }}>
-            ⚠ Without Sector Values, Night Allowance is estimated from actual times — may differ from payslip.
+          {pcsrData && (
+            <div style={{ marginTop:14, padding:"12px 16px", background:C.greenBg, border:"1.5px solid "+C.green, borderRadius:10, fontSize:13, color:C.green }}>
+              <strong>Parsed:</strong> {pcsrData.sectors.length} sectors · {pcsrData.month} · Format: {pcsrData.format}
+              {pcsrData.pilot?.name && <span> · {pcsrData.pilot.name}</span>}
+            </div>
+          )}
+
+          {err && <div style={{ marginTop:12, padding:"12px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:10, color:C.red, fontSize:12 }}>{err}</div>}
+
+          <div style={{ marginTop:16 }}>
+            <Btn onClick={calculate} disabled={!pcsrData || profileIncomplete} icon="▶">
+              Calculate allowances →
+            </Btn>
+            {profileIncomplete && pcsrData && (
+              <div style={{ marginTop:6, fontSize:11, color:C.textLo, textAlign:"center" }}>Complete your profile first to enable calculation.</div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
-      <Btn onClick={calculate} disabled={!ready} icon="▶">Calculate — {eRank}</Btn>
-
-      {err && <div style={{ marginTop:12, padding:"12px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:10, color:C.red, fontSize:12 }}>{err}</div>}
+      {phase === "fetching" && (
+        <div style={{ marginTop:20, padding:"24px 20px", background:C.white, borderRadius:16, border:"1.5px solid "+C.border, textAlign:"center", boxShadow:C.shadow }}>
+          <div style={{ fontSize:32, marginBottom:12 }}>✈</div>
+          <div style={{ fontSize:15, fontWeight:800, color:C.navy, marginBottom:6 }}>Fetching schedule data…</div>
+          <div style={{ fontSize:12, color:C.textMid, marginBottom:16 }}>
+            {progress.total > 0
+              ? `${progress.current} / ${progress.total} sectors — ${progress.flight}`
+              : "Checking Supabase cache…"}
+          </div>
+          {progress.total > 0 && (
+            <div style={{ background:C.border, borderRadius:4, height:6, overflow:"hidden" }}>
+              <div style={{ width:`${(progress.current/progress.total)*100}%`, height:"100%",
+                background:"linear-gradient(90deg,"+C.blue+","+C.blueMid+")", transition:"width 0.4s" }} />
+            </div>
+          )}
+          <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>AeroDataBox API · results cached to avoid repeat calls</div>
+        </div>
+      )}
 
       {result && (
-        <div style={{ marginTop:24 }}>
+        <div style={{ marginTop:4 }}>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:12 }}>
+            <Btn onClick={reset} variant="ghost" small full={false} icon="↩">New calculation</Btn>
+          </div>
+
+          {svStatus === "missing" && (
+            <div style={{ marginBottom:14, padding:"10px 14px", background:C.goldBg, border:"1px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText }}>
+              ⚠ No Sector Values found for {result.period}. Night allowance cannot be calculated. Ask your admin to upload the SV file for this month.
+            </div>
+          )}
+
           <div style={{ background:"linear-gradient(135deg,"+C.goldText+" 0%,#8a5500 100%)", borderRadius:18,
             padding:"22px 20px", marginBottom:20, boxShadow:"0 6px 24px rgba(180,112,0,0.28)",
             display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
               <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:4 }}>Total Allowance</div>
-              <div style={{ fontSize:12, color:"rgba(255,255,255,0.65)" }}>{result.period} · {eRank}</div>
+              <div style={{ fontSize:12, color:"rgba(255,255,255,0.65)" }}>{result.period} · {rank}</div>
             </div>
             <div style={{ fontSize:32, fontWeight:900, color:C.white }}>{fmtINR(result.total)}</div>
           </div>
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
             {[["Deadhead",result.deadhead.amount,result.deadhead.sectors.length+" sectors"],
-              ["Night Flying",result.night.amount,fmtHM(result.night.total_mins)],
+              ["Night Flying",result.night.amount,result.night.sectors.length+" sectors"],
               ["Layover",result.layover.amount,result.layover.events.length+" stays"],
               ["Tail Swap",result.tailSwap.amount,result.tailSwap.count+" swaps"],
               ["Transit",result.transit.amount,result.transit.halts.length+" halts"]
@@ -1404,62 +1324,60 @@ function CalcScreen({ user, rates }) {
           </div>
 
           <div style={{ marginBottom:20 }}>
-            <Btn onClick={() => dlCSV(result, { ...user, empId: user.emp_id })} variant="ghost" icon="↓">Download Full Breakdown (CSV)</Btn>
+            <Btn onClick={() => dlCSV(result, user)} variant="ghost" icon="↓">Download Full Breakdown (CSV)</Btn>
           </div>
 
           {result.deadhead.sectors.length > 0 && (
             <CollapsibleTable title="Deadhead Allowance" total={result.deadhead.amount}
-              note={"Rate: "+fmtINR(rates.deadhead[eRank])+"/hr · Scheduled block hours used"}
+              note={"Rate: "+fmtINR(rates.deadhead[rankBucket(rank)])+"/hr · Scheduled block hours used"}
               headers={["Date","Flight","Route","Sched Block","Amount"]} rows={result.deadhead.sectors}
-              renderRow={(s,i) => (<tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.flight}</TC><TC i={i}>{s.from}→{s.to}</TC><TC i={i}>{fmtHM(s.scheduled_block_mins)}</TC><TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>)} />
+              renderRow={(s,i) => (
+                <tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.flight}</TC><TC i={i}>{s.from}→{s.to}</TC>
+                  <TC i={i}>{fmtHM(s.scheduled_block_mins)}</TC><TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>
+              )} />
           )}
           {result.night.sectors.length > 0 && (
             <CollapsibleTable title="Night Flying Allowance" total={result.night.amount}
-              note={result.sv_uploaded
-                ? "PAH §9.0 method: STD (IST) + Sector Value → intersect with 00:01–06:00 IST."
-                : "⚠ Estimated from actual times — upload Sector Values CSV for PAH-accurate calculation."}
-              headers={["Date","Flight","Route","STD","Est. ATA","Night","SV","Amount"]} rows={result.night.sectors}
+              note="PAH §9.0: STD (IST) + Sector Value → intersect with 00:00–06:00 IST"
+              headers={["Date","Flight","Route","STD","Est. ATA","Night Mins","SV","Amount"]} rows={result.night.sectors}
               renderRow={(s,i) => (
-                <tr key={i}>
-                  <TC i={i}>{s.date}</TC>
-                  <TC i={i}>{s.flight}</TC>
-                  <TC i={i}>{s.from}→{s.to}</TC>
-                  <TC i={i}>{s.std_ist}</TC>
-                  <TC i={i}>{s.sta_ist}</TC>
-                  <TC i={i}>{s.night_mins}m</TC>
-                  <TC i={i}>
-                    {s.sv_used !== null
-                      ? <Badge color="green">{s.sv_used}m</Badge>
-                      : <Badge color="gold">{s.no_sv_warning ? "no match" : "actual"}</Badge>}
-                  </TC>
-                  <TC i={i} right gold>{fmtINR(s.amount)}</TC>
-                </tr>
+                <tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.flight}</TC><TC i={i}>{s.from}→{s.to}</TC>
+                  <TC i={i}>{s.std_ist}</TC><TC i={i}>{s.sta_ist}</TC><TC i={i}>{s.night_mins}m</TC>
+                  <TC i={i}><Badge color="green">{s.sv_used}m</Badge></TC>
+                  <TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>
               )} />
-          )}
-          {result.night_warnings?.length > 0 && (
-            <div style={{ marginBottom:14, padding:"10px 14px", background:C.goldBg,
-              border:"1px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText }}>
-              <strong>⚠ Night Allowance warnings:</strong>
-              {result.night_warnings.map((w,i) => <div key={i} style={{ marginTop:4 }}>• {w}</div>)}
-            </div>
           )}
           {result.layover.events.length > 0 && (
             <CollapsibleTable title="Domestic Layover Allowance" total={result.layover.amount}
-              note="Qualifying: >10h 01m away from home base. Extra rate beyond 24h."
+              note="Qualifying: >10h 01m away from home base. Extra rate beyond 24h (rounded up to next hour)."
               headers={["Station","Date In","Date Out","Duration","Base","Extra","Total"]} rows={result.layover.events}
-              renderRow={(e,i) => (<tr key={i}><TC i={i}><strong>{e.station}</strong></TC><TC i={i}>{e.date_in}</TC><TC i={i}>{e.date_out}</TC><TC i={i}>{e.duration_hrs}h</TC><TC i={i}>{fmtINR(e.base_amount)}</TC><TC i={i}>{e.extra_amount>0?fmtINR(e.extra_amount):"—"}</TC><TC i={i} right gold>{fmtINR(e.total)}</TC></tr>)} />
+              renderRow={(e,i) => (
+                <tr key={i}><TC i={i}><strong>{e.station}</strong></TC><TC i={i}>{e.date_in}</TC><TC i={i}>{e.date_out}</TC>
+                  <TC i={i}>{e.duration_hrs}h</TC><TC i={i}>{fmtINR(e.base_amount)}</TC>
+                  <TC i={i}>{e.extra_amount>0?fmtINR(e.extra_amount):"—"}</TC><TC i={i} right gold>{fmtINR(e.total)}</TC></tr>
+              )} />
           )}
           {result.tailSwap.swaps.length > 0 && (
             <CollapsibleTable title={"Tail-Swap Allowance ("+result.tailSwap.count+")"} total={result.tailSwap.amount}
-              note="OP+OP and OP+DHF within same duty period. Cross-date outstation swaps included. DHT and DHF+DHF excluded."
-              headers={["Date","Sectors","Stn","Reg Out","Reg In","DH?","Amount"]} rows={result.tailSwap.swaps}
-              renderRow={(s,i) => (<tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.sector_pair}</TC><TC i={i}><strong>{s.station}</strong></TC><TC i={i}>{s.reg_out}</TC><TC i={i}>{s.reg_in}</TC><TC i={i}>{s.is_dh_involved?<Badge color="gold">Yes</Badge>:s.cross_date?<Badge color="blue">X-date</Badge>:"No"}</TC><TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>)} />
+              note="Aircraft registration changes between consecutive sectors in same duty. DHT and DHF+DHF excluded."
+              headers={["Date","Sectors","Stn","Reg Out","Reg In","Amount"]} rows={result.tailSwap.swaps}
+              renderRow={(s,i) => (
+                <tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.sector_pair}</TC>
+                  <TC i={i}><strong>{s.station}</strong></TC><TC i={i}>{s.reg_out}</TC><TC i={i}>{s.reg_in}</TC>
+                  <TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>
+              )} />
           )}
           {result.transit.halts.length > 0 && (
             <CollapsibleTable title="Transit Allowance" total={result.transit.amount}
-              note="PAH §7.0: scheduled STA→STD used as primary basis; actual used if differs >15 mins. Min 90 mins, capped 4 hrs. Home base excluded."
-              headers={["Date","Station","Arrived","Departed","Halt","Basis","Billable","Amount"]} rows={result.transit.halts}
-              renderRow={(h,i) => (<tr key={i}><TC i={i}>{h.date}</TC><TC i={i}><strong>{h.station}</strong></TC><TC i={i}>{h.arrived_ist}</TC><TC i={i}>{h.departed_ist}</TC><TC i={i}>{h.halt_mins}m</TC><TC i={i}><Badge color={h.basis==="scheduled"?"green":"gold"}>{h.basis}</Badge></TC><TC i={i}>{h.billable_mins}m</TC><TC i={i} right gold>{fmtINR(h.amount)}</TC></tr>)} />
+              note="PAH §7.0: scheduled halt primary; actual if differs >15 mins. Min 90 mins, capped 4 hrs."
+              headers={["Date","Station","Arrived","Departed","Halt","Billable","Basis","Amount"]} rows={result.transit.halts}
+              renderRow={(h,i) => (
+                <tr key={i}><TC i={i}>{h.date}</TC><TC i={i}><strong>{h.station}</strong></TC>
+                  <TC i={i}>{h.arrived_ist}</TC><TC i={i}>{h.departed_ist}</TC><TC i={i}>{h.halt_mins}m</TC>
+                  <TC i={i}>{h.billable_mins}m</TC>
+                  <TC i={i}><Badge color={h.basis==="scheduled"?"green":"gold"}>{h.basis}</Badge></TC>
+                  <TC i={i} right gold>{fmtINR(h.amount)}</TC></tr>
+              )} />
           )}
         </div>
       )}
@@ -1470,24 +1388,74 @@ function CalcScreen({ user, rates }) {
 /* ═══════════════════════════════════════════════════════════════════
    ADMIN SCREEN
 ═══════════════════════════════════════════════════════════════════ */
-function AdminScreen({ rates, onUpdateRates }) {
-  const [tab,      setTab]      = useState("users");
-  const [users,    setUsers]    = useState([]);
+function AdminScreen({ rates }) {
+  const [tab,   setTab]   = useState("users");
+  const [users, setUsers] = useState([]);
+  const [svMonth,    setSvMonth]    = useState("");
+  const [svFile,     setSvFile]     = useState(null);
+  const [svUploading,setSvUploading]= useState(false);
+  const [svMsg,      setSvMsg]      = useState("");
+  const [svHistory,  setSvHistory]  = useState([]);
+  const svFileRef = useRef();
 
-  const tabs = [{ id:"users", label:"Users" }, { id:"rates", label:"Current Rates" }];
+  const tabs = [
+    { id:"users",  label:"Users" },
+    { id:"sv",     label:"Sector Values" },
+    { id:"rates",  label:"Current Rates" },
+  ];
 
-  // Load users from Supabase
   useEffect(() => {
     if (!supabase) return;
-    supabase.from("profiles").select("*").order("created_at").then(({ data }) => {
-      if (data) setUsers(data);
-    });
+    if (tab === "users") {
+      supabase.from("profiles").select("*").order("created_at").then(({ data }) => { if (data) setUsers(data); });
+    }
+    if (tab === "sv") {
+      supabase.from("sector_values").select("month,uploaded_at,row_count").order("uploaded_at", { ascending: false }).limit(10)
+        .then(({ data }) => { if (data) setSvHistory(data); });
+    }
   }, [tab]);
 
   const toggleUser = async (id, currentState) => {
     if (!supabase) return;
     await supabase.from("profiles").update({ is_active: !currentState }).eq("id", id);
     setUsers(prev => prev.map(u => u.id === id ? { ...u, is_active: !currentState } : u));
+  };
+
+  const uploadSV = async () => {
+    if (!svFile || !svMonth) { setSvMsg("Select a file and enter the month (YYYY-MM)."); return; }
+    setSvUploading(true); setSvMsg("");
+    try {
+      const { read, utils } = await import("xlsx");
+      const buf = await svFile.arrayBuffer();
+      const wb = read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = utils.sheet_to_json(ws);
+      if (!rows.length) throw new Error("Excel file appears empty.");
+      // Normalise column names
+      const normRows = rows.map(r => {
+        const out = {};
+        for (const [k, v] of Object.entries(r)) {
+          const key = k.trim().replace(/\s+/g,"_");
+          out[key] = v;
+        }
+        return out;
+      });
+      if (!supabase) throw new Error("Supabase not configured.");
+      await supabase.from("sector_values").upsert({
+        month: svMonth,
+        data: normRows,
+        row_count: normRows.length,
+        uploaded_at: new Date().toISOString(),
+      }, { onConflict: "month" });
+      setSvMsg(`✓ Uploaded ${normRows.length} rows for ${svMonth}.`);
+      setSvFile(null);
+      // Refresh history
+      const { data } = await supabase.from("sector_values").select("month,uploaded_at,row_count").order("uploaded_at", { ascending: false }).limit(10);
+      if (data) setSvHistory(data);
+    } catch (e) {
+      setSvMsg("Error: " + (e?.message || String(e)));
+    }
+    setSvUploading(false);
   };
 
   return (
@@ -1503,9 +1471,8 @@ function AdminScreen({ rates, onUpdateRates }) {
           <button key={id} onClick={() => setTab(id)}
             style={{ flex:1, padding:"9px 6px", borderRadius:9, fontFamily:"inherit", fontSize:12, fontWeight:700,
               cursor:"pointer", border:"none", transition:"all 0.15s",
-              background: tab===id ? C.white : "transparent",
-              color: tab===id ? C.blue : C.textMid,
-              boxShadow: tab===id ? C.shadow : "none" }}>
+              background:tab===id ? C.white : "transparent", color:tab===id ? C.blue : C.textMid,
+              boxShadow:tab===id ? C.shadow : "none" }}>
             {label}
           </button>
         ))}
@@ -1523,12 +1490,12 @@ function AdminScreen({ rates, onUpdateRates }) {
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:14, fontWeight:700, color:C.navy, marginBottom:2 }}>{u.name}</div>
                 <div style={{ fontSize:12, color:C.textMid }}>{u.email || "—"}</div>
-                <div style={{ fontSize:11, color:C.textLo, marginTop:2 }}>ID: {u.emp_id} · {u.rank}</div>
+                <div style={{ fontSize:11, color:C.textLo, marginTop:2 }}>ID: {u.emp_id} · {u.rank} · Base: {u.home_base}</div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
                 <Badge color={u.is_active ? "green" : "red"}>{u.is_active ? "Active" : "Inactive"}</Badge>
                 {!u.is_admin && (
-                  <Btn onClick={() => toggleUser(u.id, u.is_active)} variant={u.is_active ? "danger" : "ghost"} small full={false}>
+                  <Btn onClick={() => toggleUser(u.id, u.is_active)} variant={u.is_active?"danger":"ghost"} small full={false}>
                     {u.is_active ? "Deactivate" : "Activate"}
                   </Btn>
                 )}
@@ -1536,6 +1503,56 @@ function AdminScreen({ rates, onUpdateRates }) {
               </div>
             </Card>
           ))}
+        </div>
+      )}
+
+      {tab === "sv" && (
+        <div>
+          <Card color="blue" style={{ marginBottom:16 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:8 }}>Upload Sector Values (Excel)</div>
+            <div style={{ fontSize:12, color:C.textMid, marginBottom:14, lineHeight:1.6 }}>
+              Upload the SV Excel file once per month (~22nd). All users share this data.
+              Expected columns: <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>FLTNBR, DEP, ARR, Time_Slot, SectorValue</code>
+            </div>
+            <FInput label="Month (YYYY-MM)" value={svMonth} onChange={setSvMonth} placeholder="e.g. 2026-01" hint="The month these sector values apply to" />
+            <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:14 }}>
+              <input ref={svFileRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }}
+                onChange={e => { if (e.target.files[0]) setSvFile(e.target.files[0]); }} />
+              <button onClick={() => svFileRef.current?.click()}
+                style={{ background:C.white, border:"1.5px solid "+C.borderMid, borderRadius:10,
+                  padding:"10px 16px", fontSize:13, fontWeight:700, color:C.blue, cursor:"pointer", fontFamily:"inherit" }}>
+                Choose Excel file
+              </button>
+              {svFile && <span style={{ fontSize:12, color:C.blue }}>✓ {svFile.name}</span>}
+            </div>
+            <Btn onClick={uploadSV} disabled={svUploading || !svFile || !svMonth} icon="⬆">
+              {svUploading ? "Uploading..." : "Upload SV data →"}
+            </Btn>
+            {svMsg && (
+              <div style={{ marginTop:10, padding:"10px 14px", borderRadius:8, fontSize:12,
+                background: svMsg.startsWith("✓") ? C.greenBg : C.redBg,
+                color: svMsg.startsWith("✓") ? C.green : C.red,
+                border: "1px solid " + (svMsg.startsWith("✓") ? C.green : "#fca5a5") }}>
+                {svMsg}
+              </div>
+            )}
+          </Card>
+
+          {svHistory.length > 0 && (
+            <Card>
+              <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:10 }}>Upload History</div>
+              {svHistory.map((h, i) => (
+                <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+                  padding:"10px 0", borderBottom:i<svHistory.length-1?"1px solid "+C.border:"none" }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:700, color:C.navy }}>{h.month}</div>
+                    <div style={{ fontSize:11, color:C.textLo }}>{h.row_count} rows · {new Date(h.uploaded_at).toLocaleDateString("en-IN")}</div>
+                  </div>
+                  <Badge color="green">Uploaded</Badge>
+                </div>
+              ))}
+            </Card>
+          )}
         </div>
       )}
 
@@ -1554,11 +1571,11 @@ function AdminScreen({ rates, onUpdateRates }) {
             <Card key={lbl} style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:C.blue, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:10 }}>{lbl}</div>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-                {RANKS.map(r => (
+                {["Captain","First Officer","Cabin Crew"].map(r => (
                   <div key={r} style={{ textAlign:"center", padding:"10px 6px", background:C.sky, borderRadius:10 }}>
                     <div style={{ fontSize:10, color:C.textMid, marginBottom:5, fontWeight:600 }}>{r}</div>
-                    <div style={{ fontSize:16, fontWeight:900, color: obj[r] ? C.navy : C.textLo }}>
-                      {obj[r] ? fmtINR(obj[r]) : <span style={{ fontSize:12 }}>TBD</span>}
+                    <div style={{ fontSize:16, fontWeight:900, color:obj[r] ? C.navy : C.textLo }}>
+                      {obj[r] ? fmtINR(obj[r]) : <span style={{ fontSize:12 }}>N/A</span>}
                     </div>
                   </div>
                 ))}
@@ -1567,7 +1584,7 @@ function AdminScreen({ rates, onUpdateRates }) {
           ))}
           <div style={{ padding:"12px 16px", background:C.goldBg, border:"1.5px solid "+C.goldBorder,
             borderRadius:12, fontSize:12, color:C.goldText, lineHeight:1.6, marginTop:8 }}>
-            <strong>To update rates:</strong> contact your administrator. Rates are updated directly in the application code when a new IndiGo circular is issued.
+            <strong>To update rates:</strong> edit DEFAULT_RATES in the app source when a new IndiGo circular is issued.
           </div>
         </div>
       )}
@@ -1576,79 +1593,20 @@ function AdminScreen({ rates, onUpdateRates }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   RESET PASSWORD SCREEN
-═══════════════════════════════════════════════════════════════════ */
-function ResetPasswordScreen({ goLogin }) {
-  const [pass,    setPass]    = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [err,     setErr]     = useState("");
-  const [busy,    setBusy]    = useState(false);
-  const [done,    setDone]    = useState(false);
-
-  const submit = async () => {
-    if (!pass || !confirm)    { setErr("Please fill in both fields.");           return; }
-    if (pass !== confirm)     { setErr("Passwords do not match.");               return; }
-    if (pass.length < 8)      { setErr("Password must be at least 8 characters."); return; }
-    if (!supabase) { setErr("Database not configured."); return; }
-    setBusy(true); setErr("");
-    const { error } = await supabase.auth.updateUser({ password: pass });
-    if (error) { setErr(error.message); setBusy(false); return; }
-    // Sign out so user does a clean login with new password
-    await supabase.auth.signOut();
-    setBusy(false); setDone(true);
-  };
-
-  if (done) return (
-    <AuthShell title="Password updated ✓" sub="">
-      <div style={{ textAlign:"center", padding:"8px 0 18px" }}>
-        <div style={{ width:60, height:60, borderRadius:"50%", background:C.greenBg,
-          border:"2px solid "+C.green, display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:28, margin:"0 auto 16px" }}>✓</div>
-        <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
-          Your password has been updated successfully. Sign in with your new password to continue.
-        </p>
-      </div>
-      <Btn onClick={goLogin}>Sign in →</Btn>
-    </AuthShell>
-  );
-
-  return (
-    <AuthShell title="Set new password" sub="Choose a strong password for your account">
-      <FInput
-        label="New password" type="password" value={pass} onChange={setPass}
-        placeholder="Minimum 8 characters" />
-      <FInput
-        label="Confirm new password" type="password" value={confirm} onChange={setConfirm}
-        placeholder="Repeat your new password" />
-      {err && (
-        <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5",
-          borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>
-      )}
-      <Btn onClick={submit} disabled={busy}>
-        {busy ? "Updating password..." : "Update password →"}
-      </Btn>
-    </AuthShell>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   ROOT APP  — session persistence via Supabase
+   ROOT APP
 ═══════════════════════════════════════════════════════════════════ */
 export default function App() {
   const [screen,      setScreen]      = useState("loading");
   const [user,        setUser]        = useState(null);
   const [tab,         setTab]         = useState("calc");
-  const [rates,       setRates]       = useState(DEFAULT_RATES);
+  const [rates]                       = useState(DEFAULT_RATES);
   const [pendingUser, setPendingUser] = useState(null);
 
-  // Restore session on mount
   useEffect(() => {
-    if (!supabase) { setScreen("landing"); return; }
-
+    if (!supabase) { Promise.resolve().then(() => setScreen("landing")); return; }
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        const { data: profile } = await supabase
-          .from("profiles").select("*").eq("id", session.user.id).single();
+        const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
         if (profile && profile.is_active) {
           setUser({ ...profile, email: session.user.email });
           setTab(profile.is_admin ? "admin" : "calc");
@@ -1660,18 +1618,10 @@ export default function App() {
         setScreen("landing");
       }
     });
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Supabase fires this when the user arrives via a password-reset link
-      if (event === "PASSWORD_RECOVERY") {
-        setScreen("reset-password");
-        return;
-      }
-      if (event === "SIGNED_OUT" || !session) {
-        setUser(null); setScreen("landing");
-      }
+      if (event === "PASSWORD_RECOVERY") { setScreen("reset-password"); return; }
+      if (event === "SIGNED_OUT" || !session) { setUser(null); setScreen("landing"); }
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
@@ -1680,18 +1630,17 @@ export default function App() {
     setTab(u.is_admin ? "admin" : "calc");
     setScreen("app");
   };
-
   const onLogout = async () => {
     if (supabase) await supabase.auth.signOut();
     setUser(null); setScreen("landing");
   };
-
-  const onActivate = u => setPendingUser(u); // user activates after payment
-
-  const goCheckout = u => { setPendingUser(u); setScreen("checkout"); };
+  const onActivate   = u => setPendingUser(u);
+  const goCheckout   = u => { setPendingUser(u); setScreen("checkout"); };
+  const onProfileSave = u => { setUser(u); setTab("calc"); };
 
   const nav = [
-    { id:"calc",  icon:"🧮", label:"Calculator" },
+    { id:"calc",    icon:"🧮", label:"Calculator" },
+    { id:"profile", icon:"👤", label:"Profile"    },
     ...(user?.is_admin ? [{ id:"admin", icon:"⚙", label:"Admin" }] : []),
   ];
 
@@ -1720,15 +1669,12 @@ export default function App() {
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
 
-      {/* Top bar */}
       <div style={{ background:C.white, borderBottom:"1px solid "+C.border, padding:"12px 16px",
         display:"flex", alignItems:"center", justifyContent:"space-between",
         position:"sticky", top:0, zIndex:20, boxShadow:"0 1px 8px rgba(26,111,212,0.07)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ width:36, height:36, borderRadius:11,
-            background:"linear-gradient(135deg,"+C.blue+","+C.navy+")",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            fontSize:18, boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
+          <div style={{ width:36, height:36, borderRadius:11, background:"linear-gradient(135deg,"+C.blue+","+C.navy+")",
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
           <div>
             <div style={{ fontSize:16, fontWeight:900, color:C.navy, letterSpacing:"-0.02em", lineHeight:1 }}>{APP_NAME}</div>
             <div style={{ fontSize:9, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", opacity:0.75 }}>{CONFIG.airline}</div>
@@ -1741,11 +1687,11 @@ export default function App() {
       </div>
 
       <div style={{ animation:"fadeUp 0.25s ease" }}>
-        {tab === "calc"  && <CalcScreen  user={user} rates={rates} />}
-        {tab === "admin" && <AdminScreen rates={rates} onUpdateRates={setRates} />}
+        {tab === "calc"    && <CalcScreen    user={user} rates={rates} onNeedProfile={() => setTab("profile")} />}
+        {tab === "profile" && <ProfileScreen user={user} onSave={onProfileSave} />}
+        {tab === "admin"   && <AdminScreen   rates={rates} />}
       </div>
 
-      {/* Bottom nav */}
       <div style={{ position:"fixed", bottom:0, left:0, right:0, background:C.white,
         borderTop:"1px solid "+C.border, display:"flex", zIndex:20,
         boxShadow:"0 -2px 16px rgba(26,111,212,0.08)",
@@ -1753,8 +1699,8 @@ export default function App() {
         {nav.map(({ id, icon, label }) => (
           <button key={id} onClick={() => setTab(id)}
             style={{ flex:1, padding:"10px 8px 12px", background:"transparent", border:"none",
-              color: tab===id ? C.blue : C.textLo, cursor:"pointer", transition:"all 0.15s",
-              borderTop: "2.5px solid "+(tab===id ? C.blue : "transparent") }}>
+              color:tab===id ? C.blue : C.textLo, cursor:"pointer", transition:"all 0.15s",
+              borderTop:"2.5px solid "+(tab===id ? C.blue : "transparent") }}>
             <div style={{ fontSize:22, marginBottom:2 }}>{icon}</div>
             <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.04em", textTransform:"uppercase" }}>{label}</div>
           </button>
@@ -1768,11 +1714,12 @@ export default function App() {
             {user?.name?.split(" ").map(w => w[0]).slice(0, 2).join("")}
           </div>
           <div style={{ fontSize:9, fontWeight:700, color:C.textLo, letterSpacing:"0.04em", textTransform:"uppercase" }}>
-            {user?.rank === "First Officer" ? "F/O" : user?.rank === "Captain" ? "Capt" : user?.is_admin ? "Admin" : user?.rank?.split(" ")[0]}
+            {user?.rank === "First Officer" || user?.rank === "Senior First Officer" ? "F/O"
+              : user?.rank === "Captain" || user?.rank === "Senior Captain" ? "Capt"
+              : user?.is_admin ? "Admin" : user?.rank?.split(" ")[0]}
           </div>
         </div>
       </div>
     </div>
   );
 }
-
