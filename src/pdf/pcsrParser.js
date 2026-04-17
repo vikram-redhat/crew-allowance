@@ -358,6 +358,9 @@ export async function parsePcsrPdf(buffer) {
     result = parseGrid(rawText, rawText);
   }
 
+  // Attach first 3000 chars of raw text to help diagnose parse failures
+  result._rawSample = rawText.slice(0, 3000);
+
   if (!result.sectors.length) {
     throw new Error(
       `No sectors found in PCSR PDF (detected format: ${format}). ` +

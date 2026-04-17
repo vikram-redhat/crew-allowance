@@ -1249,9 +1249,17 @@ function CalcScreen({ user, rates, onNeedProfile }) {
           <PcsrDropZone file={pcsrFile} onParsed={onPcsrParsed} onFail={setErr} />
 
           {pcsrData && (
-            <div style={{ marginTop:14, padding:"12px 16px", background:C.greenBg, border:"1.5px solid "+C.green, borderRadius:10, fontSize:13, color:C.green }}>
+            <div style={{ marginTop:14, padding:"12px 16px", background: pcsrData.sectors.length < 3 ? C.goldBg : C.greenBg, border:"1.5px solid "+(pcsrData.sectors.length < 3 ? C.goldBorder : C.green), borderRadius:10, fontSize:13, color: pcsrData.sectors.length < 3 ? C.goldText : C.green }}>
               <strong>Parsed:</strong> {pcsrData.sectors.length} sectors · {pcsrData.month} · Format: {pcsrData.format}
               {pcsrData.pilot?.name && <span> · {pcsrData.pilot.name}</span>}
+              {pcsrData.sectors.length < 3 && pcsrData._rawSample && (
+                <details style={{ marginTop:8 }}>
+                  <summary style={{ cursor:"pointer", fontSize:11, fontWeight:700 }}>Show raw PDF text (for debugging)</summary>
+                  <pre style={{ marginTop:8, fontSize:10, whiteSpace:"pre-wrap", wordBreak:"break-all", background:"rgba(0,0,0,0.05)", padding:8, borderRadius:6, maxHeight:300, overflow:"auto", color:C.text }}>
+                    {pcsrData._rawSample}
+                  </pre>
+                </details>
+              )}
             </div>
           )}
 
