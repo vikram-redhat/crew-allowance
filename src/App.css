@@ -25,6 +25,11 @@ select option {
   background: white;
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1;   }
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;

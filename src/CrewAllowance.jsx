@@ -945,7 +945,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
   const [pcsrData,   setPcsrData]   = useState(null);   // parsed PCSR result
   const [result,     setResult]     = useState(null);
   const [err,        setErr]        = useState("");
-  const [phase,      setPhase]      = useState("idle"); // idle | fetching | done
+  const [phase,      setPhase]      = useState("idle"); // idle | fetching | calculating | done
   const [progress,   setProgress]   = useState({ current:0, total:0, flight:"" });
   const [svStatus,   setSvStatus]   = useState(null);   // "found" | "missing"
   const [apiStats,   setApiStats]   = useState(null);   // { fetched, cached, failed }
@@ -980,16 +980,25 @@ function CalcScreen({ user, rates, onNeedProfile }) {
         (cur, total, flight) => setProgress({ current: cur, total, flight })
       );
       setApiStats({ fetched, cached, failed });
+      console.log("[calculate] AeroDataBox done — fetched:", fetched, "cached:", cached, "failed:", failed);
+      console.log("[calculate] schedMap keys:", Object.keys(schedMap).length);
 
       // 3. Convert PDF to base64 for Claude
+      setPhase("calculating");
+      console.log("[calculate] Converting PDF to base64…");
       const pdfBase64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload  = () => resolve(reader.result.split(",")[1]);
+        reader.onload  = () => {
+          const b64 = reader.result.split(",")[1];
+          console.log("[calculate] PDF base64 length:", b64?.length, "bytes:", Math.round(b64?.length * 0.75));
+          resolve(b64);
+        };
         reader.onerror = reject;
         reader.readAsDataURL(pcsrFile);
       });
 
       // 4. Send to Claude via /api/calculate
+      console.log("[calculate] Calling /api/calculate…");
       const resp = await fetch("/api/calculate", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
@@ -1001,11 +1010,18 @@ function CalcScreen({ user, rates, onNeedProfile }) {
           rates,
         }),
       });
+      console.log("[calculate] /api/calculate responded — status:", resp.status);
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({ error: resp.statusText }));
+        console.error("[calculate] API error body:", errBody);
         throw new Error(errBody.error || `API error ${resp.status}`);
       }
       const res = await resp.json();
+      console.log("[calculate] Result received — total:", res.total, "period:", res.period,
+        "deadhead sectors:", res.deadhead?.sectors?.length,
+        "layover events:", res.layover?.events?.length,
+        "transit halts:", res.transit?.halts?.length,
+        "tailSwap count:", res.tailSwap?.count);
 
       // Ensure period is set (Claude may return it; fall back to parsed header)
       if (!res.period && pcsrData.month) {
@@ -1049,7 +1065,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
         </div>
       )}
 
-      {!result && phase !== "fetching" && (
+      {!result && phase !== "fetching" && phase !== "calculating" && (
         <>
           <PcsrDropZone file={pcsrFile} onParsed={onPcsrParsed} onFail={setErr} />
 
@@ -1155,6 +1171,19 @@ function CalcScreen({ user, rates, onNeedProfile }) {
             </div>
           )}
           <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>AeroDataBox API · results cached to avoid repeat calls</div>
+        </div>
+      )}
+
+      {phase === "calculating" && (
+        <div style={{ marginTop:20, padding:"24px 20px", background:C.white, borderRadius:16, border:"1.5px solid "+C.border, textAlign:"center", boxShadow:C.shadow }}>
+          <div style={{ fontSize:32, marginBottom:12 }}>🤖</div>
+          <div style={{ fontSize:15, fontWeight:800, color:C.navy, marginBottom:6 }}>Calculating allowances…</div>
+          <div style={{ fontSize:12, color:C.textMid, marginBottom:16 }}>Claude is reading your PCSR and applying PAH rules. This takes 20–40 seconds.</div>
+          <div style={{ background:C.border, borderRadius:4, height:6, overflow:"hidden" }}>
+            <div style={{ width:"100%", height:"100%", background:"linear-gradient(90deg,"+C.blue+","+C.blueMid+")",
+              animation:"pulse 1.8s ease-in-out infinite", opacity:0.7 }} />
+          </div>
+          <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>Claude Sonnet · reading PDF + applying all 5 allowance rules</div>
         </div>
       )}
 
