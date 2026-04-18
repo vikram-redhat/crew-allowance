@@ -257,7 +257,16 @@ function parseGrid(text, allPagesText) {
 
   // ── 1. Other Crew section: date + flight_no + DHF/DHT per sector ──────────
   if (otherCrewIdx !== -1) {
-    const section = flat.slice(otherCrewIdx);
+    // Stop before Training/Hotel/Transfer sections that follow Other Crew —
+    // those sections contain time ranges (e.g. "1603 - 1835") that ROW_RE
+    // would misread as flight numbers.
+    const ocBoundary = flat.slice(otherCrewIdx).search(
+      /\b(?:Training\s+Details|Hotel\s+Details|Transfer\s+Details)\b/i
+    );
+    const section = flat.slice(
+      otherCrewIdx,
+      ocBoundary !== -1 ? otherCrewIdx + ocBoundary : flat.length
+    );
 
     // Each row starts with: DD/MM/YY[YY]   flight_no   [details...]
     const ROW_RE = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d{3,5})\s+/g;
@@ -293,20 +302,22 @@ function parseGrid(text, allPagesText) {
   }
 
   // ── 2. Grid page 1: flight_no + dep + arr + actual times ─────────────────
-  // Format: flight_no A[atd] [*]DEP [→ ↓ spaces] ARR A[ata] [[type]]
+  // Format: flight_no [A]atd [*]DEP [→ ↓ spaces] ARR [A]ata
+  // "A" prefix = actual time; no prefix = scheduled/unknown.
+  // Arrival time is optional (overnight sectors may span two columns in the grid).
+  // DEP→ARR gap widened to 30 to handle column-boundary linearisation artefacts.
   const page1Text = otherCrewIdx !== -1 ? flat.slice(0, otherCrewIdx) : flat;
-  // \u2192 = →, \u2193 = ↓ (continuation arrows in calendar grid for DHF sectors)
-  const G_RE = /\b(\d{3,5})\s+A(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,12}([A-Z]{3})\s+A(\d{1,2}:\d{2})/gu;
+  const G_RE = /\b(\d{3,5})\s+(A?)(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,30}([A-Z]{3})\s{0,20}(?:(A?)(\d{1,2}:\d{2}))?/gu;
   const gridSectors = [];
   let gm;
   while ((gm = G_RE.exec(page1Text)) !== null) {
     gridSectors.push({
       flight_no: normFlt(gm[1]),
-      atd_local: hhmm(gm[2]),
-      dep: gm[4].toUpperCase(),
-      arr: gm[5].toUpperCase(),
-      ata_local: hhmm(gm[6]),
-      star: gm[3] === "*",
+      atd_local: gm[2] === "A" ? hhmm(gm[3]) : null,
+      dep: gm[5].toUpperCase(),
+      arr: gm[6].toUpperCase(),
+      ata_local: (gm[7] === "A" && gm[8]) ? hhmm(gm[8]) : null,
+      star: gm[4] === "*",
     });
   }
 
@@ -334,6 +345,29 @@ function parseGrid(text, allPagesText) {
         atd_local: gs?.atd_local || null,
         ata_local: gs?.ata_local || null,
       });
+    }
+
+    // Bug fix: if a flight has more grid legs than OC entries (same flight_no,
+    // multiple dep→arr pairs e.g. 6E6458 DIB→GAU then GAU→AMD), emit the
+    // unconsumed legs using the last matched OC entry for date/DHF/DHT.
+    for (const [fltNo, gridList] of gridByFlt) {
+      const used = usedCount.get(fltNo) || 0;
+      if (used >= gridList.length) continue;
+      const ocMatches = ocSectors.filter(oc => oc.flight_no === fltNo);
+      const refOC = ocMatches[ocMatches.length - 1] || null;
+      for (let k = used; k < gridList.length; k++) {
+        const gs = gridList[k];
+        sectors.push({
+          date:      refOC?.date || `${year}-${String(mo).padStart(2,"0")}-01`,
+          flight_no: fltNo,
+          dep:       gs.dep,
+          arr:       gs.arr,
+          is_dhf:    refOC?.is_dhf || gs.star || false,
+          is_dht:    refOC?.is_dht || false,
+          atd_local: gs.atd_local,
+          ata_local: gs.ata_local,
+        });
+      }
     }
   } else if (gridSectors.length) {
     // No OC section — use grid sectors, dates unknown (placeholder first of month)
