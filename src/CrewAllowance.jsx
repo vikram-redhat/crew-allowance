@@ -126,8 +126,10 @@ function groupIntoDuties(sectors) {
   for (let i = 1; i < sectors.length; i++) {
     const prev = sectors[i - 1];
     const curr = sectors[i];
-    const ata = prev.ata_local;
-    const atd = curr.atd_local;
+    // Use actuals for boundary detection; fall back to scheduled when actuals are missing
+    // so that a null-ATA sector doesn't incorrectly split a duty in two.
+    const ata = prev.ata_local || prev.sta_local;
+    const atd = curr.atd_local || curr.std_local;
     let gap = Infinity;
     if (ata && atd && prev.date && curr.date) {
       const dayDiff = Math.round((new Date(curr.date) - new Date(prev.date)) / 86400000);
@@ -215,10 +217,9 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
   for (const s of enriched) {
     if (s.is_dhf || s.is_dht) continue;
     if (!nR) continue;
-    // Prefer scheduled STD; fall back to actual departure time
-    const std = s.std_local || s.atd_local;
-    if (!std) continue;
-    const stdIST = std;  // AeroDataBox std_local and PCSR atd_local are both local IST
+    // PAH §9.0: must use scheduled departure (STD), never actual (ATD)
+    const stdIST = s.std_local;
+    if (!stdIST) continue;
     const sv = getSV(svData, s.flight_no, s.dep, s.arr, stdIST);
     const nm = sv != null ? nightMins(stdIST, sv) : 0;
     if (nm <= 0) continue;
@@ -313,9 +314,10 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
     const last  = duties[i].sectors.at(-1);
     const first = duties[i + 1].sectors[0];
 
-    const layoverStation = last.arr;
-    if (layoverStation === homeBase) continue;
-    if (first.dep !== layoverStation) continue;
+    const layoverStation = last.arr?.trim().toUpperCase();
+    const homeBaseNorm   = homeBase?.trim().toUpperCase();
+    if (!layoverStation || layoverStation === homeBaseNorm) continue;
+    if (first.dep?.trim().toUpperCase() !== layoverStation) continue;
     if (!lvR) continue;
 
     const chocksOn  = last.ata_local;   // actual ATA from PCSR only
