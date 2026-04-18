@@ -1342,6 +1342,33 @@ function CalcScreen({ user, rates, onNeedProfile }) {
               {pcsrData.sectors.length >= 1 && (
                 <details style={{ marginTop:8 }}>
                   <summary style={{ cursor:"pointer", fontSize:11, fontWeight:700 }}>Show parsed sectors (debug)</summary>
+                  <div style={{ marginTop:8, marginBottom:4 }}>
+                    <button
+                      onClick={() => {
+                        const fmt = t => t ? t.slice(0,5) : "";
+                        const rows = [
+                          ["#","Date","Flight","Dep","Arr","DHF","DHT","ATD","ATA"],
+                          ...pcsrData.sectors.map((s, i) => [
+                            i + 1,
+                            s.date,
+                            s.flight_no,
+                            s.dep,
+                            s.arr,
+                            s.is_dhf ? "true" : "false",
+                            s.is_dht ? "true" : "false",
+                            fmt(s.atd_local),
+                            fmt(s.ata_local),
+                          ])
+                        ];
+                        const csv = rows.map(r => r.join(",")).join("\n");
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv" }));
+                        a.download = "sectors.csv";
+                        a.click();
+                      }}
+                      style={{ fontSize:11, padding:"3px 10px", borderRadius:5, border:"1px solid rgba(0,0,0,0.2)", background:"rgba(0,0,0,0.05)", cursor:"pointer" }}
+                    >Download CSV</button>
+                  </div>
                   <div style={{ marginTop:8, overflowX:"auto" }}>
                     <table style={{ width:"100%", borderCollapse:"collapse", fontSize:10, color:C.text, background:"rgba(0,0,0,0.04)", borderRadius:6 }}>
                       <thead>
