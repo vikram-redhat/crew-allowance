@@ -133,7 +133,11 @@ function groupIntoDuties(sectors) {
     let gap = Infinity;
     if (ata && atd && prev.date && curr.date) {
       const dayDiff = Math.round((new Date(curr.date) - new Date(prev.date)) / 86400000);
-      gap = dayDiff * 1440 + t2m(atd) - t2m(ata);
+      // If the previous sector crossed midnight (ATA earlier in the clock than ATD),
+      // the actual landing was on prev.date+1 — subtract that extra day from the gap.
+      const prevAtd = prev.atd_local || prev.std_local;
+      const crossesMidnight = prevAtd && t2m(ata) < t2m(prevAtd);
+      gap = (dayDiff - (crossesMidnight ? 1 : 0)) * 1440 + t2m(atd) - t2m(ata);
     }
     if (gap >= 601) {
       duties.push([curr]);
@@ -234,6 +238,9 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
     res.night.amount += amt;
   }
 
+  // Duties drive both transit and layover — compute once up front.
+  const duties = groupIntoDuties(validEnriched);
+
   // ── 3. TAIL SWAP ─────────────────────────────────────────────────
   const opSectors = validEnriched.filter(s => !s.is_dht);
   for (let i = 0; i < opSectors.length - 1; i++) {
@@ -272,48 +279,67 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
   res.tailSwap.count = res.tailSwap.swaps.length;
 
   // ── 4. TRANSIT ───────────────────────────────────────────────────
-  for (let i = 0; i < validEnriched.length - 1; i++) {
-    const a = validEnriched[i], b = validEnriched[i + 1];
-    if (a.is_dht || b.is_dht) continue;
-    if (a.arr !== b.dep) continue;
-    if (a.date !== b.date) continue;       // transit = same calendar day
-    if (!trR) continue;
+  // Only consecutive sectors within the same duty qualify for transit.
+  // A gap > 8 hours within a duty still disqualifies transit (different crews / rest).
+  if (trR) {
+    for (const duty of duties) {
+      const ss = duty.sectors;
+      for (let i = 0; i < ss.length - 1; i++) {
+        const a = ss[i], b = ss[i + 1];
+        if (a.is_dht || b.is_dht) continue;
+        if (a.arr !== b.dep) continue;
 
-    const staA = t2m(a.sta_local || a.ata_local || "00:00");
-    const stdB = t2m(b.std_local || b.atd_local || "00:00");
-    let schedGap = staA <= stdB ? stdB - staA : stdB + 1440 - staA;
+        // Compute gap accounting for midnight crossing on sector a
+        const aAtd = a.atd_local || a.std_local;
+        const ataRaw  = a.ata_local || a.sta_local;
+        const dayDiff = Math.round((new Date(b.date) - new Date(a.date)) / 86400000);
+        const crossesMidnight = ataRaw && aAtd && t2m(ataRaw) < t2m(aAtd);
+        const adjDays = dayDiff - (crossesMidnight ? 1 : 0);
 
-    const ataA = a.ata_local ? t2m(a.ata_local) : null;
-    const atdB = b.atd_local ? t2m(b.atd_local) : null;
-    let actualGap = null;
-    if (ataA != null && atdB != null) {
-      actualGap = atdB >= ataA ? atdB - ataA : atdB + 1440 - ataA;
+        const staA = t2m(a.sta_local || a.ata_local || "00:00");
+        const stdB = t2m(b.std_local || b.atd_local || "00:00");
+        let schedGap = adjDays * 1440 + stdB - staA;
+        if (schedGap < 0) schedGap += 1440;
+
+        const ataA = a.ata_local ? t2m(a.ata_local) : null;
+        const atdB = b.atd_local ? t2m(b.atd_local) : null;
+        let actualGap = null;
+        if (ataA != null && atdB != null) {
+          actualGap = adjDays * 1440 + atdB - ataA;
+          if (actualGap < 0) actualGap += 1440;
+        }
+
+        let gap = schedGap, basis = "scheduled";
+        if (actualGap != null && Math.abs(actualGap - schedGap) > 15) {
+          gap = actualGap; basis = "actual (varied >15m)";
+        }
+
+        if (gap > 480) continue; // 8-hour rule: beyond this = different operational duties
+        if (gap < 90) continue;
+        const bill = Math.min(gap, 240);
+        const amt  = (bill / 60) * trR;
+        res.transit.halts.push({
+          date: a.date,
+          station: a.arr,
+          arrived_ist:   istStr(t2m(a.sta_local || a.ata_local || "00:00")),
+          departed_ist:  istStr(t2m(b.std_local || b.atd_local || "00:00")),
+          halt_mins:     Math.round(gap),
+          actual_mins:   actualGap != null ? Math.round(actualGap) : null,
+          billable_mins: Math.round(bill),
+          basis,
+          amount: amt,
+        });
+        res.transit.amount += amt;
+      }
     }
-
-    let gap = schedGap, basis = "scheduled";
-    if (actualGap != null && Math.abs(actualGap - schedGap) > 15) {
-      gap = actualGap; basis = "actual (varied >15m)";
-    }
-
-    if (gap < 90) continue;
-    const bill = Math.min(gap, 240);
-    const amt  = (bill / 60) * trR;
-    res.transit.halts.push({
-      date: a.date,
-      station: a.arr,
-      arrived_ist:   istStr(t2m(a.sta_local || a.ata_local || "00:00")),
-      departed_ist:  istStr(t2m(b.std_local || b.atd_local || "00:00")),
-      halt_mins:     Math.round(gap),
-      actual_mins:   actualGap != null ? Math.round(actualGap) : null,
-      billable_mins: Math.round(bill),
-      basis,
-      amount: amt,
-    });
-    res.transit.amount += amt;
   }
 
   // ── 5. LAYOVER ───────────────────────────────────────────────────
-  const duties = groupIntoDuties(validEnriched);
+  // duties already computed above.
+  // DHF sectors are valid outbound legs (deadheading home after layover still earns layover).
+  const dateToDays = s => Math.floor(new Date(Date.UTC(...s.split("-").map((v,i)=>i===1?+v-1:+v))).getTime() / 86400000);
+  const daysToDate = d => new Date(d * 86400000).toISOString().slice(0, 10);
+
   for (let i = 0; i < duties.length - 1; i++) {
     const last  = duties[i].sectors.at(-1);
     const first = duties[i + 1].sectors[0];
@@ -328,20 +354,31 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
     const chocksOff = first.atd_local;  // actual ATD from PCSR only
     if (!chocksOn || !chocksOff) continue; // can't calculate without actuals
 
-    const dayDiff      = Math.round((new Date(first.date) - new Date(last.date)) / 86400000);
-    const ataM         = t2m(chocksOn);
-    const atdM         = t2m(chocksOff);
-    const durationMins = dayDiff * 1440 + atdM - ataM;
+    // Determine true check-in date: if inbound sector crossed midnight (ATA < ATD),
+    // the aircraft actually landed on last.date+1, not last.date.
+    const inboundAtdM = t2m(last.atd_local || last.std_local || "00:00");
+    const chocksOnM   = t2m(chocksOn);
+    const inboundCrossesMidnight = chocksOnM < inboundAtdM;
+    const ataEpoch = dateToDays(last.date) + (inboundCrossesMidnight ? 1 : 0);
+
+    // Determine true check-out date via ATD continuity.
+    // The parser may assign the wrong date to the outbound sector (TRZ-type error).
+    // Use max(parser date, ata date) as the base, then bump +1 day if duration is negative.
+    const chocksOffM = t2m(chocksOff);
+    let atdEpoch = Math.max(dateToDays(first.date), ataEpoch);
+    let durationMins = (atdEpoch - ataEpoch) * 1440 + chocksOffM - chocksOnM;
+    if (durationMins < 0) { atdEpoch++; durationMins += 1440; }
 
     if (durationMins <= 601) continue; // must exceed 10h01m
 
-    const gapHrs  = durationMins / 60;
-    const baseAmt = lvR.base;
+    const gapHrs   = durationMins / 60;
+    const baseAmt  = lvR.base;
     const extraHrs = gapHrs > 24 ? Math.ceil(gapHrs - 24) : 0;
     const extraAmt = extraHrs * lvR.beyondRate;
     res.layover.events.push({
       station: layoverStation,
-      date_in: last.date, date_out: first.date,
+      date_in:       daysToDate(ataEpoch),
+      date_out:      daysToDate(atdEpoch),
       check_in_ist:  chocksOn,
       check_out_ist: chocksOff,
       duration_hrs:  Math.round(gapHrs * 100) / 100,
