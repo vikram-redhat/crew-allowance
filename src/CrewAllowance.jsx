@@ -63,338 +63,11 @@ const DEFAULT_RATES = {
   layoverMinHours: CONFIG.layoverMinHours,
 };
 
-/* ═══════════════════════════════════════════════════════════════════
-   TIME UTILITIES
-═══════════════════════════════════════════════════════════════════ */
-const t2m = t => {
-  if (!t || !String(t).includes(":")) return 0;
-  const [h, m] = String(t).split(":").map(Number);
-  return h * 60 + (m || 0);
-};
+const fmtHM  = m => { const h = Math.floor(Math.abs(m)/60), mn = Math.round(Math.abs(m)%60); return h+"h "+mn.toString().padStart(2,"0")+"m"; };
+const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
 
-const fmtHM     = m => { const h = Math.floor(Math.abs(m)/60), mn = Math.round(Math.abs(m)%60); return h+"h "+mn.toString().padStart(2,"0")+"m"; };
-const fmtINR    = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
-const istStr    = mins => String(Math.floor(((mins%1440)+1440)%1440/60)).padStart(2,"0")+":"+String(((mins%1440)+1440)%1440%60).padStart(2,"0");
 
-/* ═══════════════════════════════════════════════════════════════════
-   SECTOR VALUE LOOKUP  (handoff spec — UTC time-slot based)
-═══════════════════════════════════════════════════════════════════ */
-function getSV(svData, flightNum, dep, arr, stdIst) {
-  if (!svData?.length || !stdIst) return null;
-  const [h, m] = stdIst.split(":").map(Number);
-  const utcMins = (h * 60 + m - 330 + 1440) % 1440;
-  const utcHour = Math.floor(utcMins / 60);
-  const slot = `${utcHour}_${utcHour + 1}`;
-  const fltNum = String(flightNum).replace(/^6E/i, "");
-  const match = svData.find(row =>
-    String(row.FLTNBR) === fltNum &&
-    String(row.DEP).trim() === dep &&
-    String(row.ARR).trim() === arr &&
-    String(row.Time_Slot) === slot
-  );
-  if (match) return Number(match.SectorValue);
-  const fallback = svData.find(r =>
-    String(r.FLTNBR) === fltNum &&
-    String(r.DEP).trim() === dep &&
-    String(r.ARR).trim() === arr
-  );
-  return fallback ? Number(fallback.SectorValue) : null;
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   NIGHT FLYING MINUTES  (PAH §9.0: STD-IST + SV)
-═══════════════════════════════════════════════════════════════════ */
-function nightMins(stdIstStr, svMins) {
-  if (!stdIstStr || svMins == null) return 0;
-  const stdM = t2m(stdIstStr);
-  const staM = stdM + svMins;
-  const NIGHT_END = 360; // 06:00 IST in mins
-  if (stdM >= NIGHT_END) {
-    // Flight departs after 06:00 — only wraps into next night if sta > 1440
-    if (staM > 1440) return Math.max(0, Math.min(NIGHT_END, staM - 1440));
-    return 0;
-  }
-  return Math.max(0, Math.min(NIGHT_END, staM) - stdM);
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   DUTY GROUPING  (gap >= 601 min between sectors = new duty)
-═══════════════════════════════════════════════════════════════════ */
-function groupIntoDuties(sectors) {
-  if (!sectors.length) return [];
-  const duties = [[sectors[0]]];
-  for (let i = 1; i < sectors.length; i++) {
-    const prev = sectors[i - 1];
-    const curr = sectors[i];
-    // Use actuals for boundary detection; fall back to scheduled when actuals are missing
-    // so that a null-ATA sector doesn't incorrectly split a duty in two.
-    const ata = prev.ata_local || prev.sta_local;
-    const atd = curr.atd_local || curr.std_local;
-    let gap = Infinity;
-    if (ata && atd && prev.date && curr.date) {
-      const dayDiff = Math.round((new Date(curr.date) - new Date(prev.date)) / 86400000);
-      // If the previous sector crossed midnight (ATA earlier in the clock than ATD),
-      // the actual landing was on prev.date+1 — subtract that extra day from the gap.
-      const prevAtd = prev.atd_local || prev.std_local;
-      const crossesMidnight = prevAtd && t2m(ata) < t2m(prevAtd);
-      gap = (dayDiff - (crossesMidnight ? 1 : 0)) * 1440 + t2m(atd) - t2m(ata);
-    }
-    if (gap >= 601) {
-      duties.push([curr]);
-    } else {
-      duties[duties.length - 1].push(curr);
-    }
-  }
-  return duties.map(s => ({ sectors: s }));
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   CORE CALCULATION ENGINE  (PCSR-based)
-═══════════════════════════════════════════════════════════════════ */
-function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
-  const R   = rates;
-  const bkt = rankBucket(rank);
-  const dhR = R.deadhead[bkt], nR = R.night[bkt], tsR = R.tailSwap[bkt], trR = R.transit[bkt], lvR = R.layover[bkt];
-
-  const res = {
-    pilot: { rank, homeBase },
-    period: "",
-    deadhead: { sectors: [], total_mins: 0, amount: 0 },
-    night:    { sectors: [], total_mins: 0, amount: 0 },
-    layover:  { events: [], amount: 0 },
-    tailSwap: { swaps: [], count: 0, amount: 0 },
-    transit:  { halts: [], amount: 0 },
-    sv_used: svData?.length > 0,
-    total: 0,
-  };
-
-  if (!sectors?.length) return res;
-
-  // Sort by date then STD
-  const sorted = [...sectors].sort((a, b) => {
-    const dc = (a.date || "").localeCompare(b.date || "");
-    if (dc !== 0) return dc;
-    return t2m(a.std_local || a.atd_local || "00:00") - t2m(b.std_local || b.atd_local || "00:00");
-  });
-
-  // Determine period
-  const dates = sorted.map(s => s.date).filter(Boolean);
-  if (dates.length) {
-    const first = new Date(dates[0]);
-    res.period = first.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
-  }
-
-  // Enrich sectors with schedule data
-  const enriched = sorted.map(s => {
-    const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
-    const sd = schedMap?.[key] || {};
-    return {
-      ...s,
-      std_local:    s.std_local    || sd.std_local    || null,
-      sta_local:    s.sta_local    || sd.sta_local    || null,
-      atd_local:    s.atd_local    || sd.atd_local    || null,
-      ata_local:    s.ata_local    || sd.ata_local    || null,
-      aircraft_reg: s.aircraft_reg || sd.aircraft_reg || null,
-    };
-  });
-
-  // Sectors with no dep/arr couldn't be parsed — exclude them from all
-  // calculations so they don't create Infinity gaps in duty grouping.
-  const validEnriched = enriched.filter(s => s.dep && s.arr);
-
-  // ── 1. DEADHEAD (DHF only) ────────────────────────────────────────
-  for (const s of validEnriched) {
-    if (!s.is_dhf) continue;
-    if (!dhR) continue;
-    let bm = 0;
-    // Prefer scheduled times; fall back to actual times from PCSR
-    const dStd = s.std_local || s.atd_local;
-    const dSta = s.sta_local || s.ata_local;
-    if (dStd && dSta) {
-      bm = t2m(dSta) - t2m(dStd);
-      if (bm < 0) bm += 1440;
-    }
-    if (!bm) continue;
-    const amt = (bm / 60) * dhR;
-    res.deadhead.sectors.push({ date: s.date, flight: s.flight_no, from: s.dep, to: s.arr, scheduled_block_mins: bm, amount: amt });
-    res.deadhead.total_mins += bm;
-    res.deadhead.amount += amt;
-  }
-
-  // ── 2. NIGHT FLYING (operating sectors only) ─────────────────────
-  for (const s of validEnriched) {
-    if (s.is_dhf || s.is_dht) continue;
-    if (!nR) continue;
-    // PAH §9.0: must use scheduled departure (STD), never actual (ATD)
-    const stdIST = s.std_local;
-    if (!stdIST) continue;
-    const sv = getSV(svData, s.flight_no, s.dep, s.arr, stdIST);
-    const nm = sv != null ? nightMins(stdIST, sv) : 0;
-    if (nm <= 0) continue;
-    const sta = sv != null ? istStr(t2m(stdIST) + sv) : s.sta_local;
-    const amt = (nm / 60) * nR;
-    res.night.sectors.push({ date: s.date, flight: s.flight_no, from: s.dep, to: s.arr, std_ist: stdIST, sta_ist: sta, night_mins: Math.round(nm), sv_used: sv, amount: amt });
-    res.night.total_mins += nm;
-    res.night.amount += amt;
-  }
-
-  // Duties drive both transit and layover — compute once up front.
-  const duties = groupIntoDuties(validEnriched);
-
-  // ── 3. TAIL SWAP ─────────────────────────────────────────────────
-  const opSectors = validEnriched.filter(s => !s.is_dht);
-  for (let i = 0; i < opSectors.length - 1; i++) {
-    const a = opSectors[i], b = opSectors[i + 1];
-    if (a.is_dhf && b.is_dhf) continue;       // DHF+DHF excluded
-    if (!a.aircraft_reg || !b.aircraft_reg) continue;
-    if (a.aircraft_reg === b.aircraft_reg) continue;
-    if (!tsR) continue;
-    // Must be connected (arrival airport = departure airport)
-    if (a.arr !== b.dep) continue;
-    // Same calendar day, or cross-date outstation (not at home base, within layover threshold)
-    const sameDay = a.date === b.date;
-    if (!sameDay) {
-      if (a.arr === homeBase) continue;
-      const dA = new Date(a.date), dB = new Date(b.date);
-      const dayDiff = Math.round((dB - dA) / 86400000);
-      if (dayDiff > 2) continue;
-      // Cross-date gap must be within layover threshold (not a full layover)
-      const ata = t2m(a.ata_local || a.sta_local || "00:00");
-      const atd = t2m(b.atd_local || b.std_local || "00:00");
-      const gapMins = dayDiff * 1440 + atd - ata;
-      if (gapMins / 60 >= R.layoverMinHours) continue;
-    }
-    res.tailSwap.swaps.push({
-      date: sameDay ? a.date : `${a.date} → ${b.date}`,
-      sector_pair: `${a.flight_no}→${b.flight_no}`,
-      station: a.arr,
-      reg_out: a.aircraft_reg,
-      reg_in: b.aircraft_reg,
-      is_dh_involved: a.is_dhf || b.is_dhf,
-      cross_date: !sameDay,
-      amount: tsR,
-    });
-    res.tailSwap.amount += tsR;
-  }
-  res.tailSwap.count = res.tailSwap.swaps.length;
-
-  // ── 4. TRANSIT ───────────────────────────────────────────────────
-  // Only consecutive sectors within the same duty qualify for transit.
-  // A gap > 8 hours within a duty still disqualifies transit (different crews / rest).
-  if (trR) {
-    for (const duty of duties) {
-      const ss = duty.sectors;
-      for (let i = 0; i < ss.length - 1; i++) {
-        const a = ss[i], b = ss[i + 1];
-        if (a.is_dht || b.is_dht) continue;
-        if (a.arr !== b.dep) continue;
-
-        // Compute gap accounting for midnight crossing on sector a
-        const aAtd = a.atd_local || a.std_local;
-        const ataRaw  = a.ata_local || a.sta_local;
-        const dayDiff = Math.round((new Date(b.date) - new Date(a.date)) / 86400000);
-        const crossesMidnight = ataRaw && aAtd && t2m(ataRaw) < t2m(aAtd);
-        const adjDays = dayDiff - (crossesMidnight ? 1 : 0);
-
-        const staA = t2m(a.sta_local || a.ata_local || "00:00");
-        const stdB = t2m(b.std_local || b.atd_local || "00:00");
-        let schedGap = adjDays * 1440 + stdB - staA;
-        if (schedGap < 0) schedGap += 1440;
-
-        const ataA = a.ata_local ? t2m(a.ata_local) : null;
-        const atdB = b.atd_local ? t2m(b.atd_local) : null;
-        let actualGap = null;
-        if (ataA != null && atdB != null) {
-          actualGap = adjDays * 1440 + atdB - ataA;
-          if (actualGap < 0) actualGap += 1440;
-        }
-
-        // Condition (i): qualify on SCHEDULED halt >= 90 min, even if actual < 90.
-        if (schedGap < 90) continue;
-        if (schedGap > 480) continue; // 8-hour rule
-
-        // Pay on actual halt when it differs significantly from scheduled.
-        let billGap = schedGap, basis = "scheduled";
-        if (actualGap != null && Math.abs(actualGap - schedGap) > 15) {
-          billGap = actualGap; basis = "actual (varied >15m)";
-        }
-        if (billGap <= 0) continue;
-        const bill = Math.min(billGap, 240);
-        const amt  = (bill / 60) * trR;
-        res.transit.halts.push({
-          date: a.date,
-          station: a.arr,
-          arrived_ist:   istStr(t2m(a.sta_local || a.ata_local || "00:00")),
-          departed_ist:  istStr(t2m(b.std_local || b.atd_local || "00:00")),
-          halt_mins:     Math.round(billGap),
-          actual_mins:   actualGap != null ? Math.round(actualGap) : null,
-          billable_mins: Math.round(bill),
-          basis,
-          amount: amt,
-        });
-        res.transit.amount += amt;
-      }
-    }
-  }
-
-  // ── 5. LAYOVER ───────────────────────────────────────────────────
-  // duties already computed above.
-  // DHF sectors are valid outbound legs (deadheading home after layover still earns layover).
-  const dateToDays = s => Math.floor(new Date(Date.UTC(...s.split("-").map((v,i)=>i===1?+v-1:+v))).getTime() / 86400000);
-  const daysToDate = d => new Date(d * 86400000).toISOString().slice(0, 10);
-
-  for (let i = 0; i < duties.length - 1; i++) {
-    const last  = duties[i].sectors.at(-1);
-    const first = duties[i + 1].sectors[0];
-
-    const layoverStation = last.arr?.trim().toUpperCase();
-    const homeBaseNorm   = homeBase?.trim().toUpperCase();
-    if (!layoverStation || layoverStation === homeBaseNorm) continue;
-    if (first.dep?.trim().toUpperCase() !== layoverStation) continue;
-    if (!lvR) continue;
-
-    const chocksOn  = last.ata_local;   // actual ATA from PCSR only
-    // DHF outbound: if no actual ATD in PCSR, fall back to AeroDataBox scheduled departure
-    const chocksOff = first.atd_local || (first.is_dhf ? first.std_local : null);
-    if (!chocksOn || !chocksOff) continue; // can't calculate without actuals
-
-    // Determine true check-in date: if inbound sector crossed midnight (ATA < ATD),
-    // the aircraft actually landed on last.date+1, not last.date.
-    const inboundAtdM = t2m(last.atd_local || last.std_local || "00:00");
-    const chocksOnM   = t2m(chocksOn);
-    const inboundCrossesMidnight = chocksOnM < inboundAtdM;
-    const ataEpoch = dateToDays(last.date) + (inboundCrossesMidnight ? 1 : 0);
-
-    // Determine true check-out date via ATD continuity.
-    // The parser may assign the wrong date to the outbound sector (TRZ-type error).
-    // Use max(parser date, ata date) as the base, then bump +1 day if duration is negative.
-    const chocksOffM = t2m(chocksOff);
-    let atdEpoch = Math.max(dateToDays(first.date), ataEpoch);
-    let durationMins = (atdEpoch - ataEpoch) * 1440 + chocksOffM - chocksOnM;
-    if (durationMins < 0) { atdEpoch++; durationMins += 1440; }
-
-    if (durationMins <= 601) continue; // must exceed 10h01m
-
-    const gapHrs   = durationMins / 60;
-    const baseAmt  = lvR.base;
-    const extraHrs = gapHrs > 24 ? Math.ceil(gapHrs - 24) : 0;
-    const extraAmt = extraHrs * lvR.beyondRate;
-    res.layover.events.push({
-      station: layoverStation,
-      date_in:       daysToDate(ataEpoch),
-      date_out:      daysToDate(atdEpoch),
-      check_in_ist:  chocksOn,
-      check_out_ist: chocksOff,
-      duration_hrs:  Math.round(gapHrs * 100) / 100,
-      base_amount: baseAmt, extra_amount: extraAmt, total: baseAmt + extraAmt,
-    });
-    res.layover.amount += baseAmt + extraAmt;
-  }
-
-  res.total = res.deadhead.amount + res.night.amount + res.layover.amount + res.tailSwap.amount + res.transit.amount;
-  return res;
-}
-
+/* Calculation is server-side via /api/calculate — see api/calculate.js */
 /* ═══════════════════════════════════════════════════════════════════
    AERO DATABOX API  (via serverless proxy, with Supabase cache)
 ═══════════════════════════════════════════════════════════════════ */
@@ -1297,7 +970,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
     setErr(""); setResult(null); setPhase("fetching");
 
     try {
-      // 1. Fetch SV data
+      // 1. Fetch SV data from Supabase
       const svData = await fetchSV(pcsrData.month);
       setSvStatus(svData.length ? "found" : "missing");
 
@@ -1308,26 +981,38 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       );
       setApiStats({ fetched, cached, failed });
 
-      // 3. Enrich sectors with parsed pilot data
-      const sectors = pcsrData.sectors.map(s => {
-        const sd = schedMap[`${s.flight_no}|${s.dep}|${s.arr}|${s.date}`] || {};
-        return {
-          ...s,
-          std_local:    sd.std_local    || null,
-          sta_local:    sd.sta_local    || null,
-          atd_local:    s.atd_local     || sd.atd_local    || null,
-          ata_local:    s.ata_local     || sd.ata_local    || null,
-          aircraft_reg: sd.aircraft_reg || null,
-        };
+      // 3. Convert PDF to base64 for Claude
+      const pdfBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(pcsrFile);
       });
 
-      // 4. Run calc
-      const res = runCalc(sectors, schedMap, svData, homeBase, rank, rates);
-      // Override period from parsed header (more reliable than deriving from sector dates)
-      if (pcsrData.month) {
+      // 4. Send to Claude via /api/calculate
+      const resp = await fetch("/api/calculate", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pdf_base64:      pdfBase64,
+          sv_data:         svData,
+          pilot:           { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank },
+          scheduled_times: schedMap,
+          rates,
+        }),
+      });
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(errBody.error || `API error ${resp.status}`);
+      }
+      const res = await resp.json();
+
+      // Ensure period is set (Claude may return it; fall back to parsed header)
+      if (!res.period && pcsrData.month) {
         const [y, mo] = pcsrData.month.split("-").map(Number);
         res.period = new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
       }
+
       setResult(res);
       setPhase("done");
     } catch (e) {
