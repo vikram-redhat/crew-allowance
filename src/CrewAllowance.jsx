@@ -309,21 +309,24 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
           if (actualGap < 0) actualGap += 1440;
         }
 
-        let gap = schedGap, basis = "scheduled";
-        if (actualGap != null && Math.abs(actualGap - schedGap) > 15) {
-          gap = actualGap; basis = "actual (varied >15m)";
-        }
+        // Condition (i): qualify on SCHEDULED halt >= 90 min, even if actual < 90.
+        if (schedGap < 90) continue;
+        if (schedGap > 480) continue; // 8-hour rule
 
-        if (gap > 480) continue; // 8-hour rule: beyond this = different operational duties
-        if (gap < 90) continue;
-        const bill = Math.min(gap, 240);
+        // Pay on actual halt when it differs significantly from scheduled.
+        let billGap = schedGap, basis = "scheduled";
+        if (actualGap != null && Math.abs(actualGap - schedGap) > 15) {
+          billGap = actualGap; basis = "actual (varied >15m)";
+        }
+        if (billGap <= 0) continue;
+        const bill = Math.min(billGap, 240);
         const amt  = (bill / 60) * trR;
         res.transit.halts.push({
           date: a.date,
           station: a.arr,
           arrived_ist:   istStr(t2m(a.sta_local || a.ata_local || "00:00")),
           departed_ist:  istStr(t2m(b.std_local || b.atd_local || "00:00")),
-          halt_mins:     Math.round(gap),
+          halt_mins:     Math.round(billGap),
           actual_mins:   actualGap != null ? Math.round(actualGap) : null,
           billable_mins: Math.round(bill),
           basis,
@@ -351,7 +354,8 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
     if (!lvR) continue;
 
     const chocksOn  = last.ata_local;   // actual ATA from PCSR only
-    const chocksOff = first.atd_local;  // actual ATD from PCSR only
+    // DHF outbound: if no actual ATD in PCSR, fall back to AeroDataBox scheduled departure
+    const chocksOff = first.atd_local || (first.is_dhf ? first.std_local : null);
     if (!chocksOn || !chocksOff) continue; // can't calculate without actuals
 
     // Determine true check-in date: if inbound sector crossed midnight (ATA < ATD),

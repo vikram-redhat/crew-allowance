@@ -26,6 +26,13 @@ function hhmm(s) {
   return m ? m[1].padStart(5, "0") : null;
 }
 
+// HH:MM string → minutes since midnight
+function t2m_local(s) {
+  if (!s) return NaN;
+  const [h, m] = s.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
 // Parse DD/MM/YY or DD/MM/YYYY → "YYYY-MM-DD"
 function parseDate(d) {
   if (!d) return null;
@@ -216,6 +223,9 @@ function parseEom(text) {
     }
   }
 
+  const transfers = parseTransferSection(fullText);
+  applyTransferDateCorrections(sectors, transfers);
+
   return { format: "EOM", month, pilot, sectors, hotels };
 }
 
@@ -388,6 +398,10 @@ function parseGrid(text, allPagesText) {
   // ── 4. Hotel section ───────────────────────────────────────────────────────
   parseHotelSection(flat, sectors, hotels);
 
+  // ── 5. Transfer section — correct early-morning sector dates ──────────────
+  const transfers = parseTransferSection(flat);
+  applyTransferDateCorrections(sectors, transfers);
+
   return { format: "GRID", month, pilot, sectors, hotels };
 }
 
@@ -406,6 +420,56 @@ function parseHotelSection(text, sectors, hotels) {
       check_in: hhmm(m[3]),
       check_out: hhmm(m[4]),
     });
+  }
+}
+
+// ─── Transfer section: date-based sector correction ──────────────────────────
+
+/**
+ * Parse "Transfer Details / Transfer Information" section.
+ * Returns entries like { type: "inbound"|"outbound", date, time, station|null }.
+ * "Airport to Hotel" = inbound (pilot just arrived at layover station).
+ * "Hotel to Airport" = outbound (pilot departing from layover station).
+ */
+function parseTransferSection(text) {
+  const idx = text.search(/\bTransfer\s+(?:Information|Details)\b/i);
+  if (idx === -1) return [];
+  const section = text.slice(idx, idx + 5000);
+  const entries = [];
+  const ENTRY_RE = /(Airport\s+to\s+Hotel|Hotel\s+to\s+Airport)[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(\d{1,2}:\d{2})/gi;
+  let m;
+  while ((m = ENTRY_RE.exec(section)) !== null) {
+    const type = /Airport\s+to\s+Hotel/i.test(m[1]) ? "inbound" : "outbound";
+    const date = parseDate(m[2]);
+    if (!date) continue;
+    const time = hhmm(m[3]);
+    // Nearest preceding IATA station code in this section
+    const before = section.slice(0, m.index);
+    const stM = before.match(/\b([A-Z]{3})\b\s*$/);
+    entries.push({ type, date, time, station: stM ? stM[1] : null });
+  }
+  return entries;
+}
+
+/**
+ * For sectors whose ATD falls in 00:00–08:00 (early morning, date-assignment risk),
+ * match against "Hotel to Airport" transfer entries and correct the sector date when
+ * the transfer-provided date differs from the parsed date.
+ * Match criteria: station agrees (when known) and times are within 2 hours.
+ */
+function applyTransferDateCorrections(sectors, transfers) {
+  const outbound = transfers.filter(t => t.type === "outbound");
+  if (!outbound.length) return;
+  for (const s of sectors) {
+    if (!s.atd_local) continue;
+    const atdM = t2m_local(s.atd_local);
+    if (isNaN(atdM) || atdM > 480) continue; // 00:00–08:00 only
+    for (const tr of outbound) {
+      if (tr.station && s.dep && tr.station !== s.dep) continue;
+      if (Math.abs(atdM - t2m_local(tr.time)) > 120) continue; // within 2 h
+      if (s.date !== tr.date) s.date = tr.date;
+      break;
+    }
   }
 }
 
