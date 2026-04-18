@@ -194,8 +194,12 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
     };
   });
 
+  // Sectors with no dep/arr couldn't be parsed — exclude them from all
+  // calculations so they don't create Infinity gaps in duty grouping.
+  const validEnriched = enriched.filter(s => s.dep && s.arr);
+
   // ── 1. DEADHEAD (DHF only) ────────────────────────────────────────
-  for (const s of enriched) {
+  for (const s of validEnriched) {
     if (!s.is_dhf) continue;
     if (!dhR) continue;
     let bm = 0;
@@ -214,7 +218,7 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
   }
 
   // ── 2. NIGHT FLYING (operating sectors only) ─────────────────────
-  for (const s of enriched) {
+  for (const s of validEnriched) {
     if (s.is_dhf || s.is_dht) continue;
     if (!nR) continue;
     // PAH §9.0: must use scheduled departure (STD), never actual (ATD)
@@ -231,7 +235,7 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
   }
 
   // ── 3. TAIL SWAP ─────────────────────────────────────────────────
-  const opSectors = enriched.filter(s => !s.is_dht);
+  const opSectors = validEnriched.filter(s => !s.is_dht);
   for (let i = 0; i < opSectors.length - 1; i++) {
     const a = opSectors[i], b = opSectors[i + 1];
     if (a.is_dhf && b.is_dhf) continue;       // DHF+DHF excluded
@@ -268,8 +272,8 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
   res.tailSwap.count = res.tailSwap.swaps.length;
 
   // ── 4. TRANSIT ───────────────────────────────────────────────────
-  for (let i = 0; i < enriched.length - 1; i++) {
-    const a = enriched[i], b = enriched[i + 1];
+  for (let i = 0; i < validEnriched.length - 1; i++) {
+    const a = validEnriched[i], b = validEnriched[i + 1];
     if (a.is_dht || b.is_dht) continue;
     if (a.arr !== b.dep) continue;
     if (a.date !== b.date) continue;       // transit = same calendar day
@@ -309,7 +313,7 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
   }
 
   // ── 5. LAYOVER ───────────────────────────────────────────────────
-  const duties = groupIntoDuties(enriched);
+  const duties = groupIntoDuties(validEnriched);
   for (let i = 0; i < duties.length - 1; i++) {
     const last  = duties[i].sectors.at(-1);
     const first = duties[i + 1].sectors[0];
