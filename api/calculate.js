@@ -1,110 +1,193 @@
 // Vercel serverless — sends PCSR PDF + context to Claude, returns structured allowance JSON.
 // ANTHROPIC_API_KEY must be set in Vercel environment variables (no VITE_ prefix).
 
-export const maxDuration = 60; // Vercel Pro: allow up to 60s for Claude response
+export const maxDuration = 60;
 
-const rankBucket = r => {
-  const v = (r || "").toLowerCase();
-  if (v.includes("cabin")) return "Cabin Crew";
-  if (v.includes("first") || v.includes("fo")) return "First Officer";
-  return "Captain";
-};
+function buildPrompt(pilot, sv_data, scheduled_times) {
+  return `
+You are calculating IndiGo pilot allowances per PAH FLT Issue 01 Rev 46.
+Return ONLY valid JSON. No explanation, no markdown, no text outside the JSON.
 
-function buildPrompt(pilot, bkt, sv_csv, scheduled_times, rates) {
-  const dhRate = (rates?.deadhead?.[bkt]) ?? 4000;
-  const nRate  = (rates?.night?.[bkt])    ?? 2000;
-  const tsRate = (rates?.tailSwap?.[bkt]) ?? 1500;
-  const trRate = (rates?.transit?.[bkt])  ?? 1000;
-  const lvRate = (rates?.layover?.[bkt])  ?? { base: 3000, beyondRate: 150 };
-
-  return `You are calculating IndiGo pilot allowances for the attached PCSR PDF.
-
-PILOT PROFILE:
-- Name: ${pilot.name}
+PILOT:
 - Employee ID: ${pilot.employee_id}
 - Home Base: ${pilot.home_base}
 - Rank: ${pilot.rank}
 
-RATES (PAH FLT Issue 01 Rev 46):
-- Deadhead (DHF): ₹${dhRate}/scheduled block hour, pro-rated to the minute. Use AeroDataBox STA−STD. Fall back to actual ATA−ATD only if both scheduled times are missing.
-- Night Flying: ₹${nRate}/night hour. STD (not ATD) + SV minutes, intersected with 00:01–06:00 IST window.
-- Layover: ₹${lvRate.base} flat for 10h01m–24h; +₹${lvRate.beyondRate}/hr beyond 24h, rounded up each hour.
-- Tail Swap: ₹${tsRate} per swap.
-- Transit: ₹${trRate}/hr, capped 4h.
+SECTOR VALUES (minutes, from 6eBreeze SV report):
+${JSON.stringify(sv_data)}
 
-SECTOR VALUE TABLE (SV in minutes — for night flying only):
-Columns: FLTNBR, DEP, ARR, Time_Slot (UTC "H_H+1"), SectorValue
-UTC slot = floor((STD_IST_minutes − 330 + 1440) % 1440 / 60)
-${sv_csv || "(none)"}
+SCHEDULED TIMES FROM AERODATABOX (keyed flight|dep|arr|date):
+${JSON.stringify(scheduled_times)}
 
-AERODATABOX SCHEDULE DATA (keyed "flight_no|dep|arr|date" = YYYY-MM-DD):
-Each value: { std_local, sta_local, atd_local, ata_local, aircraft_reg }
-${JSON.stringify(scheduled_times ?? {})}
+RATES:
+- Deadhead (§1.0): ₹4,000 per scheduled block hour, prorated to minute. Scheduled block = AeroDataBox STA − STD.
+- Layover (§2.0): ₹3,000 flat for 10:01–24:00h away from home base. Beyond 24h: +₹150 per hour rounded UP to next hour.
+- Tail Swap (§6.0): ₹1,500 per swap. A swap = aircraft_reg changes between consecutive sectors in same duty.
+- Transit (§7.0): ₹1,000/hr prorated to minute, capped at 4 hours (₹4,000 max per halt).
+- Night Flying (§9.0): ₹2,000 per night hour, prorated to minute.
 
-CALCULATION RULES — follow exactly:
+STEP 1 — PARSE SECTORS FROM THE PCSR PDF:
+Extract every flight sector for employee ${pilot.employee_id}.
+For each sector record: date (YYYY-MM-DD), flight, dep, arr, atd (HH:MM), ata (HH:MM), is_dhf, is_dht.
+A sector is DHF if the employee appears as "DHF" in the Other Crew section for that flight, or if there is an asterisk on the departure airport in the grid.
+A sector is DHT if the employee appears as "DHT" in the Other Crew section.
+IMPORTANT: Use the Transfer Information section to validate dates for early-morning sectors.
+"Hotel to Airport: DD/MM/YYYY" means the outbound sector from that station is on that date.
+"Airport to Hotel: DD/MM/YYYY" means the inbound sector to that station is on that date.
+IMPORTANT: When a sector's ATA is earlier than its ATD (e.g. ATD 23:37, ATA 01:23), the ATA is on the next calendar day.
+Do NOT include training entries from the Training Details section as sectors.
 
-1. PARSE ALL SECTORS from the PCSR PDF.
-   - Grid format: calendar grid on page 1 gives flight number, dep, arr, actual times. Other Crew section gives dates and DHF/DHT flags for employee ${pilot.employee_id}.
-   - EOM format: tabular rows with date, route, actual times.
-   - DATE CORRECTION: the Transfer Information section lists "Hotel to Airport: DD/MM/YYYY HH:MM" entries. For any sector with ATD between 00:00–08:00 whose parsed date doesn't match the transfer date, use the transfer date. This is authoritative for early-morning departures.
+STEP 2 — GROUP INTO DUTIES:
+A new duty starts when the gap between the previous sector's ATA and the next sector's ATD exceeds 8 hours.
+Apply midnight crossing correction before computing gaps: if ATA < ATD on the same date, ATA belongs to ATD_date + 1 day.
 
-2. DHF = this pilot is a passenger (deadhead flying). Identified by: asterisk on departure airport in grid (*DEP), OR "DHF" next to employee ID ${pilot.employee_id} in Other Crew section.
-   DHT = other crew deadheading on this pilot's sector — exclude from all allowances.
+STEP 3 — DEADHEAD (§1.0):
+For each DHF sector, find its entry in scheduled_times to get STD and STA.
+Scheduled block minutes = STA − STD (handle overnight: if STA < STD, add 24h).
+Pay = block_minutes × (4000 / 60), rounded to nearest rupee.
+Only DHF sectors qualify. Do not use actual block or SV for this calculation.
 
-3. GROUP INTO DUTIES: consecutive sectors with ATA→ATD gap < 601 minutes are in the same duty.
-   MIDNIGHT CROSSING: if a sector's ATA (clock time) is earlier than its ATD (clock time), the actual landing was on ATD_date + 1 day. Use the corrected ATA date when computing the ATA→ATD gap to the next sector.
+STEP 4 — LAYOVER (§2.0):
+A layover exists when: the last sector of duty N arrives at a station that is NOT ${pilot.home_base}, AND the first sector of duty N+1 departs FROM that same station.
+DHF sectors are valid as the outbound leg of a layover.
+Chocks-ON = ATA of the last sector of duty N (apply midnight correction if needed).
+Chocks-OFF = ATD of the first sector of duty N+1. If ATD is missing, use AeroDataBox scheduled STD for that sector.
+Duration = Chocks-OFF minus Chocks-ON in hours.
+If duration <= 10h01m: no allowance.
+If duration 10h01m to 24h00m: ₹3,000.
+If duration > 24h00m: ₹3,000 + (ceil(duration_hours - 24) × ₹150).
 
-4. DEADHEAD: for each DHF sector, block = AeroDataBox STA − STD. If STA/STD unavailable, use ATA − ATD (add 1440 if negative for overnight).
+STEP 5 — TRANSIT (§7.0):
+For every consecutive sector pair within the same duty:
+- SKIP if either sector is DHT. DHF is NOT DHT — do not skip DHF pairs.
+- Compute scheduled halt = scheduled_times[arr_flight].sta to scheduled_times[dep_flight].std.
+- Compute actual halt = ATA of arriving sector to ATD of departing sector (apply midnight correction).
+- Eligibility:
+  Condition (i): scheduled halt >= 90 minutes
+  Condition (ii): actual halt >= 90 minutes AND |actual - scheduled| > 15 minutes
+  If neither condition met: no allowance.
+- If eligible:
+  If |actual - scheduled| <= 15 minutes: pay on scheduled halt minutes.
+  If |actual - scheduled| > 15 minutes: pay on actual halt minutes.
+  Billable minutes = min(pay_basis, 240).
+  Pay = billable_minutes × (1000 / 60), rounded to nearest rupee.
 
-5. LAYOVER: applies when duty N ends at an outstation (not ${pilot.home_base}) AND duty N+1's first sector departs from that same outstation.
-   - DHF sectors ARE valid outbound legs (pilot deadheading home after layover still earns allowance).
-   - Chocks-ON = ATA of the last sector of duty N (PCSR actual only).
-   - Chocks-OFF = ATD of the first sector of duty N+1. If ATD is blank and it is a DHF sector, use AeroDataBox STD as fallback.
-   - Midnight correction: if the inbound sector crossed midnight (ATA < ATD by clock), chocks-ON date = inbound sector date + 1 day.
-   - Date continuity: if the parser assigned the outbound sector the wrong date, derive checkout date by ensuring chocks-OFF is chronologically after chocks-ON. If computed duration < 0, add 1 day.
-   - Duration must EXCEED 10h 01m (601 minutes). Extra rate beyond 24h is rounded up per full hour.
+STEP 6 — NIGHT FLYING (§9.0):
+For each NON-DHF sector:
+1. Look up STD from scheduled_times. If not found: skip this sector, night_mins = 0.
+2. If STD >= 06:00 IST: skip this sector, night_mins = 0.
+3. Look up SV from sv_data using flight number (without "6E"), dep, arr, and the UTC time slot of STD (STD IST minus 5 hours 30 minutes, then take the hour).
+4. SV_arrival_IST = STD + SV minutes (handle midnight crossing).
+5. Night window = 00:01 to 06:00 IST.
+6. Night minutes = overlap of [STD, SV_arrival] with [00:01, 06:00].
+7. Pay = night_minutes × (2000 / 60), rounded to nearest rupee.
+Do NOT use ATD or ATA for this calculation. Only STD and SV.
 
-6. TRANSIT: for consecutive sector pairs within the same duty where arr of sector A == dep of sector B:
-   - Gap > 480 min (8h): skip — different operational duties for transit purposes.
-   - Qualification threshold: SCHEDULED gap ≥ 90 min (even if actual < 90 min).
-   - Billing: use actual gap if it differs > 15 min from scheduled; otherwise use scheduled gap.
-   - Cap billing at 240 min (4h). DHT sectors excluded.
+STEP 7 — TAIL SWAP (§6.0):
+For every consecutive sector pair within the same duty:
+- SKIP if either sector is DHT.
+- SKIP if both sectors are DHF.
+- Look up aircraft_reg from scheduled_times for both sectors.
+- If both regs are known AND they differ: count as one tail swap, pay ₹1,500.
+- If either reg is null: set status "unverifiable" for that pair.
 
-7. NIGHT FLYING: operating (non-DHF, non-DHT) sectors only. Use STD (not ATD). SV lookup: find row matching FLTNBR + DEP + ARR + UTC time slot. Night minutes = intersection of [STD_IST, STD_IST + SV] with [1 min, 360 min] (00:01–06:00 IST).
-
-8. TAIL SWAP: within each duty, for consecutive non-DHT sector pairs where arr == dep of next:
-   - Both aircraft_reg values must be known and different.
-   - Op→Op, Op→DHF, DHF→Op qualify. DHF→DHF does not. DHT excluded.
-
-IMPORTANT: Your entire response must be a single JSON object. Do not write any text before or after it. Do not use markdown fences. Do not explain your reasoning. Start your response with { and end with }. Use this exact structure (empty arrays when no events):
+Return this exact JSON structure:
 {
-  "period": "<Month YYYY>",
-  "pilot": { "rank": "${pilot.rank}", "homeBase": "${pilot.home_base}" },
-  "deadhead": {
-    "sectors": [{ "date": "YYYY-MM-DD", "flight": "6EXXXX", "from": "AAA", "to": "BBB", "scheduled_block_mins": 0, "amount": 0 }],
-    "total_mins": 0,
-    "amount": 0
+  "sectors": [{"row":1,"date":"","flight":"","dep":"","arr":"","atd":"","ata":"","is_dhf":false,"is_dht":false}],
+  "duties": [[0,1,2]],
+  "allowances": {
+    "deadhead": {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},
+    "layover":  {"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},
+    "transit":  {"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"diff":0,"basis":"","billable_mins":0,"amount":0}],"total":0},
+    "night":    {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},
+    "tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","status":"confirmed","amount":0}],"total":0}
   },
-  "night": {
-    "sectors": [{ "date": "YYYY-MM-DD", "flight": "6EXXXX", "from": "AAA", "to": "BBB", "std_ist": "HH:MM", "sta_ist": "HH:MM", "night_mins": 0, "sv_used": 0, "amount": 0 }],
-    "total_mins": 0,
-    "amount": 0
-  },
-  "layover": {
-    "events": [{ "station": "AAA", "date_in": "YYYY-MM-DD", "date_out": "YYYY-MM-DD", "check_in_ist": "HH:MM", "check_out_ist": "HH:MM", "duration_hrs": 0, "base_amount": 0, "extra_amount": 0, "total": 0 }],
-    "amount": 0
-  },
-  "tailSwap": {
-    "swaps": [{ "date": "YYYY-MM-DD", "sector_pair": "6EXXXX→6EXXXX", "station": "AAA", "reg_out": "VT-XXX", "reg_in": "VT-XXX", "amount": 0 }],
-    "count": 0,
-    "amount": 0
-  },
-  "transit": {
-    "halts": [{ "date": "YYYY-MM-DD", "station": "AAA", "arrived_ist": "HH:MM", "departed_ist": "HH:MM", "halt_mins": 0, "billable_mins": 0, "basis": "scheduled", "amount": 0 }],
-    "amount": 0
-  },
-  "total": 0
-}`;
+  "grand_total":0
+}
+`;
+}
+
+// Map Claude's output shape → UI shape expected by CalcScreen
+function normalise(c) {
+  const sectors = c.sectors || [];
+  const a = c.allowances || {};
+
+  const dh = a.deadhead || {};
+  const dhSectors = (dh.sectors || []).map(s => ({
+    date:                 s.date   || "",
+    flight:               s.flight || "",
+    from:                 s.dep    || "",
+    to:                   s.arr    || "",
+    scheduled_block_mins: s.block_mins ?? 0,
+    amount:               s.amount    ?? 0,
+  }));
+
+  const lv = a.layover || {};
+  const lvEvents = (lv.stations || []).map(e => ({
+    station:       e.station      || "",
+    date_in:       e.date_in      || "",
+    date_out:      e.date_out     || "",
+    check_in_ist:  e.chocks_on    || "",
+    check_out_ist: e.chocks_off   || "",
+    duration_hrs:  e.duration_hrs ?? 0,
+    base_amount:   e.base         ?? 0,
+    extra_amount:  e.extra        ?? 0,
+    total:         e.total        ?? 0,
+  }));
+
+  const ts = a.tail_swap || {};
+  const tsSwaps = (ts.swaps || []).filter(s => s.status !== "unverifiable").map(s => ({
+    date:        s.date    || "",
+    sector_pair: s.sectors || "",
+    station:     s.station || "",
+    reg_out:     s.reg_out || "",
+    reg_in:      s.reg_in  || "",
+    amount:      s.amount  ?? 0,
+  }));
+
+  const tr = a.transit || {};
+  const trHalts = (tr.halts || []).map(h => ({
+    date:          h.date         || "",
+    station:       h.station      || "",
+    arrived_ist:   h.arrived      || "",
+    departed_ist:  h.departed     || "",
+    halt_mins:     h.actual_halt  ?? h.sched_halt ?? 0,
+    billable_mins: h.billable_mins ?? 0,
+    basis:         h.basis        || "scheduled",
+    amount:        h.amount       ?? 0,
+  }));
+
+  const nt = a.night || {};
+  const ntSectors = (nt.sectors || []).map(s => ({
+    date:      s.date       || "",
+    flight:    s.flight     || "",
+    from:      s.dep        || "",
+    to:        s.arr        || "",
+    std_ist:   s.std        || "",
+    sta_ist:   s.sv_arrival || "",
+    night_mins: s.night_mins ?? 0,
+    sv_used:   s.sv         ?? 0,
+    amount:    s.amount     ?? 0,
+  }));
+
+  // Derive period from earliest sector date
+  let period = "";
+  const dates = sectors.map(s => s.date).filter(Boolean).sort();
+  if (dates.length) {
+    const [y, mo] = dates[0].split("-").map(Number);
+    period = new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  }
+
+  return {
+    period,
+    pilot:    c.pilot || {},
+    deadhead: { sectors: dhSectors, total_mins: dhSectors.reduce((s, x) => s + (x.scheduled_block_mins || 0), 0), amount: dh.total ?? 0 },
+    night:    { sectors: ntSectors, total_mins: ntSectors.reduce((s, x) => s + (x.night_mins || 0), 0),           amount: nt.total ?? 0 },
+    layover:  { events: lvEvents,   amount: lv.total ?? 0 },
+    tailSwap: { swaps: tsSwaps,     count: tsSwaps.length, amount: ts.total ?? 0 },
+    transit:  { halts: trHalts,     amount: tr.total ?? 0 },
+    total: c.grand_total ?? 0,
+  };
 }
 
 export default async function handler(req, res) {
@@ -112,25 +195,24 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
-  const { pdf_base64, sv_csv, pilot, scheduled_times, rates } = req.body ?? {};
+  const { pdf_base64, sv_data, pilot, scheduled_times } = req.body ?? {};
   if (!pdf_base64) return res.status(400).json({ error: "pdf_base64 required" });
   if (!pilot)      return res.status(400).json({ error: "pilot required" });
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
   }
 
-  const bkt    = rankBucket(pilot.rank);
-  const prompt = buildPrompt(pilot, bkt, sv_csv, scheduled_times, rates);
+  const prompt = buildPrompt(pilot, sv_data ?? [], scheduled_times ?? {});
 
   let anthropicRes;
   try {
     anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        "Content-Type":     "application/json",
-        "x-api-key":        process.env.ANTHROPIC_API_KEY,
+        "Content-Type":      "application/json",
+        "x-api-key":         process.env.ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta":   "pdfs-2024-09-25",
+        "anthropic-beta":    "pdfs-2024-09-25",
       },
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
@@ -138,11 +220,8 @@ export default async function handler(req, res) {
         messages: [{
           role: "user",
           content: [
-            {
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: pdf_base64 },
-            },
-            { type: "text", text: prompt },
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdf_base64 } },
+            { type: "text",     text: prompt },
           ],
         }],
       }),
@@ -161,14 +240,13 @@ export default async function handler(req, res) {
   const text = data.content?.[0]?.text;
   if (!text) return res.status(500).json({ error: "Empty response from Claude" });
 
-  let result;
+  let raw;
   try {
-    // Strip markdown fences if present, then find the outermost { ... }
     const stripped = text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "");
     const start = stripped.indexOf("{");
     const end   = stripped.lastIndexOf("}");
     if (start === -1 || end === -1) throw new Error("No JSON object found in response");
-    result = JSON.parse(stripped.slice(start, end + 1));
+    raw = JSON.parse(stripped.slice(start, end + 1));
   } catch (parseErr) {
     return res.status(500).json({
       error: `Claude response was not valid JSON: ${parseErr.message}`,
@@ -176,5 +254,5 @@ export default async function handler(req, res) {
     });
   }
 
-  return res.json(result);
+  return res.json(normalise(raw));
 }
