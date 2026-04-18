@@ -76,7 +76,7 @@ CALCULATION RULES — follow exactly:
    - Both aircraft_reg values must be known and different.
    - Op→Op, Op→DHF, DHF→Op qualify. DHF→DHF does not. DHT excluded.
 
-Return ONLY valid JSON — no markdown fences, no explanatory text. Use this exact structure (empty arrays when no events):
+IMPORTANT: Your entire response must be a single JSON object. Do not write any text before or after it. Do not use markdown fences. Do not explain your reasoning. Start your response with { and end with }. Use this exact structure (empty arrays when no events):
 {
   "period": "<Month YYYY>",
   "pilot": { "rank": "${pilot.rank}", "homeBase": "${pilot.home_base}" },
@@ -135,16 +135,22 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
         max_tokens: 8192,
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: pdf_base64 },
-            },
-            { type: "text", text: prompt },
-          ],
-        }],
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "document",
+                source: { type: "base64", media_type: "application/pdf", data: pdf_base64 },
+              },
+              { type: "text", text: prompt },
+            ],
+          },
+          {
+            role: "assistant",
+            content: "{",
+          },
+        ],
       }),
     });
   } catch (fetchErr) {
@@ -163,12 +169,16 @@ export default async function handler(req, res) {
 
   let result;
   try {
-    const clean = text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```$/m, "").trim();
-    result = JSON.parse(clean);
+    // Strip markdown fences if present, then find the outermost { ... }
+    const stripped = text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "");
+    const start = stripped.indexOf("{");
+    const end   = stripped.lastIndexOf("}");
+    if (start === -1 || end === -1) throw new Error("No JSON object found in response");
+    result = JSON.parse(stripped.slice(start, end + 1));
   } catch (parseErr) {
     return res.status(500).json({
       error: `Claude response was not valid JSON: ${parseErr.message}`,
-      raw:   text.slice(0, 600),
+      raw:   text.slice(0, 800),
     });
   }
 
