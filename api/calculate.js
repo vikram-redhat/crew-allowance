@@ -238,6 +238,10 @@ export default async function handler(req, res) {
 
   const data = await anthropicRes.json();
   const text = data.content?.[0]?.text;
+  console.log("[calculate] Claude raw response length:", text?.length);
+  console.log("[calculate] Claude stop_reason:", data.stop_reason);
+  console.log("[calculate] Claude raw (first 500):", text?.slice(0, 500));
+  console.log("[calculate] Claude raw (last 300):", text?.slice(-300));
   if (!text) return res.status(500).json({ error: "Empty response from Claude" });
 
   let raw;
@@ -250,7 +254,9 @@ export default async function handler(req, res) {
   } catch (parseErr) {
     return res.status(500).json({
       error: `Claude response was not valid JSON: ${parseErr.message}`,
-      raw:   text.slice(0, 800),
+      raw_first500: text?.slice(0, 500),
+      raw_last300:  text?.slice(-300),
+      stop_reason:  data.stop_reason,
     });
   }
 
