@@ -1183,7 +1183,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
             <div style={{ width:"100%", height:"100%", background:"linear-gradient(90deg,"+C.blue+","+C.blueMid+")",
               animation:"pulse 1.8s ease-in-out infinite", opacity:0.7 }} />
           </div>
-          <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>Claude Sonnet · reading PDF + applying all 5 allowance rules</div>
+          <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>Claude Haiku · reading PDF + applying all 5 allowance rules</div>
         </div>
       )}
 
