@@ -118,6 +118,31 @@ function nightMins(stdIstStr, svMins) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   DUTY GROUPING  (gap >= 601 min between sectors = new duty)
+═══════════════════════════════════════════════════════════════════ */
+function groupIntoDuties(sectors) {
+  if (!sectors.length) return [];
+  const duties = [[sectors[0]]];
+  for (let i = 1; i < sectors.length; i++) {
+    const prev = sectors[i - 1];
+    const curr = sectors[i];
+    const ata = prev.ata_local || prev.sta_local;
+    const atd = curr.atd_local || curr.std_local;
+    let gap = Infinity;
+    if (ata && atd && prev.date && curr.date) {
+      const dayDiff = Math.round((new Date(curr.date) - new Date(prev.date)) / 86400000);
+      gap = dayDiff * 1440 + t2m(atd) - t2m(ata);
+    }
+    if (gap >= 601) {
+      duties.push([curr]);
+    } else {
+      duties[duties.length - 1].push(curr);
+    }
+  }
+  return duties.map(s => ({ sectors: s }));
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    CORE CALCULATION ENGINE  (PCSR-based)
 ═══════════════════════════════════════════════════════════════════ */
 function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
@@ -283,28 +308,33 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
   }
 
   // ── 5. LAYOVER ───────────────────────────────────────────────────
-  const opEnriched = enriched.filter(s => !s.is_dhf && !s.is_dht);
-  for (let i = 0; i < opEnriched.length - 1; i++) {
-    const a = opEnriched[i], b = opEnriched[i + 1];
-    if (a.arr === homeBase || b.dep !== a.arr) continue;
-    if (a.date === b.date) continue;
+  const duties = groupIntoDuties(enriched);
+  for (let i = 0; i < duties.length - 1; i++) {
+    const last  = duties[i].sectors.at(-1);
+    const first = duties[i + 1].sectors[0];
+
+    const layoverStation = last.arr;
+    if (layoverStation === homeBase) continue;
+    if (first.dep !== layoverStation) continue;
     if (!lvR) continue;
-    const dA = new Date(a.date), dB = new Date(b.date);
-    if (!dA || !dB) continue;
-    const dayDiff = Math.round((dB - dA) / 86400000);
-    const ataM  = t2m(a.ata_local || a.sta_local || "00:00");
-    const atdM  = t2m(b.atd_local || b.std_local || "00:00");
-    const gapHrs = (dayDiff * 1440 + atdM - ataM) / 60;
-    if (gapHrs < R.layoverMinHours) continue;
-    const baseAmt   = lvR.base;
-    const extraHrs  = gapHrs > 24 ? Math.ceil(gapHrs - 24) : 0;
-    const extraAmt  = extraHrs * lvR.beyondRate;
+
+    const dayDiff    = Math.round((new Date(first.date) - new Date(last.date)) / 86400000);
+    const ataM       = t2m(last.ata_local  || last.sta_local  || "00:00");
+    const atdM       = t2m(first.atd_local || first.std_local || "00:00");
+    const durationMins = dayDiff * 1440 + atdM - ataM;
+
+    if (durationMins <= 601) continue; // must exceed 10h01m
+
+    const gapHrs  = durationMins / 60;
+    const baseAmt = lvR.base;
+    const extraHrs = gapHrs > 24 ? Math.ceil(gapHrs - 24) : 0;
+    const extraAmt = extraHrs * lvR.beyondRate;
     res.layover.events.push({
-      station: a.arr,
-      date_in: a.date, date_out: b.date,
+      station: layoverStation,
+      date_in: last.date, date_out: first.date,
       check_in_ist:  istStr(ataM),
       check_out_ist: istStr(atdM),
-      duration_hrs: Math.round(gapHrs * 100) / 100,
+      duration_hrs:  Math.round(gapHrs * 100) / 100,
       base_amount: baseAmt, extra_amount: extraAmt, total: baseAmt + extraAmt,
     });
     res.layover.amount += baseAmt + extraAmt;
