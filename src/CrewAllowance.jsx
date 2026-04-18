@@ -983,7 +983,17 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       console.log("[calculate] AeroDataBox done — fetched:", fetched, "cached:", cached, "failed:", failed);
       console.log("[calculate] schedMap keys:", Object.keys(schedMap).length);
 
-      // 3. Convert PDF to base64 for Claude
+      // 3. Filter SV to only flights in this PCSR, serialize as compact CSV
+      const sectorFlights = new Set(
+        pcsrData.sectors.map(s => String(s.flight_no).replace(/^6E/i, ""))
+      );
+      const svFiltered = (svData || []).filter(r => sectorFlights.has(String(r.FLTNBR)));
+      const svCsv = ["FLTNBR,DEP,ARR,Time_Slot,SectorValue",
+        ...svFiltered.map(r => `${r.FLTNBR},${r.DEP},${r.ARR},${r.Time_Slot},${r.SectorValue}`)
+      ].join("\n");
+      console.log("[calculate] SV rows full:", (svData||[]).length, "filtered:", svFiltered.length);
+
+      // 4. Convert PDF to base64 for Claude
       setPhase("calculating");
       console.log("[calculate] Converting PDF to base64…");
       const pdfBase64 = await new Promise((resolve, reject) => {
@@ -1004,7 +1014,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pdf_base64:      pdfBase64,
-          sv_data:         svData,
+          sv_csv:          svCsv,
           pilot:           { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank },
           scheduled_times: schedMap,
           rates,

@@ -10,7 +10,7 @@ const rankBucket = r => {
   return "Captain";
 };
 
-function buildPrompt(pilot, bkt, sv_data, scheduled_times, rates) {
+function buildPrompt(pilot, bkt, sv_csv, scheduled_times, rates) {
   const dhRate = (rates?.deadhead?.[bkt]) ?? 4000;
   const nRate  = (rates?.night?.[bkt])    ?? 2000;
   const tsRate = (rates?.tailSwap?.[bkt]) ?? 1500;
@@ -33,9 +33,9 @@ RATES (PAH FLT Issue 01 Rev 46):
 - Transit: ₹${trRate}/hr, capped 4h.
 
 SECTOR VALUE TABLE (SV in minutes — for night flying only):
-Each row: { FLTNBR, DEP, ARR, Time_Slot "HH_HH+1" in UTC, SectorValue }
+Columns: FLTNBR, DEP, ARR, Time_Slot (UTC "H_H+1"), SectorValue
 UTC slot = floor((STD_IST_minutes − 330 + 1440) % 1440 / 60)
-${JSON.stringify(sv_data ?? [])}
+${sv_csv || "(none)"}
 
 AERODATABOX SCHEDULE DATA (keyed "flight_no|dep|arr|date" = YYYY-MM-DD):
 Each value: { std_local, sta_local, atd_local, ata_local, aircraft_reg }
@@ -112,7 +112,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
-  const { pdf_base64, sv_data, pilot, scheduled_times, rates } = req.body ?? {};
+  const { pdf_base64, sv_csv, pilot, scheduled_times, rates } = req.body ?? {};
   if (!pdf_base64) return res.status(400).json({ error: "pdf_base64 required" });
   if (!pilot)      return res.status(400).json({ error: "pilot required" });
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -120,7 +120,7 @@ export default async function handler(req, res) {
   }
 
   const bkt    = rankBucket(pilot.rank);
-  const prompt = buildPrompt(pilot, bkt, sv_data, scheduled_times, rates);
+  const prompt = buildPrompt(pilot, bkt, sv_csv, scheduled_times, rates);
 
   let anthropicRes;
   try {
