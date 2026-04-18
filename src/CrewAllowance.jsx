@@ -126,8 +126,8 @@ function groupIntoDuties(sectors) {
   for (let i = 1; i < sectors.length; i++) {
     const prev = sectors[i - 1];
     const curr = sectors[i];
-    const ata = prev.ata_local || prev.sta_local;
-    const atd = curr.atd_local || curr.std_local;
+    const ata = prev.ata_local;
+    const atd = curr.atd_local;
     let gap = Infinity;
     if (ata && atd && prev.date && curr.date) {
       const dayDiff = Math.round((new Date(curr.date) - new Date(prev.date)) / 86400000);
@@ -318,9 +318,13 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
     if (first.dep !== layoverStation) continue;
     if (!lvR) continue;
 
-    const dayDiff    = Math.round((new Date(first.date) - new Date(last.date)) / 86400000);
-    const ataM       = t2m(last.ata_local  || last.sta_local  || "00:00");
-    const atdM       = t2m(first.atd_local || first.std_local || "00:00");
+    const chocksOn  = last.ata_local;   // actual ATA from PCSR only
+    const chocksOff = first.atd_local;  // actual ATD from PCSR only
+    if (!chocksOn || !chocksOff) continue; // can't calculate without actuals
+
+    const dayDiff      = Math.round((new Date(first.date) - new Date(last.date)) / 86400000);
+    const ataM         = t2m(chocksOn);
+    const atdM         = t2m(chocksOff);
     const durationMins = dayDiff * 1440 + atdM - ataM;
 
     if (durationMins <= 601) continue; // must exceed 10h01m
@@ -332,8 +336,8 @@ function runCalc(sectors, schedMap, svData, homeBase, rank, rates) {
     res.layover.events.push({
       station: layoverStation,
       date_in: last.date, date_out: first.date,
-      check_in_ist:  istStr(ataM),
-      check_out_ist: istStr(atdM),
+      check_in_ist:  chocksOn,
+      check_out_ist: chocksOff,
       duration_hrs:  Math.round(gapHrs * 100) / 100,
       base_amount: baseAmt, extra_amount: extraAmt, total: baseAmt + extraAmt,
     });
