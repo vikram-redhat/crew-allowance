@@ -1020,7 +1020,12 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({ error: resp.statusText }));
         console.error("[calculate] API error body:", errBody);
-        throw new Error(errBody.error || `API error ${resp.status}`);
+        const detail = [
+          errBody.error,
+          errBody.stop_reason ? `stop_reason: ${errBody.stop_reason}` : null,
+          errBody.raw_first500 ? `Claude said: ${errBody.raw_first500}` : null,
+        ].filter(Boolean).join(" | ");
+        throw new Error(detail || `API error ${resp.status}`);
       }
       const res = await resp.json();
       console.log("[calculate] Result received — total:", res.total, "period:", res.period,
