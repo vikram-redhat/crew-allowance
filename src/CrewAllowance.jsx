@@ -949,12 +949,6 @@ function CalcScreen({ user, rates, onNeedProfile }) {
   const [progress,   setProgress]   = useState({ current:0, total:0, flight:"" });
   const [svStatus,   setSvStatus]   = useState(null);   // "found" | "missing"
   const [apiStats,   setApiStats]   = useState(null);   // { fetched, cached, failed }
-  const [priorMonthTail, setPriorMonthTail] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`crewallowance_prior_tail_${user.emp_id}`);
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
-  });
 
   const homeBase = user.home_base || "DEL";
   const rank     = user.rank || "Captain";
@@ -1020,7 +1014,6 @@ function CalcScreen({ user, rates, onNeedProfile }) {
           sv_data:         svFiltered,
           pilot:           { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank },
           scheduled_times: schedMap,
-          prior_month_tail: priorMonthTail ? { station: priorMonthTail.station, chocks_on: priorMonthTail.chocks_on } : null,
         }),
       });
       console.log("[calculate] /api/calculate responded — status:", resp.status);
@@ -1045,18 +1038,6 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       if (!res.period && pcsrData.month) {
         const [y, mo] = pcsrData.month.split("-").map(Number);
         res.period = new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
-      }
-
-      // Save last outstation arrival as prior_month_tail for next month's spill detection
-      const lvEvents = res.layover?.events ?? [];
-      const lastLv = lvEvents[lvEvents.length - 1];
-      if (lastLv && lastLv.station !== homeBase) {
-        const tail = { station: lastLv.station, chocks_on: lastLv.check_in_ist, period: res.period };
-        localStorage.setItem(`crewallowance_prior_tail_${user.emp_id}`, JSON.stringify(tail));
-        setPriorMonthTail(tail);
-      } else {
-        localStorage.removeItem(`crewallowance_prior_tail_${user.emp_id}`);
-        setPriorMonthTail(null);
       }
 
       setResult(res);
@@ -1173,14 +1154,6 @@ function CalcScreen({ user, rates, onNeedProfile }) {
           )}
 
           {err && <div style={{ marginTop:12, padding:"12px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:10, color:C.red, fontSize:12 }}>{err}</div>}
-
-          {priorMonthTail && (
-            <div style={{ marginTop:12, padding:"10px 14px", background:C.greenBg, border:"1.5px solid "+C.green, borderRadius:10, fontSize:12, color:C.green, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
-              <span>Prior month tail loaded: <strong>{priorMonthTail.station}</strong> check-in {priorMonthTail.chocks_on} ({priorMonthTail.period}). Spill layover will be detected.</span>
-              <button onClick={() => { localStorage.removeItem(`crewallowance_prior_tail_${user.emp_id}`); setPriorMonthTail(null); }}
-                style={{ background:"none", border:"1px solid "+C.green, borderRadius:8, padding:"3px 8px", color:C.green, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Clear</button>
-            </div>
-          )}
 
           <div style={{ marginTop:16 }}>
             <Btn onClick={calculate} disabled={!pcsrData || profileIncomplete} icon="▶">
