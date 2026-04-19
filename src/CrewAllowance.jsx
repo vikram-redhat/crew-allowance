@@ -990,32 +990,54 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       const svFiltered = (svData || []).filter(r => sectorFlights.has(String(r.FLTNBR)));
       console.log("[calculate] SV rows full:", (svData||[]).length, "filtered:", svFiltered.length);
 
-      // 4. Send to Claude via /api/calculate
+      // 4. Send to Claude via /api/calculate (SSE streaming)
       setPhase("calculating");
       const pcsrText = pcsrData._rawText;
       console.log("[calculate] Calling /api/calculate… pcsr_text length:", pcsrText?.length);
-      const resp = await fetch("/api/calculate", {
-        method:  "POST",
+
+      const response = await fetch("/api/calculate", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pcsr_text:       pcsrText,
           sv_data:         svFiltered,
           pilot:           { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank },
           scheduled_times: schedMap,
+          prior_month_tail: null,
         }),
       });
-      console.log("[calculate] /api/calculate responded — status:", resp.status);
-      if (!resp.ok) {
-        const errBody = await resp.json().catch(() => ({ error: resp.statusText }));
-        console.error("[calculate] API error body:", errBody);
-        const detail = [
-          errBody.error,
-          errBody.stop_reason ? `stop_reason: ${errBody.stop_reason}` : null,
-          errBody.raw_first500 ? `Claude said: ${errBody.raw_first500}` : null,
-        ].filter(Boolean).join(" | ");
-        throw new Error(detail || `API error ${resp.status}`);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result = null;
+      let error = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop();
+
+        for (const block of blocks) {
+          const eventLine = block.split("\n").find(l => l.startsWith("event:"));
+          const dataLine  = block.split("\n").find(l => l.startsWith("data:"));
+          if (!eventLine || !dataLine) continue;
+
+          const eventType = eventLine.slice(7).trim();
+          const data      = JSON.parse(dataLine.slice(5).trim());
+
+          if (eventType === "result") result = data;
+          if (eventType === "error")  error  = data;
+        }
       }
-      const res = await resp.json();
+
+      if (error) throw new Error(error.error);
+      if (!result) throw new Error("No result received from calculate API");
+
+      const res = result;
       console.log("[calculate] Result received — total:", res.total, "period:", res.period,
         "deadhead sectors:", res.deadhead?.sectors?.length,
         "layover events:", res.layover?.events?.length,

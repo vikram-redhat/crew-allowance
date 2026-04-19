@@ -1,7 +1,4 @@
-// Vercel serverless — sends PCSR PDF + context to Claude, returns structured allowance JSON.
-// ANTHROPIC_API_KEY must be set in Vercel environment variables (no VITE_ prefix).
-
-export const maxDuration = 300; // extended thinking can take 60–120s
+export const maxDuration = 300;
 
 function buildPrompt(pilot, sv_data, scheduled_times, prior_month_tail) {
   return `From the attached PCSR PDF, calculate IndiGo allowances for employee ${pilot.employee_id}, home base ${pilot.home_base}.
@@ -24,7 +21,7 @@ RULES (apply ALL rules silently with NO prose explanation whatsoever — output 
 Return ONLY this JSON with actual values (empty arrays if none qualify):
 {"period":"Month YYYY","allowances":{"deadhead":{"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},"layover":{"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},"transit":{"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"basis":"","billable_mins":0,"amount":0}],"total":0},"night":{"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},"tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","status":"confirmed","amount":0}],"total":0}},"grand_total":0}`;
 }
-// Map Claude's output shape → UI shape expected by CalcScreen
+
 function normalise(c) {
   const a = c.allowances || {};
 
@@ -98,6 +95,10 @@ function normalise(c) {
   };
 }
 
+function sendSSE(res, event, data) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -105,12 +106,17 @@ export default async function handler(req, res) {
 
   const { pcsr_text, sv_data, pilot, scheduled_times, prior_month_tail } = req.body ?? {};
   if (!pcsr_text) return res.status(400).json({ error: "pcsr_text required" });
-  if (!pilot)      return res.status(400).json({ error: "pilot required" });
+  if (!pilot)     return res.status(400).json({ error: "pilot required" });
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
   }
 
   const prompt = buildPrompt(pilot, sv_data ?? [], scheduled_times ?? {}, prior_month_tail ?? null);
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.writeHead(200);
 
   let anthropicRes;
   try {
@@ -123,52 +129,85 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
-        max_tokens: 32000,
-        thinking:   { type: "enabled", budget_tokens: 10000 },
+        max_tokens: 24000,
+        thinking:   { type: "enabled", budget_tokens: 8000 },
+        stream:     true,
         messages: [{
           role: "user",
-          content: [
-            { type: "text", text: `PCSR TEXT CONTENT:\n${pcsr_text}\n\n${prompt}` },
-          ],
+          content: [{ type: "text", text: `PCSR TEXT CONTENT:\n${pcsr_text}\n\n${prompt}` }],
         }],
       }),
     });
   } catch (fetchErr) {
-    return res.status(500).json({ error: `Anthropic API request failed: ${fetchErr.message}` });
+    sendSSE(res, "error", { error: `Anthropic API request failed: ${fetchErr.message}` });
+    res.end();
+    return;
   }
 
   if (!anthropicRes.ok) {
     let body = "";
-    try { body = await anthropicRes.text(); } catch { /* ignore */ }
-    console.error("[calculate] Anthropic API error", anthropicRes.status, body);
-    return res.status(500).json({ error: `Anthropic API ${anthropicRes.status}`, detail: body });
+    try { body = await anthropicRes.text(); } catch {}
+    console.error("[calculate] Anthropic error", anthropicRes.status, body);
+    sendSSE(res, "error", { error: `Anthropic API ${anthropicRes.status}`, detail: body });
+    res.end();
+    return;
   }
 
-  const data = await anthropicRes.json();
-  console.log("[calculate] content block types:", (data.content||[]).map(b=>b.type).join(","));
-  console.log("[calculate] usage:", JSON.stringify(data.usage));
-  // Extended thinking returns multiple content blocks; collect only text blocks
-  const textBlocks = (data.content || []).filter(b => b.type === "text");
-  const text = textBlocks.map(b => b.text).join("");
-  console.log("[calculate] stop_reason:", data.stop_reason, "text blocks:", textBlocks.length, "text length:", text.length);
-  console.log("[calculate] Claude text output (first 500):", text.slice(0, 500));
-  if (!text) return res.status(500).json({ error: "Empty response from Claude" });
+  const reader = anthropicRes.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  let inTextBlock = false;
 
-  let raw;
   try {
-    const stripped = text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "");
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
+        try {
+          const evt = JSON.parse(data);
+          if (evt.type === "content_block_start" && evt.content_block?.type === "text") {
+            inTextBlock = true;
+          } else if (evt.type === "content_block_stop") {
+            inTextBlock = false;
+          } else if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta" && inTextBlock) {
+            fullText += evt.delta.text;
+            res.write(`: chunk\n\n`); // SSE keepalive comment — keeps Vercel connection alive
+          }
+        } catch {}
+      }
+    }
+  } catch (streamErr) {
+    console.error("[calculate] Stream read error:", streamErr);
+    sendSSE(res, "error", { error: `Stream interrupted: ${streamErr.message}` });
+    res.end();
+    return;
+  }
+
+  console.log("[calculate] Stream complete. Text length:", fullText.length);
+
+  try {
+    const stripped = fullText.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "");
     const start = stripped.indexOf("{");
     const end   = stripped.lastIndexOf("}");
     if (start === -1 || end === -1) throw new Error("No JSON object found in response");
-    raw = JSON.parse(stripped.slice(start, end + 1));
+    const raw = JSON.parse(stripped.slice(start, end + 1));
+    sendSSE(res, "result", normalise(raw));
   } catch (parseErr) {
-    return res.status(500).json({
-      error: `Claude response was not valid JSON: ${parseErr.message}`,
-      raw_first500: text?.slice(0, 500),
-      raw_last300:  text?.slice(-300),
-      stop_reason:  data.stop_reason,
+    console.error("[calculate] JSON parse error:", parseErr.message);
+    sendSSE(res, "error", {
+      error:        `Claude response was not valid JSON: ${parseErr.message}`,
+      raw_first500: fullText.slice(0, 500),
+      raw_last300:  fullText.slice(-300),
     });
   }
 
-  return res.json(normalise(raw));
+  res.end();
 }
