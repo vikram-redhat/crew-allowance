@@ -74,7 +74,14 @@ export function groupIntoDuties(sectors, scheduledTimes) {
       continue;
     }
 
-    if ((currStartMs - prevEndMs) / 60000 > 480) {
+    const gapMins = (currStartMs - prevEndMs) / 60000;
+    if (gapMins < 0) {
+      // sectors overlap or are concurrent — same duty
+      duties[duties.length - 1].push(curr);
+      continue;
+    }
+
+    if (gapMins > 480) {
       duties.push([curr]);
     } else {
       duties[duties.length - 1].push(curr);
@@ -152,8 +159,8 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
   for (let i = 0; i < duties.length - 1; i++) {
     const lastSector  = duties[i][duties[i].length - 1];
     const firstSector = duties[i + 1][0];
-    if (lastSector.arr === pilot.home_base) continue;
-    if (lastSector.arr !== firstSector.dep) continue;
+    if (lastSector.arr.trim() === pilot.home_base.trim()) continue;
+    if (lastSector.arr.trim() !== firstSector.dep.trim()) continue;
 
     const chocksOnMs  = absAtaMs(lastSector);
     const chocksOffMs = absAtdMs(firstSector, scheduledTimes);
@@ -189,7 +196,7 @@ export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
     );
     if (!sv) continue;
 
-    const SV = Number(sv.SV_mins);
+    const SV = Number(sv.SectorValue);
     if (!SV) continue;
 
     const SV_arrival = STD_mins + SV;
@@ -229,7 +236,7 @@ export function calculateTransit(sectors, duties, scheduledTimes, pilot) {
     for (let i = 0; i < duty.length - 1; i++) {
       const sA = duty[i];
       const sB = duty[i + 1];
-      if (sA.arr !== sB.dep) continue;
+      if (sA.arr.trim() !== sB.dep.trim()) continue;
       if (sA.is_dht || sB.is_dht) continue;
 
       const schedA   = getScheduled(sA, scheduledTimes);
@@ -287,7 +294,13 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
       const regA = getScheduled(sA, scheduledTimes)?.aircraft_reg ?? null;
       const regB = getScheduled(sB, scheduledTimes)?.aircraft_reg ?? null;
 
-      if (regA === null || regB === null) continue; // unverifiable — skip display
+      if (regA === null || regB === null) {
+        const missing = [regA === null ? `${sA.flight} ${sA.dep}→${sA.arr} ${sA.date}` : null,
+                         regB === null ? `${sB.flight} ${sB.dep}→${sB.arr} ${sB.date}` : null]
+                        .filter(Boolean).join(", ");
+        console.log(`[tailSwap] unverifiable — missing reg for: ${missing}`);
+        continue;
+      }
       if (regA === regB) continue;
 
       const amount = r.tailSwap;

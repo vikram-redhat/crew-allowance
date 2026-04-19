@@ -1172,13 +1172,13 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       {phase === "calculating" && (
         <div style={{ marginTop:20, padding:"24px 20px", background:C.white, borderRadius:16, border:"1.5px solid "+C.border, textAlign:"center", boxShadow:C.shadow }}>
           <div style={{ fontSize:32, marginBottom:12 }}>🤖</div>
-          <div style={{ fontSize:15, fontWeight:800, color:C.navy, marginBottom:6 }}>Calculating allowances…</div>
-          <div style={{ fontSize:12, color:C.textMid, marginBottom:16 }}>Claude is reading your PCSR and applying PAH rules. This takes 20–40 seconds.</div>
+          <div style={{ fontSize:15, fontWeight:800, color:C.navy, marginBottom:6 }}>Reading PCSR…</div>
+          <div style={{ fontSize:12, color:C.textMid, marginBottom:16 }}>Claude is extracting your sectors. This takes 10–20 seconds.</div>
           <div style={{ background:C.border, borderRadius:4, height:6, overflow:"hidden" }}>
             <div style={{ width:"100%", height:"100%", background:"linear-gradient(90deg,"+C.blue+","+C.blueMid+")",
               animation:"pulse 1.8s ease-in-out infinite", opacity:0.7 }} />
           </div>
-          <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>Claude Sonnet · reading PDF + applying all 5 allowance rules</div>
+          <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>Claude Sonnet · extracting sectors · allowances calculated in JS</div>
         </div>
       )}
 
