@@ -4,9 +4,19 @@
 export const maxDuration = 60;
 
 function buildPrompt(pilot, sv_data, scheduled_times) {
-  return `
-You are calculating IndiGo pilot allowances per PAH FLT Issue 01 Rev 46.
-Return ONLY valid JSON. No explanation, no markdown, no text outside the JSON.
+  return `Calculate IndiGo pilot allowances from the attached PCSR PDF and return this JSON object — nothing else:
+
+{
+  "period": "Month YYYY",
+  "allowances": {
+    "deadhead": {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},
+    "layover":  {"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},
+    "transit":  {"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"basis":"","billable_mins":0,"amount":0}],"total":0},
+    "night":    {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},
+    "tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","status":"confirmed","amount":0}],"total":0}
+  },
+  "grand_total":0
+}
 
 PILOT:
 - Employee ID: ${pilot.employee_id}
@@ -91,18 +101,7 @@ For every consecutive sector pair within the same duty:
 - If both regs are known AND they differ: count as one tail swap, pay ₹1,500.
 - If either reg is null: set status "unverifiable" for that pair.
 
-Return this exact JSON structure. Do NOT include a sectors array or duties array — allowances only:
-{
-  "period": "February 2026",
-  "allowances": {
-    "deadhead": {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},
-    "layover":  {"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},
-    "transit":  {"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"basis":"","billable_mins":0,"amount":0}],"total":0},
-    "night":    {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},
-    "tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","status":"confirmed","amount":0}],"total":0}
-  },
-  "grand_total":0
-}
+Do not write any text outside the JSON object.
 `;
 }
 
@@ -207,6 +206,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
         max_tokens: 16000,
+        system: "You are a JSON calculator. You output ONLY a single valid JSON object. You never write any text, explanation, reasoning, steps, or markdown outside the JSON. Your response starts with { and ends with }. If you are tempted to explain your reasoning, put it inside a JSON field called \"_debug\" instead.",
         messages: [{
           role: "user",
           content: [
