@@ -3,24 +3,26 @@
 
 export const maxDuration = 300; // extended thinking can take 60–120s
 
-function buildPrompt(pilot, sv_data, scheduled_times) {
+function buildPrompt(pilot, sv_data, scheduled_times, prior_month_tail) {
   return `From the attached PCSR PDF, calculate IndiGo allowances for employee ${pilot.employee_id}, home base ${pilot.home_base}.
 
 AERODATABOX DATA (key="flight|dep|arr|date"): ${JSON.stringify(scheduled_times)}
 SECTOR VALUES (FLTNBR/DEP/ARR/Time_Slot/SV_mins): ${JSON.stringify(sv_data)}
+PRIOR MONTH TAIL (last duty of previous month, for spill-layover detection): ${JSON.stringify(prior_month_tail ?? null)}
 
 RULES (apply silently, output only the final JSON):
 - DHF = pilot is passenger (asterisk on dep in grid OR "DHF - ${pilot.employee_id}" in Other Crew). DHT = other crew on this pilot sector, skip for all allowances.
-- Duties: gap between prev ATA and next ATD > 8h = new duty. Midnight cross: ATA < ATD on same date means ATA is on ATD_date+1.
+- Duties: FIRST apply midnight correction to every sector: if a sector's ATA time-of-day is earlier than its ATD time-of-day on the same calendar date, that ATA belongs to ATD_date+1. Apply this to ALL sectors before computing any gaps or durations. THEN: gap between midnight-corrected prev ATA and next ATD > 8h = new duty.
 - Transfer section overrides parsed dates: "Hotel to Airport DD/MM/YYYY" = outbound sector date, "Airport to Hotel DD/MM/YYYY" = inbound sector date.
 - DEADHEAD: DHF sectors. block_mins=AeroDataBox STA-STD (add 1440 if negative). amount=block_mins×(4000/60) rounded.
-- LAYOVER: duty N last sector arrives at outstation≠${pilot.home_base}, duty N+1 first sector departs same outstation. DHF valid as outbound. chocks_on=ATA of last sector (midnight-corrected). chocks_off=ATD of first sector next duty (use AeroDataBox STD if ATD missing). Skip if duration≤10h01m. base=3000, extra=ceil(hrs-24)×150 if >24h.
-- TRANSIT: consecutive pairs within duty where arr==dep, neither DHT. sched_halt=AeroDataBox STA to next STD. actual_halt=ATA to next ATD. Qualify if sched_halt≥90min OR (actual≥90min AND |diff|>15min). Pay on actual if |diff|>15min else scheduled. billable=min(mins,240). amount=billable×(1000/60) rounded.
-- NIGHT: non-DHF/DHT sectors with AeroDataBox STD before 06:00. UTC_slot=floor((STD_IST_mins-330+1440)%1440/60). Match sv_data by FLTNBR (no 6E prefix), DEP, ARR, slot. night_mins=overlap of [STD, STD+SV] with [1,360] mins. amount=night_mins×(2000/60) rounded.
-- TAIL SWAP: consecutive non-DHT pairs in same duty, arr==dep, not both DHF, aircraft_reg known and different. amount=1500 each.
+- LAYOVER: duty N last sector arrives at outstation≠${pilot.home_base}, duty N+1 first sector departs same outstation. DHF valid as outbound. chocks_on=ATA of last sector (midnight-corrected). chocks_off=ATD of first sector next duty (use AeroDataBox STD if ATD missing). Skip if duration<10h01m. base=3000, extra=ceil(hrs-24)×150 if >24h.
+- LAYOVER SPILL: if prior_month_tail shows the pilot ended at an outstation ≠ ${pilot.home_base}, and the first duty of this month departs from that same outstation, compute the layover duration from prior_month_tail.chocks_on to this month's first ATD. Attribute it to this month.
+- TRANSIT: consecutive pairs within duty where arr==dep. Exclude any pair where EITHER sector is DHT. DHF is NOT DHT — a DHF sector as either the arriving or departing leg is fully eligible for transit (PAH §7.0 excludes DHT only). sched_halt=AeroDataBox STA to next STD. actual_halt=ATA to next ATD. Qualify if sched_halt≥90min OR (actual≥90min AND |diff|>15min). Pay on actual if |diff|>15min else scheduled. billable=min(mins,240). amount=billable×(1000/60) rounded.
+- NIGHT: non-DHF/DHT sectors where AeroDataBox STD is available. Do NOT pre-filter by time of day. UTC_slot=floor((STD_IST_mins-330+1440)%1440/60). Match sv_data by FLTNBR (no 6E prefix), DEP, ARR, slot. Compute STD_mins (0–1439). SV_arrival_mins=(STD_mins+SV)%1440. Night window=[1,360]. If SV_arrival_mins<STD_mins (midnight cross), split and sum overlaps with [1,360] from both segments. night_mins=total overlap. Skip sector only if night_mins=0. amount=night_mins×(2000/60) rounded.
+- TAIL SWAP: consecutive non-DHT pairs in same duty, arr==dep, not both DHF. If aircraft_reg is available for both sectors and they differ → swap confirmed, amount=1500. If aircraft_reg is null/missing for either sector → emit swap with status="unverifiable" and amount=0. If regs are known and identical → no swap.
 
 Return ONLY this JSON with actual values (empty arrays if none qualify):
-{"period":"Month YYYY","allowances":{"deadhead":{"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},"layover":{"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},"transit":{"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"basis":"","billable_mins":0,"amount":0}],"total":0},"night":{"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},"tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","amount":0}],"total":0}},"grand_total":0}`;
+{"period":"Month YYYY","allowances":{"deadhead":{"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},"layover":{"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},"transit":{"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"basis":"","billable_mins":0,"amount":0}],"total":0},"night":{"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},"tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","status":"confirmed","amount":0}],"total":0}},"grand_total":0}`;
 }
 // Map Claude's output shape → UI shape expected by CalcScreen
 function normalise(c) {
@@ -101,14 +103,14 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
-  const { pdf_base64, sv_data, pilot, scheduled_times } = req.body ?? {};
+  const { pdf_base64, sv_data, pilot, scheduled_times, prior_month_tail } = req.body ?? {};
   if (!pdf_base64) return res.status(400).json({ error: "pdf_base64 required" });
   if (!pilot)      return res.status(400).json({ error: "pilot required" });
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
   }
 
-  const prompt = buildPrompt(pilot, sv_data ?? [], scheduled_times ?? {});
+  const prompt = buildPrompt(pilot, sv_data ?? [], scheduled_times ?? {}, prior_month_tail ?? null);
 
   let anthropicRes;
   try {
