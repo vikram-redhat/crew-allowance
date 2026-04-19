@@ -118,12 +118,14 @@ export default async function handler(req, res) {
         "Content-Type":      "application/json",
         "x-api-key":         process.env.ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta":    "pdfs-2024-09-25",
+        // Both betas needed: pdfs for document blocks, interleaved-thinking for extended thinking
+        "anthropic-beta":    "pdfs-2024-09-25,interleaved-thinking-2025-05-14",
       },
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
-        max_tokens: 16000,
-        system: "You output ONLY a single valid JSON object — no text, no markdown, no reasoning, no debug fields. Your entire response is the JSON object and nothing else.",
+        // budget_tokens for reasoning + headroom for JSON output
+        max_tokens: 12000,
+        thinking:   { type: "enabled", budget_tokens: 10000 },
         messages: [{
           role: "user",
           content: [
@@ -144,11 +146,11 @@ export default async function handler(req, res) {
   }
 
   const data = await anthropicRes.json();
-  const text = data.content?.[0]?.text;
-  console.log("[calculate] Claude raw response length:", text?.length);
-  console.log("[calculate] Claude stop_reason:", data.stop_reason);
-  console.log("[calculate] Claude raw (first 500):", text?.slice(0, 500));
-  console.log("[calculate] Claude raw (last 300):", text?.slice(-300));
+  // Extended thinking returns multiple content blocks; collect only text blocks
+  const textBlocks = (data.content || []).filter(b => b.type === "text");
+  const text = textBlocks.map(b => b.text).join("");
+  console.log("[calculate] stop_reason:", data.stop_reason, "text blocks:", textBlocks.length, "text length:", text.length);
+  console.log("[calculate] Claude text output (first 500):", text.slice(0, 500));
   if (!text) return res.status(500).json({ error: "Empty response from Claude" });
 
   let raw;
