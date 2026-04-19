@@ -1,7 +1,7 @@
 // Vercel serverless — sends PCSR PDF + context to Claude, returns structured allowance JSON.
 // ANTHROPIC_API_KEY must be set in Vercel environment variables (no VITE_ prefix).
 
-export const maxDuration = 60;
+export const maxDuration = 300; // extended thinking can take 60–120s
 
 function buildPrompt(pilot, sv_data, scheduled_times) {
   return `From the attached PCSR PDF, calculate IndiGo allowances for employee ${pilot.employee_id}, home base ${pilot.home_base}.
