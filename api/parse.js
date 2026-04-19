@@ -22,7 +22,9 @@ RULES:
 - The same flight number can appear twice in one duty (e.g. 6E6732 DEL→AMD then AMD→BOM). Use date+flight+dep+arr as unique key.
 - Times are in HH:MM format (IST).
 
-Return ONLY this JSON with no explanation, no markdown, starting with {:
+Return ONLY this JSON with no explanation, no markdown, starting with {. Output the JSON object and then STOP. Do not add any text, explanation or commentary after the closing brace.
+
+Schema:
 {
   "period": "Month YYYY",
   "sectors": [
