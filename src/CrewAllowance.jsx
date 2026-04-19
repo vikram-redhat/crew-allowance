@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { runCalculations } from "./calculate.js";
 import "./App.css";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -990,61 +991,34 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       const svFiltered = (svData || []).filter(r => sectorFlights.has(String(r.FLTNBR)));
       console.log("[calculate] SV rows full:", (svData||[]).length, "filtered:", svFiltered.length);
 
-      // 4. Send to Claude via /api/calculate (SSE streaming)
+      // 4. Parse PCSR with Claude
       setPhase("calculating");
       const pcsrText = pcsrData._rawText;
-      console.log("[calculate] Calling /api/calculate… pcsr_text length:", pcsrText?.length);
+      console.log("[calculate] Calling /api/parse… pcsr_text length:", pcsrText?.length);
 
-      const response = await fetch("/api/calculate", {
-        method: "POST",
+      const parseResp = await fetch("/api/parse", {
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pcsr_text:       pcsrText,
-          sv_data:         svFiltered,
-          pilot:           { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank },
-          scheduled_times: schedMap,
-          prior_month_tail: null,
-        }),
+        body: JSON.stringify({ pcsr_text: pcsrText, employee_id: user.emp_id }),
       });
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let result = null;
-      let error = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop();
-
-        for (const block of blocks) {
-          const eventLine = block.split("\n").find(l => l.startsWith("event:"));
-          const dataLine  = block.split("\n").find(l => l.startsWith("data:"));
-          if (!eventLine || !dataLine) continue;
-
-          const eventType = eventLine.slice(7).trim();
-          const data      = JSON.parse(dataLine.slice(5).trim());
-
-          if (eventType === "result") result = data;
-          if (eventType === "error")  error  = data;
-        }
+      if (!parseResp.ok) {
+        const errBody = await parseResp.json().catch(() => ({ error: parseResp.statusText }));
+        throw new Error(errBody.error || `Parse API error ${parseResp.status}`);
       }
+      const { period: parsedPeriod, sectors } = await parseResp.json();
+      console.log("[calculate] Parsed sectors:", sectors?.length, "period:", parsedPeriod);
 
-      if (error) throw new Error(error.error);
-      if (!result) throw new Error("No result received from calculate API");
+      // 5. Run deterministic JS calculations
+      const pilot = { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank };
+      const res = runCalculations(parsedPeriod, sectors, schedMap, svFiltered, pilot, null);
 
-      const res = result;
-      console.log("[calculate] Result received — total:", res.total, "period:", res.period,
-        "deadhead sectors:", res.deadhead?.sectors?.length,
-        "layover events:", res.layover?.events?.length,
-        "transit halts:", res.transit?.halts?.length,
-        "tailSwap count:", res.tailSwap?.count);
+      console.log("[calculate] Result — total:", res.total,
+        "deadhead:", res.deadhead?.sectors?.length,
+        "layover:", res.layover?.events?.length,
+        "transit:", res.transit?.halts?.length,
+        "tailSwap:", res.tailSwap?.count);
 
-      // Ensure period is set (Claude may return it; fall back to parsed header)
+      // Fallback period label if Claude didn't return one
       if (!res.period && pcsrData.month) {
         const [y, mo] = pcsrData.month.split("-").map(Number);
         res.period = new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
