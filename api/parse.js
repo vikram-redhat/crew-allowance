@@ -50,8 +50,7 @@ Return ONLY this JSON with no explanation, no markdown, starting with {:
       },
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
-        max_tokens: 8000,
-        thinking:   { type: "enabled", budget_tokens: 5000 },
+        max_tokens: 4000,
         messages: [{
           role: "user",
           content: [{ type: "text", text: `PCSR TEXT CONTENT:\n${pcsr_text}\n\n${prompt}` }],
