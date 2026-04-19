@@ -10,7 +10,7 @@ AERODATABOX DATA (key="flight|dep|arr|date"): ${JSON.stringify(scheduled_times)}
 SECTOR VALUES (FLTNBR/DEP/ARR/Time_Slot/SV_mins): ${JSON.stringify(sv_data)}
 PRIOR MONTH TAIL (last duty of previous month, for spill-layover detection): ${JSON.stringify(prior_month_tail ?? null)}
 
-RULES (apply silently, output only the final JSON):
+RULES (apply ALL rules silently with NO prose explanation whatsoever — output ONLY the raw JSON object, starting with { and nothing before it):
 - DHF = pilot is passenger (asterisk on dep in grid OR "DHF - ${pilot.employee_id}" in Other Crew). DHT = other crew on this pilot sector, skip for all allowances.
 - Duties: FIRST apply midnight correction to every sector: if a sector's ATA time-of-day is earlier than its ATD time-of-day on the same calendar date, that ATA belongs to ATD_date+1. Apply this to ALL sectors before computing any gaps or durations. THEN: gap between midnight-corrected prev ATA and next ATD > 8h = new duty.
 - Transfer section overrides parsed dates: "Hotel to Airport DD/MM/YYYY" = outbound sector date, "Airport to Hotel DD/MM/YYYY" = inbound sector date.
@@ -124,7 +124,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
-        max_tokens: 8000,
+        max_tokens: 16000,
         messages: [{
           role: "user",
           content: [
