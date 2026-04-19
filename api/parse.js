@@ -17,7 +17,7 @@ RULES:
 - DHF = this pilot is a passenger. Detect by: asterisk on departure airport in the flight grid, OR "DHF - ${employee_id}" appearing next to this flight in the Other Crew section.
 - DHT = other crew are passengers on this pilot's sector. Detect by: "DHT" appearing in the Other Crew section for this flight.
 - Times prefixed with "A" in the PCSR grid are actuals (ATD/ATA). Times without "A" prefix are scheduled.
-- The Transfer Information section contains ground truth dates. "Hotel to Airport: DD/MM/YYYY" means the outbound sector from that station is on that date. "Airport to Hotel: DD/MM/YYYY" means the inbound sector to that station is on that date. Use these to correct any early-morning sector dates that may be misassigned.
+- CRITICAL DATE CORRECTION — Early morning sectors (ATD between 00:00 and 08:00 IST) are frequently assigned the wrong calendar date in the PCSR grid. Use the Transfer Information section as ground truth: "Hotel to Airport: DD/MM/YYYY" → the sector departing from that station is on that exact date. "Airport to Hotel: DD/MM/YYYY" → the sector arriving at that station is on that exact date. If no Transfer Information entry exists for a station, apply this rule: if an early morning sector (00:00-08:00) at station X follows a sector that arrived at station X on date D, and the continuation flight also departs station X, the departure date is D (same day as arrival), NOT D+1.
 - The Training Details section contains time ranges that look like flight numbers (e.g. "1603 - 1835"). Do NOT parse these as sectors.
 - The same flight number can appear twice in one duty (e.g. 6E6732 DEL→AMD then AMD→BOM). Use date+flight+dep+arr as unique key.
 - Times are in HH:MM format (IST).

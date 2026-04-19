@@ -220,6 +220,7 @@ export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
       night_mins = seg1 + seg2;
     }
 
+    console.log('[night] night_mins:', night_mins, 'SV_arrival:', SV_arrival, 'for', s.flight);
     if (night_mins === 0) continue;
 
     const amount = Math.round(night_mins * r.night);
