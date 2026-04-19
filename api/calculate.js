@@ -120,13 +120,11 @@ export default async function handler(req, res) {
         "Content-Type":      "application/json",
         "x-api-key":         process.env.ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
-        // Both betas needed: pdfs for document blocks, interleaved-thinking for extended thinking
-        "anthropic-beta":    "pdfs-2024-09-25,interleaved-thinking-2025-05-14",
+        "anthropic-beta":    "pdfs-2024-09-25",
       },
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
-        // budget_tokens for reasoning + headroom for JSON output
-        max_tokens: 12000,
+        max_tokens: 16000,
         thinking:   { type: "enabled", budget_tokens: 10000 },
         messages: [{
           role: "user",
@@ -144,10 +142,13 @@ export default async function handler(req, res) {
   if (!anthropicRes.ok) {
     let body = "";
     try { body = await anthropicRes.text(); } catch { /* ignore */ }
-    return res.status(500).json({ error: `Anthropic API ${anthropicRes.status}: ${body.slice(0, 300)}` });
+    console.error("[calculate] Anthropic API error", anthropicRes.status, body);
+    return res.status(500).json({ error: `Anthropic API ${anthropicRes.status}`, detail: body });
   }
 
   const data = await anthropicRes.json();
+  console.log("[calculate] content block types:", (data.content||[]).map(b=>b.type).join(","));
+  console.log("[calculate] usage:", JSON.stringify(data.usage));
   // Extended thinking returns multiple content blocks; collect only text blocks
   const textBlocks = (data.content || []).filter(b => b.type === "text");
   const text = textBlocks.map(b => b.text).join("");
