@@ -75,7 +75,7 @@ const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
 async function fetchWithCache(flight, dep, arr, date) {
   if (supabase) {
     const { data } = await supabase.from("flight_schedule_cache")
-      .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", date).maybeSingle();
+      .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", date).limit(1).maybeSingle();
     if (data) return { data, fromCache: true };
   }
   const url = `/api/aerodatabox?flight=${encodeURIComponent(flight)}&dep=${encodeURIComponent(dep)}&arr=${encodeURIComponent(arr)}&date=${encodeURIComponent(date)}`;
