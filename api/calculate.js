@@ -103,8 +103,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
-  const { pdf_base64, sv_data, pilot, scheduled_times, prior_month_tail } = req.body ?? {};
-  if (!pdf_base64) return res.status(400).json({ error: "pdf_base64 required" });
+  const { pcsr_text, sv_data, pilot, scheduled_times, prior_month_tail } = req.body ?? {};
+  if (!pcsr_text) return res.status(400).json({ error: "pcsr_text required" });
   if (!pilot)      return res.status(400).json({ error: "pilot required" });
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
@@ -120,7 +120,6 @@ export default async function handler(req, res) {
         "Content-Type":      "application/json",
         "x-api-key":         process.env.ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta":    "pdfs-2024-09-25",
       },
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
@@ -129,8 +128,7 @@ export default async function handler(req, res) {
         messages: [{
           role: "user",
           content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdf_base64 } },
-            { type: "text",     text: prompt },
+            { type: "text", text: `PCSR TEXT CONTENT:\n${pcsr_text}\n\n${prompt}` },
           ],
         }],
       }),

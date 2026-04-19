@@ -519,6 +519,7 @@ export async function parsePcsrPdf(buffer) {
     sectMatches.push(`  match[${sectMatches.length}]: "${sm[0]}" → date=${sm[1]} flt=${sm[2]} dep=${sm[3]} arr=${sm[4]} std=${sm[5]} sta=${sm[6]}`);
   }
 
+  result._rawText = rawText;
   result._rawSample =
     "=== FIRST 1000 ===\n" + flat.slice(0, 1000) +
     (otherIdx !== -1

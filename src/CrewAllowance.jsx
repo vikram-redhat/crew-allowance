@@ -990,27 +990,15 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       const svFiltered = (svData || []).filter(r => sectorFlights.has(String(r.FLTNBR)));
       console.log("[calculate] SV rows full:", (svData||[]).length, "filtered:", svFiltered.length);
 
-      // 4. Convert PDF to base64 for Claude
-      setPhase("calculating");
-      console.log("[calculate] Converting PDF to base64…");
-      const pdfBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload  = () => {
-          const b64 = reader.result.split(",")[1];
-          console.log("[calculate] PDF base64 length:", b64?.length, "bytes:", Math.round(b64?.length * 0.75));
-          resolve(b64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(pcsrFile);
-      });
-
       // 4. Send to Claude via /api/calculate
-      console.log("[calculate] Calling /api/calculate…");
+      setPhase("calculating");
+      const pcsrText = pcsrData._rawText;
+      console.log("[calculate] Calling /api/calculate… pcsr_text length:", pcsrText?.length);
       const resp = await fetch("/api/calculate", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          pdf_base64:      pdfBase64,
+          pcsr_text:       pcsrText,
           sv_data:         svFiltered,
           pilot:           { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank },
           scheduled_times: schedMap,
