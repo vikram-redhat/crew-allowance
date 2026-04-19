@@ -4,107 +4,24 @@
 export const maxDuration = 60;
 
 function buildPrompt(pilot, sv_data, scheduled_times) {
-  return `Calculate IndiGo pilot allowances from the attached PCSR PDF and return this JSON object — nothing else:
+  return `From the attached PCSR PDF, calculate IndiGo allowances for employee ${pilot.employee_id}, home base ${pilot.home_base}.
 
-{
-  "period": "Month YYYY",
-  "allowances": {
-    "deadhead": {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},
-    "layover":  {"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},
-    "transit":  {"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"basis":"","billable_mins":0,"amount":0}],"total":0},
-    "night":    {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},
-    "tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","status":"confirmed","amount":0}],"total":0}
-  },
-  "grand_total":0
+AERODATABOX DATA (key="flight|dep|arr|date"): ${JSON.stringify(scheduled_times)}
+SECTOR VALUES (FLTNBR/DEP/ARR/Time_Slot/SV_mins): ${JSON.stringify(sv_data)}
+
+RULES (apply silently, output only the final JSON):
+- DHF = pilot is passenger (asterisk on dep in grid OR "DHF - ${pilot.employee_id}" in Other Crew). DHT = other crew on this pilot sector, skip for all allowances.
+- Duties: gap between prev ATA and next ATD > 8h = new duty. Midnight cross: ATA < ATD on same date means ATA is on ATD_date+1.
+- Transfer section overrides parsed dates: "Hotel to Airport DD/MM/YYYY" = outbound sector date, "Airport to Hotel DD/MM/YYYY" = inbound sector date.
+- DEADHEAD: DHF sectors. block_mins=AeroDataBox STA-STD (add 1440 if negative). amount=block_mins×(4000/60) rounded.
+- LAYOVER: duty N last sector arrives at outstation≠${pilot.home_base}, duty N+1 first sector departs same outstation. DHF valid as outbound. chocks_on=ATA of last sector (midnight-corrected). chocks_off=ATD of first sector next duty (use AeroDataBox STD if ATD missing). Skip if duration≤10h01m. base=3000, extra=ceil(hrs-24)×150 if >24h.
+- TRANSIT: consecutive pairs within duty where arr==dep, neither DHT. sched_halt=AeroDataBox STA to next STD. actual_halt=ATA to next ATD. Qualify if sched_halt≥90min OR (actual≥90min AND |diff|>15min). Pay on actual if |diff|>15min else scheduled. billable=min(mins,240). amount=billable×(1000/60) rounded.
+- NIGHT: non-DHF/DHT sectors with AeroDataBox STD before 06:00. UTC_slot=floor((STD_IST_mins-330+1440)%1440/60). Match sv_data by FLTNBR (no 6E prefix), DEP, ARR, slot. night_mins=overlap of [STD, STD+SV] with [1,360] mins. amount=night_mins×(2000/60) rounded.
+- TAIL SWAP: consecutive non-DHT pairs in same duty, arr==dep, not both DHF, aircraft_reg known and different. amount=1500 each.
+
+Return ONLY this JSON with actual values (empty arrays if none qualify):
+{"period":"Month YYYY","allowances":{"deadhead":{"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},"layover":{"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},"transit":{"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"basis":"","billable_mins":0,"amount":0}],"total":0},"night":{"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},"tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","amount":0}],"total":0}},"grand_total":0}`;
 }
-
-PILOT:
-- Employee ID: ${pilot.employee_id}
-- Home Base: ${pilot.home_base}
-- Rank: ${pilot.rank}
-
-SECTOR VALUES (minutes, from 6eBreeze SV report):
-${JSON.stringify(sv_data)}
-
-SCHEDULED TIMES FROM AERODATABOX (keyed flight|dep|arr|date):
-${JSON.stringify(scheduled_times)}
-
-RATES:
-- Deadhead (§1.0): ₹4,000 per scheduled block hour, prorated to minute. Scheduled block = AeroDataBox STA − STD.
-- Layover (§2.0): ₹3,000 flat for 10:01–24:00h away from home base. Beyond 24h: +₹150 per hour rounded UP to next hour.
-- Tail Swap (§6.0): ₹1,500 per swap. A swap = aircraft_reg changes between consecutive sectors in same duty.
-- Transit (§7.0): ₹1,000/hr prorated to minute, capped at 4 hours (₹4,000 max per halt).
-- Night Flying (§9.0): ₹2,000 per night hour, prorated to minute.
-
-STEP 1 — PARSE SECTORS FROM THE PCSR PDF:
-Extract every flight sector for employee ${pilot.employee_id}.
-For each sector record: date (YYYY-MM-DD), flight, dep, arr, atd (HH:MM), ata (HH:MM), is_dhf, is_dht.
-A sector is DHF if the employee appears as "DHF" in the Other Crew section for that flight, or if there is an asterisk on the departure airport in the grid.
-A sector is DHT if the employee appears as "DHT" in the Other Crew section.
-IMPORTANT: Use the Transfer Information section to validate dates for early-morning sectors.
-"Hotel to Airport: DD/MM/YYYY" means the outbound sector from that station is on that date.
-"Airport to Hotel: DD/MM/YYYY" means the inbound sector to that station is on that date.
-IMPORTANT: When a sector's ATA is earlier than its ATD (e.g. ATD 23:37, ATA 01:23), the ATA is on the next calendar day.
-Do NOT include training entries from the Training Details section as sectors.
-
-STEP 2 — GROUP INTO DUTIES:
-A new duty starts when the gap between the previous sector's ATA and the next sector's ATD exceeds 8 hours.
-Apply midnight crossing correction before computing gaps: if ATA < ATD on the same date, ATA belongs to ATD_date + 1 day.
-
-STEP 3 — DEADHEAD (§1.0):
-For each DHF sector, find its entry in scheduled_times to get STD and STA.
-Scheduled block minutes = STA − STD (handle overnight: if STA < STD, add 24h).
-Pay = block_minutes × (4000 / 60), rounded to nearest rupee.
-Only DHF sectors qualify. Do not use actual block or SV for this calculation.
-
-STEP 4 — LAYOVER (§2.0):
-A layover exists when: the last sector of duty N arrives at a station that is NOT ${pilot.home_base}, AND the first sector of duty N+1 departs FROM that same station.
-DHF sectors are valid as the outbound leg of a layover.
-Chocks-ON = ATA of the last sector of duty N (apply midnight correction if needed).
-Chocks-OFF = ATD of the first sector of duty N+1. If ATD is missing, use AeroDataBox scheduled STD for that sector.
-Duration = Chocks-OFF minus Chocks-ON in hours.
-If duration <= 10h01m: no allowance.
-If duration 10h01m to 24h00m: ₹3,000.
-If duration > 24h00m: ₹3,000 + (ceil(duration_hours - 24) × ₹150).
-
-STEP 5 — TRANSIT (§7.0):
-For every consecutive sector pair within the same duty:
-- SKIP if either sector is DHT. DHF is NOT DHT — do not skip DHF pairs.
-- Compute scheduled halt = scheduled_times[arr_flight].sta to scheduled_times[dep_flight].std.
-- Compute actual halt = ATA of arriving sector to ATD of departing sector (apply midnight correction).
-- Eligibility:
-  Condition (i): scheduled halt >= 90 minutes
-  Condition (ii): actual halt >= 90 minutes AND |actual - scheduled| > 15 minutes
-  If neither condition met: no allowance.
-- If eligible:
-  If |actual - scheduled| <= 15 minutes: pay on scheduled halt minutes.
-  If |actual - scheduled| > 15 minutes: pay on actual halt minutes.
-  Billable minutes = min(pay_basis, 240).
-  Pay = billable_minutes × (1000 / 60), rounded to nearest rupee.
-
-STEP 6 — NIGHT FLYING (§9.0):
-For each NON-DHF sector:
-1. Look up STD from scheduled_times. If not found: skip this sector, night_mins = 0.
-2. If STD >= 06:00 IST: skip this sector, night_mins = 0.
-3. Look up SV from sv_data using flight number (without "6E"), dep, arr, and the UTC time slot of STD (STD IST minus 5 hours 30 minutes, then take the hour).
-4. SV_arrival_IST = STD + SV minutes (handle midnight crossing).
-5. Night window = 00:01 to 06:00 IST.
-6. Night minutes = overlap of [STD, SV_arrival] with [00:01, 06:00].
-7. Pay = night_minutes × (2000 / 60), rounded to nearest rupee.
-Do NOT use ATD or ATA for this calculation. Only STD and SV.
-
-STEP 7 — TAIL SWAP (§6.0):
-For every consecutive sector pair within the same duty:
-- SKIP if either sector is DHT.
-- SKIP if both sectors are DHF.
-- Look up aircraft_reg from scheduled_times for both sectors.
-- If both regs are known AND they differ: count as one tail swap, pay ₹1,500.
-- If either reg is null: set status "unverifiable" for that pair.
-
-Do not write any text outside the JSON object.
-`;
-}
-
 // Map Claude's output shape → UI shape expected by CalcScreen
 function normalise(c) {
   const a = c.allowances || {};
@@ -206,7 +123,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
         max_tokens: 16000,
-        system: "You are a JSON calculator. You output ONLY a single valid JSON object. You never write any text, explanation, reasoning, steps, or markdown outside the JSON. Your response starts with { and ends with }. If you are tempted to explain your reasoning, put it inside a JSON field called \"_debug\" instead.",
+        system: "You output ONLY a single valid JSON object — no text, no markdown, no reasoning, no debug fields. Your entire response is the JSON object and nothing else.",
         messages: [{
           role: "user",
           content: [
