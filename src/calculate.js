@@ -82,6 +82,9 @@ export function groupIntoDuties(sectors, scheduledTimes) {
     }
 
     if (gapMins > 480) {
+      console.log('[duty split] gap:', gapMins, 'mins between',
+        prev.flight, prev.arr, prev.date, prev.ata,
+        '→', curr.flight, curr.dep, curr.date, curr.atd);
       duties.push([curr]);
     } else {
       duties[duties.length - 1].push(curr);
@@ -194,6 +197,12 @@ export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
       String(row.ARR).trim() === s.arr &&
       String(row.Time_Slot).trim() === slot
     );
+    console.log('[night] sector:', s.flight, s.dep, s.arr,
+      'STD_mins:', STD_mins, 'slot:', slot, 'flightNum:', flightNum,
+      'svMatch:', sv ? 'FOUND SectorValue=' + sv.SectorValue : 'NOT FOUND',
+      'sample SV keys:', svData.slice(0, 2).map(r =>
+        String(r.FLTNBR) + '|' + String(r.DEP).trim() + '|' +
+        String(r.ARR).trim() + '|' + r.Time_Slot));
     if (!sv) continue;
 
     const SV = Number(sv.SectorValue);

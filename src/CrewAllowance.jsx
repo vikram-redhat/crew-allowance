@@ -113,24 +113,28 @@ async function buildSchedMap(sectors, onProgress) {
   const unique = [];
   const seen = new Set();
   for (const s of sectors) {
-    const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
-    if (!seen.has(key)) { seen.add(key); unique.push(s); }
+    const flight = s.flight || s.flight_no;
+    const key = `${flight}|${s.dep}|${s.arr}|${s.date}`;
+    if (!seen.has(key)) { seen.add(key); unique.push({ ...s, _flight: flight }); }
   }
   let fetched = 0, cached = 0, failed = 0;
+  let lastWasLive = false;
   for (let i = 0; i < unique.length; i++) {
     const s = unique[i];
-    onProgress?.(i + 1, unique.length, s.flight_no);
+    onProgress?.(i + 1, unique.length, s._flight);
     if (!s.dep || !s.arr) {
-      console.warn(`Skipping ${s.flight_no} on ${s.date}: dep/arr missing (grid zip miss)`);
+      console.warn(`Skipping ${s._flight} on ${s.date}: dep/arr missing`);
       failed++;
       continue;
     }
-    const key = `${s.flight_no}|${s.dep}|${s.arr}|${s.date}`;
+    if (lastWasLive) await new Promise(r => setTimeout(r, 600));
+    lastWasLive = false;
+    const key = `${s._flight}|${s.dep}|${s.arr}|${s.date}`;
     try {
-      const result = await fetchWithCache(s.flight_no, s.dep, s.arr, s.date);
+      const result = await fetchWithCache(s._flight, s.dep, s.arr, s.date);
       if (result) {
         map[key] = result.data;
-        if (result.fromCache) cached++; else fetched++;
+        if (result.fromCache) { cached++; } else { fetched++; lastWasLive = true; }
       } else {
         failed++;
       }
@@ -138,7 +142,6 @@ async function buildSchedMap(sectors, onProgress) {
       console.warn("buildSchedMap error:", e.message);
       failed++;
     }
-    if (i < unique.length - 1) await new Promise(r => setTimeout(r, 600));
   }
   return { map, fetched, cached, failed };
 }
@@ -975,23 +978,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       const svData = await fetchSV(pcsrData.month);
       setSvStatus(svData.length ? "found" : "missing");
 
-      // 2. Fetch schedule + aircraft reg from AeroDataBox (with cache)
-      const { map: schedMap, fetched, cached, failed } = await buildSchedMap(
-        pcsrData.sectors,
-        (cur, total, flight) => setProgress({ current: cur, total, flight })
-      );
-      setApiStats({ fetched, cached, failed });
-      console.log("[calculate] AeroDataBox done — fetched:", fetched, "cached:", cached, "failed:", failed);
-      console.log("[calculate] schedMap keys:", Object.keys(schedMap).length);
-
-      // 3. Filter SV to only flights in this PCSR
-      const sectorFlights = new Set(
-        pcsrData.sectors.map(s => String(s.flight_no).replace(/^6E/i, ""))
-      );
-      const svFiltered = (svData || []).filter(r => sectorFlights.has(String(r.FLTNBR)));
-      console.log("[calculate] SV rows full:", (svData||[]).length, "filtered:", svFiltered.length);
-
-      // 4. Parse PCSR with Claude
+      // 2. Parse PCSR with Claude
       setPhase("calculating");
       const pcsrText = pcsrData._rawText;
       console.log("[calculate] Calling /api/parse… pcsr_text length:", pcsrText?.length);
@@ -1008,7 +995,24 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       const { period: parsedPeriod, sectors } = await parseResp.json();
       console.log("[calculate] Parsed sectors:", sectors?.length, "period:", parsedPeriod);
 
+      // 3. Filter SV to only flights in parsed sectors
+      const sectorFlights = new Set(
+        sectors.map(s => String(s.flight).replace(/^6E/i, ""))
+      );
+      const svFiltered = (svData || []).filter(r => sectorFlights.has(String(r.FLTNBR)));
+      console.log("[calculate] SV rows full:", (svData||[]).length, "filtered:", svFiltered.length);
+
+      // 4. Fetch AeroDataBox schedule data for parsed sectors
+      setPhase("fetching");
+      const { map: schedMap, fetched, cached, failed } = await buildSchedMap(
+        sectors,
+        (cur, total, flight) => setProgress({ current: cur, total, flight })
+      );
+      setApiStats({ fetched, cached, failed });
+      console.log("[calculate] AeroDataBox done — fetched:", fetched, "cached:", cached, "failed:", failed);
+
       // 5. Run deterministic JS calculations
+      setPhase("calculating");
       const pilot = { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank };
       const res = runCalculations(parsedPeriod, sectors, schedMap, svFiltered, pilot, null);
 
