@@ -91,14 +91,13 @@ For every consecutive sector pair within the same duty:
 - If both regs are known AND they differ: count as one tail swap, pay ₹1,500.
 - If either reg is null: set status "unverifiable" for that pair.
 
-Return this exact JSON structure:
+Return this exact JSON structure. Do NOT include a sectors array or duties array — allowances only:
 {
-  "sectors": [{"row":1,"date":"","flight":"","dep":"","arr":"","atd":"","ata":"","is_dhf":false,"is_dht":false}],
-  "duties": [[0,1,2]],
+  "period": "February 2026",
   "allowances": {
     "deadhead": {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sta":"","block_mins":0,"amount":0}],"total":0},
     "layover":  {"stations":[{"station":"","date_in":"","date_out":"","chocks_on":"","chocks_off":"","duration_hrs":0,"base":0,"extra":0,"total":0}],"total":0},
-    "transit":  {"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"diff":0,"basis":"","billable_mins":0,"amount":0}],"total":0},
+    "transit":  {"halts":[{"station":"","date":"","arrived":"","departed":"","sched_halt":0,"actual_halt":0,"basis":"","billable_mins":0,"amount":0}],"total":0},
     "night":    {"sectors":[{"flight":"","date":"","dep":"","arr":"","std":"","sv":0,"sv_arrival":"","night_mins":0,"amount":0}],"total":0},
     "tail_swap":{"swaps":[{"date":"","sectors":"","station":"","reg_out":"","reg_in":"","status":"confirmed","amount":0}],"total":0}
   },
@@ -109,7 +108,6 @@ Return this exact JSON structure:
 
 // Map Claude's output shape → UI shape expected by CalcScreen
 function normalise(c) {
-  const sectors = c.sectors || [];
   const a = c.allowances || {};
 
   const dh = a.deadhead || {};
@@ -170,16 +168,8 @@ function normalise(c) {
     amount:    s.amount     ?? 0,
   }));
 
-  // Derive period from earliest sector date
-  let period = "";
-  const dates = sectors.map(s => s.date).filter(Boolean).sort();
-  if (dates.length) {
-    const [y, mo] = dates[0].split("-").map(Number);
-    period = new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
-  }
-
   return {
-    period,
+    period: c.period || "",
     pilot:    c.pilot || {},
     deadhead: { sectors: dhSectors, total_mins: dhSectors.reduce((s, x) => s + (x.scheduled_block_mins || 0), 0), amount: dh.total ?? 0 },
     night:    { sectors: ntSectors, total_mins: ntSectors.reduce((s, x) => s + (x.night_mins || 0), 0),           amount: nt.total ?? 0 },
@@ -216,7 +206,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
-        max_tokens: 8192,
+        max_tokens: 16000,
         messages: [{
           role: "user",
           content: [
