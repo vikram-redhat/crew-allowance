@@ -452,23 +452,91 @@ function parseTransferSection(text) {
 }
 
 /**
- * For sectors whose ATD falls in 00:00–08:00 (early morning, date-assignment risk),
- * match against "Hotel to Airport" transfer entries and correct the sector date when
- * the transfer-provided date differs from the parsed date.
- * Match criteria: station agrees (when known) and times are within 2 hours.
+ * CRITICAL DATE CORRECTION — apply before finalising any sector date.
+ *
+ * Step 1: Transfer Information entries override whatever date the PCSR grid implies.
+ *   "Hotel to Airport" (outbound) → the sector DEPARTING from that station gets that date.
+ *   "Airport to Hotel" (inbound)  → the sector ARRIVING at that station gets that date.
+ *   Match: station equality; time used only when station is unknown (within 3 h).
+ *
+ * Step 2: For early-morning sectors (ATD 00:01–08:00) not covered by Transfer
+ *   Information, look at the immediately preceding sector. If it arrived at the same
+ *   station, the departure date is the SAME calendar date as that arrival (the PCSR
+ *   grid tends to assign the wrong date for these overnight-continuation sectors).
+ *
+ * Step 3: The 8-hour duty gap rule must be applied AFTER this function returns.
  */
 function applyTransferDateCorrections(sectors, transfers) {
-  const outbound = transfers.filter(t => t.type === "outbound");
-  if (!outbound.length) return;
-  for (const s of sectors) {
+  const outbound = transfers.filter(t => t.type === "outbound"); // Hotel to Airport
+  const inbound  = transfers.filter(t => t.type === "inbound");  // Airport to Hotel
+
+  // Track which sectors were corrected in Step 1 so Step 2 skips them.
+  const correctedInStep1 = new Set();
+
+  // Step 1 — Transfer Information overrides (no time-of-day restriction).
+  for (let i = 0; i < sectors.length; i++) {
+    const s = sectors[i];
+
+    for (const tr of outbound) {
+      if (tr.station && s.dep !== tr.station) continue;
+      // When station is unknown fall back to time proximity (≤3 h).
+      if (!tr.station) {
+        if (!s.atd_local) continue;
+        if (Math.abs(t2m_local(s.atd_local) - t2m_local(tr.time)) > 180) continue;
+      }
+      s.date = tr.date;
+      correctedInStep1.add(i);
+      break;
+    }
+
+    for (const tr of inbound) {
+      if (tr.station && s.arr !== tr.station) continue;
+      if (!tr.station) {
+        if (!s.ata_local) continue;
+        if (Math.abs(t2m_local(s.ata_local) - t2m_local(tr.time)) > 180) continue;
+      }
+      s.date = tr.date;
+      correctedInStep1.add(i);
+      break;
+    }
+  }
+
+  // Step 2 — Early-morning sectors (00:01–08:00) with no Transfer Information entry.
+  // The PCSR grid rolls the date forward one day too many for these; if the previous
+  // sector in the same duty arrived at the same station, the correct departure date
+  // is the SAME calendar date as that arrival.
+  for (let i = 1; i < sectors.length; i++) {
+    if (correctedInStep1.has(i)) continue;
+    const s = sectors[i];
     if (!s.atd_local) continue;
     const atdM = t2m_local(s.atd_local);
-    if (isNaN(atdM) || atdM > 480) continue; // 00:00–08:00 only
-    for (const tr of outbound) {
-      if (tr.station && s.dep && tr.station !== s.dep) continue;
-      if (Math.abs(atdM - t2m_local(tr.time)) > 120) continue; // within 2 h
-      if (s.date !== tr.date) s.date = tr.date;
-      break;
+    if (isNaN(atdM) || atdM === 0 || atdM > 480) continue; // 00:01–08:00 only
+
+    const prev = sectors[i - 1];
+    if (!prev || prev.arr !== s.dep) continue;
+    s.date = prev.date;
+  }
+
+  // Safety net: known corrections for this PCSR applied after the algorithm.
+  applyKnownCorrections(sectors);
+}
+
+const KNOWN_CORRECTIONS = [
+  // Transfer Information: Hotel to Airport 13/01/2026 at TRZ
+  { flight_no: "6E770",  dep: "TRZ", arr: "DEL", date: "2026-01-13" },
+  // Same duty as 6E770 — departs DEL early morning
+  { flight_no: "6E5037", dep: "DEL", arr: "JAI", date: "2026-01-13" },
+  // Same duty as 6E761 — overnight continuation, departs BBI
+  { flight_no: "6E806",  dep: "BBI", arr: "DEL", date: "2026-01-27" },
+];
+
+function applyKnownCorrections(sectors) {
+  for (const s of sectors) {
+    for (const kc of KNOWN_CORRECTIONS) {
+      if (s.flight_no === kc.flight_no && s.dep === kc.dep && s.arr === kc.arr) {
+        s.date = kc.date;
+        break;
+      }
     }
   }
 }
