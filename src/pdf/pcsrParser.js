@@ -486,16 +486,35 @@ export function applyTransferDateCorrections(sectors, transfers) {
     const s = sectors[i];
 
     for (const tr of outbound) {
-      if (!tr.station) continue;
-      if (s.dep !== tr.station) continue;
+      if (!tr.station) {
+        // Time-proximity fallback: sector ATD is 60–240 min after transfer time
+        if (!s.atd_local) continue;
+        const trM = t2m_local(tr.time);
+        const atdM = t2m_local(s.atd_local);
+        if (isNaN(trM) || isNaN(atdM)) continue;
+        const delta = (atdM - trM + 1440) % 1440;
+        if (delta < 60 || delta > 240) continue;
+      } else {
+        if (s.dep !== tr.station) continue;
+      }
       s.date = tr.date;
       correctedInStep1.add(i);
       break;
     }
 
     for (const tr of inbound) {
-      if (!tr.station) continue;
-      if (s.arr !== tr.station) continue;
+      if (!tr.station) {
+        // Time-proximity fallback: sector ATA is within 60 min before transfer time
+        if (!s.ata_local) continue;
+        const trM = t2m_local(tr.time);
+        const ataM = t2m_local(s.ata_local);
+        if (isNaN(trM) || isNaN(ataM)) continue;
+        const delta = (trM - ataM + 1440) % 1440;
+        if (delta > 60) continue;
+        if (s.date !== tr.date) continue;
+      } else {
+        if (s.arr !== tr.station) continue;
+      }
       s.date = tr.date;
       correctedInStep1.add(i);
       break;
