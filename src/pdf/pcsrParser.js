@@ -439,7 +439,7 @@ function parseHotelSection(text, sectors, hotels) {
  * "Airport to Hotel" = inbound (pilot just arrived at layover station).
  * "Hotel to Airport" = outbound (pilot departing from layover station).
  */
-function parseTransferSection(text) {
+export function parseTransferSection(text) {
   const idx = text.search(/\bTransfer\s+(?:Information|Details)\b/i);
   if (idx === -1) return [];
   const section = text.slice(idx, idx + 5000);
@@ -474,7 +474,7 @@ function parseTransferSection(text) {
  *
  * Step 3: The 8-hour duty gap rule must be applied AFTER this function returns.
  */
-function applyTransferDateCorrections(sectors, transfers) {
+export function applyTransferDateCorrections(sectors, transfers) {
   const outbound = transfers.filter(t => t.type === "outbound"); // Hotel to Airport
   const inbound  = transfers.filter(t => t.type === "inbound");  // Airport to Hotel
 
@@ -525,28 +525,6 @@ function applyTransferDateCorrections(sectors, transfers) {
     s.date = prev.date;
   }
 
-  // Safety net: known corrections for this PCSR applied after the algorithm.
-  applyKnownCorrections(sectors);
-}
-
-const KNOWN_CORRECTIONS = [
-  // Transfer Information: Hotel to Airport 13/01/2026 at TRZ
-  { flight_no: "6E770",  dep: "TRZ", arr: "DEL", date: "2026-01-13" },
-  // Same duty as 6E770 — departs DEL early morning
-  { flight_no: "6E5037", dep: "DEL", arr: "JAI", date: "2026-01-13" },
-  // Same duty as 6E761 — overnight continuation, departs BBI
-  { flight_no: "6E806",  dep: "BBI", arr: "DEL", date: "2026-01-27" },
-];
-
-function applyKnownCorrections(sectors) {
-  for (const s of sectors) {
-    for (const kc of KNOWN_CORRECTIONS) {
-      if (s.flight_no === kc.flight_no && s.dep === kc.dep && s.arr === kc.arr) {
-        s.date = kc.date;
-        break;
-      }
-    }
-  }
 }
 
 // ─── format detection ─────────────────────────────────────────────────────────

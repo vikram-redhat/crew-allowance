@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { runCalculations } from "./calculate.js";
+import { parseTransferSection, applyTransferDateCorrections } from "./pdf/pcsrParser.js";
 import "./App.css";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -994,6 +995,21 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       }
       const { period: parsedPeriod, sectors } = await parseResp.json();
       console.log("[calculate] Parsed sectors:", sectors?.length, "period:", parsedPeriod);
+
+      // Apply Transfer Information date corrections to Claude's sectors.
+      // pcsrParser expects { flight_no, atd_local, ata_local }; Claude returns { flight, atd, ata }.
+      const transfers = parseTransferSection(pcsrText);
+      if (transfers.length) {
+        const forCorrection = sectors.map(s => ({
+          ...s,
+          flight_no: s.flight,
+          atd_local: s.atd,
+          ata_local: s.ata,
+        }));
+        applyTransferDateCorrections(forCorrection, transfers);
+        forCorrection.forEach((n, i) => { sectors[i].date = n.date; });
+        console.log("[calculate] Transfer corrections applied, transfers found:", transfers.length);
+      }
 
       // 3. Filter SV to only flights in parsed sectors
       const sectorFlights = new Set(
