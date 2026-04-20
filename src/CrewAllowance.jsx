@@ -1005,7 +1005,16 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       const svFiltered = (svData || []).filter(r => sectorFlights.has(String(r.FLTNBR)));
       console.log("[calculate] SV rows full:", (svData||[]).length, "filtered:", svFiltered.length);
 
-      // 4. Fetch AeroDataBox schedule data for parsed sectors
+      // 4. Sort sectors chronologically before any downstream use.
+      sectors.sort((a, b) => {
+        if (a.date < b.date) return -1;
+        if (a.date > b.date) return  1;
+        const ta = a.atd ?? "23:59";
+        const tb = b.atd ?? "23:59";
+        return ta < tb ? -1 : ta > tb ? 1 : 0;
+      });
+
+      // 5. Fetch AeroDataBox schedule data for parsed sectors
       setPhase("fetching");
       const { map: schedMap, fetched, cached, failed } = await buildSchedMap(
         sectors,
@@ -1014,7 +1023,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       setApiStats({ fetched, cached, failed });
       console.log("[calculate] AeroDataBox done — fetched:", fetched, "cached:", cached, "failed:", failed);
 
-      // 5. Run deterministic JS calculations
+      // 6. Run deterministic JS calculations
       setPhase("calculating");
       const pilot = { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank };
       const res = runCalculations(parsedPeriod, sectors, schedMap, svFiltered, pilot, null);
