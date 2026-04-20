@@ -358,6 +358,7 @@ function PcsrDropZone({ file, onParsed, onFail }) {
     try {
       const { parsePcsrPdf } = await import("./pdf/pcsrParser.js");
       const result = await parsePcsrPdf(await f.arrayBuffer());
+      console.log("[pcsrParser _rawSample]\n", result._rawSample);
       onParsed(f, result);
     } catch (e) {
       onFail(e?.message || String(e));
