@@ -485,23 +485,16 @@ export function applyTransferDateCorrections(sectors, transfers) {
     const s = sectors[i];
 
     for (const tr of outbound) {
-      if (tr.station && s.dep !== tr.station) continue;
-      // When station is unknown fall back to time proximity (≤3 h).
-      if (!tr.station) {
-        if (!s.atd_local) continue;
-        if (Math.abs(t2m_local(s.atd_local) - t2m_local(tr.time)) > 180) continue;
-      }
+      if (!tr.station) continue;
+      if (s.dep !== tr.station) continue;
       s.date = tr.date;
       correctedInStep1.add(i);
       break;
     }
 
     for (const tr of inbound) {
-      if (tr.station && s.arr !== tr.station) continue;
-      if (!tr.station) {
-        if (!s.ata_local) continue;
-        if (Math.abs(t2m_local(s.ata_local) - t2m_local(tr.time)) > 180) continue;
-      }
+      if (!tr.station) continue;
+      if (s.arr !== tr.station) continue;
       s.date = tr.date;
       correctedInStep1.add(i);
       break;
