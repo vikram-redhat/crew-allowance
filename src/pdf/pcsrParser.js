@@ -265,25 +265,30 @@ function parseGrid(text, allPagesText) {
   // Normalise "6E0715" and "6E715" to the same key by dropping leading zeros
   const normFlt = f => `6E${parseInt(f, 10)}`;
 
-  // ── 1. Other Crew section (raw text, newlines preserved) ──────────────────
-  // Using allPagesText here — flattening to a single line destroys the row
-  // boundaries that separate one flight entry from the next.
-  const rawOcIdx = allPagesText.search(/Other\s*Crew/i);
-  if (rawOcIdx !== -1) {
-    const rawOcBoundary = allPagesText.slice(rawOcIdx).search(
+  // ── 1. Other Crew section ─────────────────────────────────────────────────
+  // Run on flat (no newlines). ROW_RE requires a full 4-digit year so that
+  // employee IDs (which follow "CP - " / "FO - " patterns, never a YYYY date)
+  // cannot be mistaken for flight number tokens.
+  if (otherCrewIdx !== -1) {
+    const ocBoundary = flat.slice(otherCrewIdx).search(
       /\b(?:Training\s+Details|Hotel\s+Details|Transfer\s+Details)\b/i
     );
-    const rawSection = allPagesText.slice(
-      rawOcIdx,
-      rawOcBoundary !== -1 ? rawOcIdx + rawOcBoundary : allPagesText.length
+    const section = flat.slice(
+      otherCrewIdx,
+      ocBoundary !== -1 ? otherCrewIdx + ocBoundary : flat.length
     );
 
-    // Each row is one line: DD/MM[/YY[YY]]  6E<digits>  <details...>
-    const LINE_RE = /^[ \t]*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)[ \t]+6E(\d{3,5})[ \t]+(.*)/;
-    for (const line of rawSection.split(/\r?\n/)) {
-      const lm = LINE_RE.exec(line);
-      if (!lm) continue;
-      const [, date, flt, details] = lm;
+    const ROW_RE = /(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{3,5})\s+/g;
+    const rows = [];
+    let rm;
+    while ((rm = ROW_RE.exec(section)) !== null) {
+      rows.push({ date: rm[1], flt: rm[2], detailsAt: rm.index + rm[0].length, rowAt: rm.index });
+    }
+
+    for (let i = 0; i < rows.length; i++) {
+      const { date, flt, detailsAt } = rows[i];
+      const detailsEnd = rows[i + 1]?.rowAt ?? section.length;
+      const details = section.slice(detailsAt, detailsEnd);
       const isoDate = parseDate(date) ||
         `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
 
