@@ -163,7 +163,7 @@ function dlCSV(res, pilot) {
   res.layover.events.forEach(e => add(e.station, e.date_in, e.date_out, e.check_in_ist, e.check_out_ist, e.duration_hrs, Math.round(e.base_amount), Math.round(e.extra_amount), Math.round(e.total)));
   add("TOTAL","","","","","","","", Math.round(res.layover.amount)); add();
   add("TAIL-SWAP"); add("Date","Sectors","Station","Reg Out","Reg In","Amount (INR)");
-  res.tailSwap.swaps.forEach(s => add(s.date, s.sector_pair, s.station, s.reg_out, s.reg_in, Math.round(s.amount)));
+  res.tailSwap.swaps.forEach(s => add(s.date, s.sector_pair, s.station, s.reg_out, s.reg_in, s.unverifiable ? "unverifiable" : Math.round(s.amount)));
   add("TOTAL","","","","", Math.round(res.tailSwap.amount)); add();
   add("TRANSIT"); add("Date","Station","Arrived","Departed","Halt (mins)","Billable (mins)","Basis","Amount (INR)");
   res.transit.halts.forEach(h => add(h.date, h.station, h.arrived_ist, h.departed_ist, h.halt_mins, h.billable_mins, h.basis, Math.round(h.amount)));
@@ -1275,7 +1275,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
               renderRow={(s,i) => (
                 <tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.sector_pair}</TC>
                   <TC i={i}><strong>{s.station}</strong></TC><TC i={i}>{s.reg_out}</TC><TC i={i}>{s.reg_in}</TC>
-                  <TC i={i} right gold>{fmtINR(s.amount)}</TC></tr>
+                  <TC i={i} right gold>{s.unverifiable ? "?" : fmtINR(s.amount)}</TC></tr>
               )} />
           )}
           {result.transit.halts.length > 0 && (

@@ -315,21 +315,29 @@ function parseGrid(text, allPagesText) {
   // Format: flight_no [A]atd [*]DEP [→ ↓ spaces] ARR [A]ata
   // "A" prefix = actual time; no prefix = scheduled/unknown.
   // Arrival time is optional (overnight sectors may span two columns in the grid).
-  // DEP→ARR gap widened to 30 to handle column-boundary linearisation artefacts.
+  // DEP→ARR gap widened to 80 to handle column-boundary linearisation artefacts.
   const page1Text = otherCrewIdx !== -1 ? flat.slice(0, otherCrewIdx) : flat;
-  const G_RE = /\b(\d{3,5})\s+(A?)(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,30}([A-Z]{3})\s{0,20}(?:(A?)(\d{1,2}:\d{2}))?/gu;
+  const G_RE = /\b(\d{3,5})\s+(A?)(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,80}([A-Z]{3})\s{0,20}(?:(A?)(\d{1,2}:\d{2}))?/gu;
   const gridSectors = [];
   let gm;
   while ((gm = G_RE.exec(page1Text)) !== null) {
+    const _idx = gridSectors.length;
+    const _flt = normFlt(gm[1]);
+    const _dep = gm[5].toUpperCase();
+    const _arr = gm[6].toUpperCase();
+    const _atd = gm[2] === "A" ? hhmm(gm[3]) : `sched:${gm[3]}`;
+    const _ata = (gm[7] === "A" && gm[8]) ? hhmm(gm[8]) : (gm[8] ? `sched:${gm[8]}` : "—");
+    console.log(`[gridRow ${_idx}] flt=${_flt} dep=${_dep} arr=${_arr} atd=${_atd} ata=${_ata} star=${gm[4]==="*"} matchAt=${gm.index}`);
     gridSectors.push({
-      flight_no: normFlt(gm[1]),
+      flight_no: _flt,
       atd_local: gm[2] === "A" ? hhmm(gm[3]) : null,
-      dep: gm[5].toUpperCase(),
-      arr: gm[6].toUpperCase(),
+      dep: _dep,
+      arr: _arr,
       ata_local: (gm[7] === "A" && gm[8]) ? hhmm(gm[8]) : null,
       star: gm[4] === "*",
     });
   }
+  console.log(`[gridRow total] ${gridSectors.length} grid sectors extracted`);
 
   // ── 3. Merge ───────────────────────────────────────────────────────────────
   if (ocSectors.length) {

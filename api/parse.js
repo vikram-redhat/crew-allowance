@@ -17,7 +17,15 @@ RULES:
 - DHF = this pilot is a passenger. Detect by: asterisk on departure airport in the flight grid, OR "DHF - ${employee_id}" appearing next to this flight in the Other Crew section.
 - DHT = other crew are passengers on this pilot's sector. Detect by: "DHT" appearing in the Other Crew section for this flight.
 - Times prefixed with "A" in the PCSR grid are actuals (ATD/ATA). Times without "A" prefix are scheduled.
-- CRITICAL DATE CORRECTION — Early morning sectors (ATD between 00:00 and 08:00 IST) are frequently assigned the wrong calendar date in the PCSR grid. Use the Transfer Information section as ground truth: "Hotel to Airport: DD/MM/YYYY" → the sector departing from that station is on that exact date. "Airport to Hotel: DD/MM/YYYY" → the sector arriving at that station is on that exact date. If no Transfer Information entry exists for a station, apply this rule: if an early morning sector (00:00-08:00) at station X follows a sector that arrived at station X on date D, and the continuation flight also departs station X, the departure date is D (same day as arrival), NOT D+1.
+- CRITICAL DATE CORRECTION — apply before finalising any sector date:
+  Step 1: Check the Transfer Information section.
+  - "Hotel to Airport: DD/MM/YYYY" → sector DEPARTING from that station has that exact date
+  - "Airport to Hotel: DD/MM/YYYY" → sector ARRIVING at that station has that exact date
+  These override whatever date the PCSR grid implies.
+  Step 2: For early-morning sectors (ATD 00:01–08:00) without Transfer Information entry:
+  - Look at the sector immediately before it in the same duty
+  - If previous sector arrived at the same station, departure date is the NEXT calendar day
+  Step 3: Apply 8-hour duty gap rule AFTER all dates are corrected.
 - The Training Details section contains time ranges that look like flight numbers (e.g. "1603 - 1835"). Do NOT parse these as sectors.
 - The same flight number can appear twice in one duty (e.g. 6E6732 DEL→AMD then AMD→BOM). Use date+flight+dep+arr as unique key.
 - Times are in HH:MM format (IST).
@@ -39,7 +47,8 @@ Schema:
       "is_dht": false
     }
   ]
-}`;
+}
+Output the JSON object then STOP immediately. No text after the closing brace.`;
 
   let anthropicRes;
   try {

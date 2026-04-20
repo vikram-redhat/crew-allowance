@@ -309,6 +309,12 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
                          regB === null ? `${sB.flight} ${sB.dep}→${sB.arr} ${sB.date}` : null]
                         .filter(Boolean).join(", ");
         console.log(`[tailSwap] unverifiable — missing reg for: ${missing}`);
+        swaps.push({
+          date: sB.date,
+          sector_pair: `${sA.flight} / ${sB.flight}`,
+          station: sA.arr, reg_out: regA ?? "—", reg_in: regB ?? "—",
+          amount: null, unverifiable: true,
+        });
         continue;
       }
       if (regA === regB) continue;
@@ -323,7 +329,8 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
     }
   }
 
-  return { swaps, count: swaps.length, total };
+  const verifiedCount = swaps.filter(s => !s.unverifiable).length;
+  return { swaps, count: verifiedCount, total };
 }
 
 export function runCalculations(period, sectors, scheduledTimes, svData, pilot, priorMonthTail) {
