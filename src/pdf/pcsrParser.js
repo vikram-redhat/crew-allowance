@@ -465,14 +465,12 @@ export function parseTransferSection(text) {
  * Step 1: Transfer Information entries override whatever date the PCSR grid implies.
  *   "Hotel to Airport" (outbound) → the sector DEPARTING from that station gets that date.
  *   "Airport to Hotel" (inbound)  → the sector ARRIVING at that station gets that date.
- *   Match: station equality; time used only when station is unknown (within 3 h).
+ *   Match: station equality only; entries with no station are skipped.
  *
  * Step 2: For early-morning sectors (ATD 00:01–08:00) not covered by Transfer
  *   Information, look at the immediately preceding sector. If it arrived at the same
  *   station, the departure date is the SAME calendar date as that arrival (the PCSR
  *   grid tends to assign the wrong date for these overnight-continuation sectors).
- *
- * Step 3: The 8-hour duty gap rule must be applied AFTER this function returns.
  */
 export function applyTransferDateCorrections(sectors, transfers) {
   const outbound = transfers.filter(t => t.type === "outbound"); // Hotel to Airport
@@ -481,40 +479,21 @@ export function applyTransferDateCorrections(sectors, transfers) {
   // Track which sectors were corrected in Step 1 so Step 2 skips them.
   const correctedInStep1 = new Set();
 
-  // Step 1 — Transfer Information overrides (no time-of-day restriction).
+  // Step 1 — station-based matching only.
   for (let i = 0; i < sectors.length; i++) {
     const s = sectors[i];
 
     for (const tr of outbound) {
-      if (!tr.station) {
-        // Time-proximity fallback: sector ATD is 60–240 min after transfer time
-        if (!s.atd_local) continue;
-        const trM = t2m_local(tr.time);
-        const atdM = t2m_local(s.atd_local);
-        if (isNaN(trM) || isNaN(atdM)) continue;
-        const delta = (atdM - trM + 1440) % 1440;
-        if (delta < 60 || delta > 240) continue;
-      } else {
-        if (s.dep !== tr.station) continue;
-      }
+      if (!tr.station) continue;
+      if (s.dep !== tr.station) continue;
       s.date = tr.date;
       correctedInStep1.add(i);
       break;
     }
 
     for (const tr of inbound) {
-      if (!tr.station) {
-        // Time-proximity fallback: sector ATA is within 60 min before transfer time
-        if (!s.ata_local) continue;
-        const trM = t2m_local(tr.time);
-        const ataM = t2m_local(s.ata_local);
-        if (isNaN(trM) || isNaN(ataM)) continue;
-        const delta = (trM - ataM + 1440) % 1440;
-        if (delta > 60) continue;
-        if (s.date !== tr.date) continue;
-      } else {
-        if (s.arr !== tr.station) continue;
-      }
+      if (!tr.station) continue;
+      if (s.arr !== tr.station) continue;
       s.date = tr.date;
       correctedInStep1.add(i);
       break;
