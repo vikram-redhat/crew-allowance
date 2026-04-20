@@ -407,6 +407,7 @@ function parseGrid(text, allPagesText) {
 
   // ── 5. Transfer section — correct early-morning sector dates ──────────────
   const transfers = parseTransferSection(flat);
+  console.log("[parseGrid] transfers:", JSON.stringify(transfers));
   applyTransferDateCorrections(sectors, transfers);
 
   return { format: "GRID", month, pilot, sectors, hotels };
@@ -514,6 +515,7 @@ export function applyTransferDateCorrections(sectors, transfers) {
 
     const prev = sectors[i - 1];
     if (!prev || prev.arr !== s.dep) continue;
+    if (s.date !== prev.date) continue; // OC already assigned a different date — trust it
     s.date = prev.date;
   }
 
