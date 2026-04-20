@@ -278,8 +278,10 @@ function parseGrid(text, allPagesText) {
       ocBoundary !== -1 ? otherCrewIdx + ocBoundary : flat.length
     );
 
-    // Each row starts with: DD/MM/YY[YY]   flight_no   [details...]
-    const ROW_RE = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d{3,5})\s+/g;
+    // Each row starts with: DD/MM/YY[YY]   6E<flight_no>   [details...]
+    // Requiring "6E" prefix prevents 5-digit employee IDs in the details column
+    // from being misread as flight number tokens and corrupting date assignments.
+    const ROW_RE = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+6E(\d{3,5})\s+/g;
     const rows = [];
     let rm;
     while ((rm = ROW_RE.exec(section)) !== null) {
@@ -315,9 +317,9 @@ function parseGrid(text, allPagesText) {
   // Format: flight_no [A]atd [*]DEP [→ ↓ spaces] ARR [A]ata
   // "A" prefix = actual time; no prefix = scheduled/unknown.
   // Arrival time is optional (overnight sectors may span two columns in the grid).
-  // DEP→ARR gap widened to 80 to handle column-boundary linearisation artefacts.
+  // DEP→ARR gap widened to 120 to handle column-boundary linearisation artefacts.
   const page1Text = otherCrewIdx !== -1 ? flat.slice(0, otherCrewIdx) : flat;
-  const G_RE = /\b(\d{3,5})\s+(A?)(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,80}([A-Z]{3})\s{0,20}(?:(A?)(\d{1,2}:\d{2}))?/gu;
+  const G_RE = /\b(\d{3,5})\s+(A?)(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,120}([A-Z]{3})\s{0,20}(?:(A?)(\d{1,2}:\d{2}))?/gu;
   const gridSectors = [];
   let gm;
   while ((gm = G_RE.exec(page1Text)) !== null) {
