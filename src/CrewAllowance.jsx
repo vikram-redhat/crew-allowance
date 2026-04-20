@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { runCalculations } from "./calculate.js";
-import { parseTransferSection, applyTransferDateCorrections } from "./pdf/pcsrParser.js";
 import "./App.css";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -979,37 +978,20 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       const svData = await fetchSV(pcsrData.month);
       setSvStatus(svData.length ? "found" : "missing");
 
-      // 2. Parse PCSR with Claude
-      setPhase("calculating");
-      const pcsrText = pcsrData._rawText;
-      console.log("[calculate] Calling /api/parse… pcsr_text length:", pcsrText?.length);
-
-      const parseResp = await fetch("/api/parse", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pcsr_text: pcsrText, employee_id: user.emp_id }),
-      });
-      if (!parseResp.ok) {
-        const errBody = await parseResp.json().catch(() => ({ error: parseResp.statusText }));
-        throw new Error(errBody.error || `Parse API error ${parseResp.status}`);
-      }
-      const { period: parsedPeriod, sectors } = await parseResp.json();
-      console.log("[calculate] Parsed sectors:", sectors?.length, "period:", parsedPeriod);
-
-      // Apply Transfer Information date corrections to Claude's sectors.
-      // pcsrParser expects { flight_no, atd_local, ata_local }; Claude returns { flight, atd, ata }.
-      const transfers = parseTransferSection(pcsrText);
-      if (transfers.length) {
-        const forCorrection = sectors.map(s => ({
-          ...s,
-          flight_no: s.flight,
-          atd_local: s.atd,
-          ata_local: s.ata,
-        }));
-        applyTransferDateCorrections(forCorrection, transfers);
-        forCorrection.forEach((n, i) => { sectors[i].date = n.date; });
-        console.log("[calculate] Transfer corrections applied, transfers found:", transfers.length);
-      }
+      // 2. Map pcsrParser sector fields to calculate.js conventions
+      const [y, mo] = pcsrData.month.split("-").map(Number);
+      const parsedPeriod = new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+      const sectors = pcsrData.sectors.map(s => ({
+        date:   s.date,
+        flight: s.flight_no,
+        dep:    s.dep,
+        arr:    s.arr,
+        atd:    s.atd_local,
+        ata:    s.ata_local,
+        is_dhf: s.is_dhf,
+        is_dht: s.is_dht,
+      }));
+      console.log("[calculate] pcsrParser sectors:", sectors.length, "period:", parsedPeriod);
 
       // 3. Filter SV to only flights in parsed sectors
       const sectorFlights = new Set(
@@ -1037,12 +1019,6 @@ function CalcScreen({ user, rates, onNeedProfile }) {
         "layover:", res.layover?.events?.length,
         "transit:", res.transit?.halts?.length,
         "tailSwap:", res.tailSwap?.count);
-
-      // Fallback period label if Claude didn't return one
-      if (!res.period && pcsrData.month) {
-        const [y, mo] = pcsrData.month.split("-").map(Number);
-        res.period = new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
-      }
 
       setResult(res);
       setPhase("done");
