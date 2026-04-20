@@ -258,40 +258,32 @@ function parseGrid(text, allPagesText) {
   const sectors = [];
   const hotels  = [];
 
-  // ── 1. Other Crew section: date + flight_no + DHF/DHT per sector ──────────
+  // otherCrewIdx in flat is kept solely to cut page1Text for the grid regex below.
   const otherCrewIdx = flat.search(/Other\s*Crew/i);
   const ocSectors = [];
 
   // Normalise "6E0715" and "6E715" to the same key by dropping leading zeros
   const normFlt = f => `6E${parseInt(f, 10)}`;
 
-  // ── 1. Other Crew section: date + flight_no + DHF/DHT per sector ──────────
-  if (otherCrewIdx !== -1) {
-    // Stop before Training/Hotel/Transfer sections that follow Other Crew —
-    // those sections contain time ranges (e.g. "1603 - 1835") that ROW_RE
-    // would misread as flight numbers.
-    const ocBoundary = flat.slice(otherCrewIdx).search(
+  // ── 1. Other Crew section (raw text, newlines preserved) ──────────────────
+  // Using allPagesText here — flattening to a single line destroys the row
+  // boundaries that separate one flight entry from the next.
+  const rawOcIdx = allPagesText.search(/Other\s*Crew/i);
+  if (rawOcIdx !== -1) {
+    const rawOcBoundary = allPagesText.slice(rawOcIdx).search(
       /\b(?:Training\s+Details|Hotel\s+Details|Transfer\s+Details)\b/i
     );
-    const section = flat.slice(
-      otherCrewIdx,
-      ocBoundary !== -1 ? otherCrewIdx + ocBoundary : flat.length
+    const rawSection = allPagesText.slice(
+      rawOcIdx,
+      rawOcBoundary !== -1 ? rawOcIdx + rawOcBoundary : allPagesText.length
     );
 
-    // Each row starts with: DD/MM/YY[YY]   6E<flight_no>   [details...]
-    // Requiring "6E" prefix prevents 5-digit employee IDs in the details column
-    // from being misread as flight number tokens and corrupting date assignments.
-    const ROW_RE = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+6E(\d{3,5})\s+/g;
-    const rows = [];
-    let rm;
-    while ((rm = ROW_RE.exec(section)) !== null) {
-      rows.push({ date: rm[1], flt: rm[2], detailsAt: rm.index + rm[0].length, rowAt: rm.index });
-    }
-
-    for (let i = 0; i < rows.length; i++) {
-      const { date, flt, detailsAt } = rows[i];
-      const detailsEnd = rows[i + 1]?.rowAt ?? section.length;
-      const details = section.slice(detailsAt, detailsEnd);
+    // Each row is one line: DD/MM[/YY[YY]]  6E<digits>  <details...>
+    const LINE_RE = /^[ \t]*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)[ \t]+6E(\d{3,5})[ \t]+(.*)/;
+    for (const line of rawSection.split(/\r?\n/)) {
+      const lm = LINE_RE.exec(line);
+      if (!lm) continue;
+      const [, date, flt, details] = lm;
       const isoDate = parseDate(date) ||
         `${year}-${String(mo).padStart(2,"0")}-${date.slice(0,2).padStart(2,"0")}`;
 
