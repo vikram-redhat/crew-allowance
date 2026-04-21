@@ -236,6 +236,295 @@ function parseEom(text) {
   return { format: "EOM", month, pilot, sectors, hotels };
 }
 
+// ─── EOM format parser (x-coordinate / items-based) ──────────────────────────
+
+/**
+ * Items-based EOM parser. Uses pdfjs-dist x/y coordinates to identify columns,
+ * which avoids the pitfalls of the pure-text regex version (year-in-date
+ * anchors eaten as flight numbers, aircraft-type [320]/[321] tokens misread
+ * as flight numbers, multi-word hotel names truncated).
+ *
+ * Columns observed in the IndiGo EOM "Schedule Details" table:
+ *   Date     x ≈ 16
+ *   Duties   x ≈ 113   (flight number, or duty code: OFG/VAC/SBY/ERET/NAP/SFT…)
+ *   Details  x ≈ 225   ("*DEL - IXC" or "Golden Day Off" or "Home standby")
+ *   Report   x ≈ 383
+ *   Actual   x ≈ 478   ("A07:36 - A08:30" — A-prefix denotes an actual time)
+ *   Debrief  x ≈ 638
+ *
+ * Hotel Information table (separate section):
+ *   Port     x ≈ 17
+ *   Phone    x ≈ 219
+ *   Address  x ≈ 420
+ *   Locators x ≈ 622    ("01/01/2026 - ROYALROSE_AUH")
+ *
+ * Does NOT touch the GRID parsing path or any of its helpers.
+ */
+function parseEomItems(pages) {
+  const sectors = [];
+  const hotels  = [];
+
+  // ── helper: cluster items into rows by shared y (tolerance ±2) ────────────
+  const rowsOf = (items) => {
+    const sorted = [...items].sort((a, b) => b.y - a.y);  // top → bottom
+    const rows = [];
+    for (const it of sorted) {
+      const last = rows[rows.length - 1];
+      if (last && Math.abs(last.y - it.y) <= 2) {
+        last.items.push(it);
+      } else {
+        rows.push({ y: it.y, items: [it] });
+      }
+    }
+    return rows;
+  };
+
+  // ── helper: pick the RIGHTMOST non-whitespace item inside an x-band.
+  // PDF.js often emits zero-width or whitespace-only text items between real
+  // glyph runs; without the trim() filter those can shadow the actual duty /
+  // route / time glyphs at the same x-range and make the row fail to parse.
+  const pickIn = (row, xLo, xHi) => {
+    let hit = null;
+    for (const it of row.items) {
+      if (it.x < xLo || it.x >= xHi) continue;
+      if (!String(it.str).trim()) continue;
+      if (!hit || it.x > hit.x) hit = it;
+    }
+    return hit;
+  };
+
+  // ── per-page sector extraction ────────────────────────────────────────────
+  for (const page of pages) {
+    const items = page.items || [];
+    if (!items.length) continue;
+
+    const rows = rowsOf(items);
+
+    // Schedule Details band: between the "Schedule Details" label (top) and
+    // "Total Hours / Hotel Information / Transfer Information / …" (bottom).
+    const schedLbl = items.find(it => /Schedule\s+Details/i.test(it.str));
+    const schedTopY = schedLbl ? schedLbl.y : Infinity;
+    const endLabels = /^(Total\s+Hours|Hotel\s+Information|Transfer\s+Information|Pax\s+Transfer|Memos\b|Descriptions\b)/i;
+    let schedBotY = 0;
+    for (const it of items) {
+      if (it.y >= schedTopY) continue;
+      if (endLabels.test(String(it.str).trim())) schedBotY = Math.max(schedBotY, it.y);
+    }
+
+    // Collect date-label rows (report/debrief extracted from the same row).
+    // A row is a "flying day" label if it has both Report (x≈384) AND Debrief
+    // (x≈638) times. Non-flying days (OFG, SBY, VAC, NAP standalone) don't
+    // have these columns populated — we still record them so they're not
+    // selected as flight candidates.
+    const labelRows = [];
+    for (const row of rows) {
+      if (row.y > schedTopY || row.y < schedBotY) continue;
+      const dateIt = row.items.find(
+        it => it.x < 50 && /^\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\b/.test(it.str)
+      );
+      if (!dateIt) continue;
+      const m = dateIt.str.match(/^\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
+      const date = parseDate(m[1]);
+      if (!date) continue;
+
+      // Report time: x ∈ [370, 460), plain HH:MM.
+      const reportIt  = pickIn(row, 370, 460);
+      const debriefIt = pickIn(row, 620, 720);
+      const reportM   = reportIt  && /^\d{1,2}:\d{2}$/.test(reportIt.str.trim())
+        ? t2m_local(hhmm(reportIt.str)) : null;
+      // Debrief may carry "⁺¹" or "+1" meaning next calendar day.
+      let debriefM = null, debriefPlus1 = false;
+      if (debriefIt) {
+        const dm = debriefIt.str.trim().match(/^(\d{1,2}:\d{2})([^\d]?\S*)?/);
+        if (dm) {
+          debriefM = t2m_local(hhmm(dm[1]));
+          if (dm[2] && /[⁺+]/.test(dm[2])) debriefPlus1 = true;
+        }
+      }
+
+      labelRows.push({
+        y: row.y,
+        date,
+        reportM,
+        debriefM,
+        debriefPlus1,
+      });
+    }
+
+    // Merge multiple label rows for the same date — prefer the flying one
+    // (e.g. 21/01 has NAP + ERET rows, neither with report/debrief → keep as
+    // non-flying; if a date somehow had both, the flying version wins).
+    const byDate = new Map();
+    for (const lr of labelRows) {
+      const prev = byDate.get(lr.date);
+      const lrFlying = lr.reportM !== null && lr.debriefM !== null;
+      const prevFlying = prev && prev.reportM !== null && prev.debriefM !== null;
+      if (!prev || (lrFlying && !prevFlying)) byDate.set(lr.date, lr);
+    }
+    const allDays = Array.from(byDate.values());
+    const flyingDays = allDays.filter(d => d.reportM !== null && d.debriefM !== null);
+
+    // ── flight rows ───────────────────────────────────────────────────────
+    for (const row of rows) {
+      if (row.y > schedTopY || row.y < schedBotY) continue;
+
+      const dutyIt   = pickIn(row, 100, 180);
+      const routeIt  = pickIn(row, 180, 380);
+      const actualIt = pickIn(row, 460, 620);
+      if (!dutyIt || !routeIt) continue;
+
+      // Duty must be a pure flight number, optionally suffixed with the
+      // "[320]/[321]" aircraft-type tag. Anything else (SBY, ERET, OFG, VAC,
+      // NAP, SFT, training codes) is skipped.
+      const fm = String(dutyIt.str).trim().match(/^(?:6E\s*)?(\d{3,5})(?:\s*\[\d{3}\])?$/);
+      if (!fm) continue;
+      const flight_no = `6E${fm[1]}`;
+
+      // Route — strict "XXX - YYY" (optional "*" prefix for DH).
+      const rm = String(routeIt.str).trim().match(/^(\*?)\s*([A-Z]{3})\s*[-–]\s*([A-Z]{3})\s*$/);
+      if (!rm) continue;
+      const dep = rm[2].toUpperCase();
+      const arr = rm[3].toUpperCase();
+      if (dep === arr) continue;
+      const is_dhf = rm[1] === "*";
+
+      // Actuals. Accept partial A-prefix; tolerate trailing "/HH:MM" delta.
+      // We capture BOTH times (sched or actual) for date-window matching.
+      let atd_local = null, ata_local = null;
+      let atdMin = null, ataMin = null;
+      if (actualIt) {
+        const am = String(actualIt.str).trim().match(
+          /^(A)?\s*(\d{1,2}:\d{2})\s*[-–]\s*(A)?\s*(\d{1,2}:\d{2})(?:\s*\/\s*\d{1,2}:\d{2})?\s*$/
+        );
+        if (am) {
+          const t1 = hhmm(am[2]), t2 = hhmm(am[4]);
+          if (am[1] === "A") atd_local = t1;
+          if (am[3] === "A") ata_local = t2;
+          atdMin = t2m_local(t1);
+          ataMin = t2m_local(t2);
+        }
+      }
+
+      // Date assignment: prefer the flying day whose [report, debrief] window
+      // contains this flight. Non-flying days (OFG/SBY/VAC/NAP) are NEVER
+      // candidates — flights can't live on a non-flying day.
+      const candidates = [];
+      for (const d of flyingDays) {
+        let rM = d.reportM;
+        let dM = d.debriefM;
+        if (d.debriefPlus1 || dM < rM) dM += 1440;
+
+        // Flight times — shift ata +24h if it crosses midnight.
+        let s = atdMin, e = ataMin;
+        if (s !== null && e !== null && e < s) e += 1440;
+
+        // Give a small margin either side (pilots sometimes depart a few
+        // minutes ahead of their report, or arrive slightly after debrief).
+        const MARGIN = 30;
+        const startOk = s === null || (s >= rM - MARGIN && s <= dM + MARGIN);
+        const endOk   = e === null || (e >= rM - MARGIN && e <= dM + MARGIN);
+
+        if (startOk && endOk) {
+          candidates.push({ day: d, score: Math.abs(row.y - d.y) });
+        }
+      }
+
+      let assignedDate = null;
+      if (candidates.length) {
+        candidates.sort((a, b) => a.score - b.score);
+        assignedDate = candidates[0].day.date;
+      } else {
+        // Fallback: nearest-y among flying days (real days can't be skipped);
+        // only if no flying day exists at all, fall back to any date label.
+        const pool = flyingDays.length ? flyingDays : allDays;
+        let best = null, bestD = Infinity;
+        for (const d of pool) {
+          const dd = Math.abs(row.y - d.y);
+          if (dd < bestD) { best = d; bestD = dd; }
+        }
+        assignedDate = best ? best.date : null;
+      }
+      if (!assignedDate) continue;
+
+      sectors.push({
+        date: assignedDate,
+        flight_no, dep, arr,
+        is_dhf,
+        is_dht: false,   // EOM has no "Other Crew" section → can't detect DHT
+        atd_local, ata_local,
+      });
+    }
+
+    // ── Hotel Information table (this page) ───────────────────────────────
+    // Locator entries live at x ≈ 600–700 and read "DD/MM/YYYY - NAME_STATION"
+    // or "DD/MM/YYYY - Multi Word Name".
+    for (const it of items) {
+      if (it.x < 580 || it.x > 760) continue;
+      const m = String(it.str).trim().match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s*[-–]\s*(.+?)\s*$/);
+      if (!m) continue;
+      const date = parseDate(m[1]);
+      if (!date) continue;
+      const name = m[2].trim();
+
+      // Station: prefer "..._XXX" tail; otherwise lookup port-column neighbour.
+      let station = null;
+      const tailM = name.match(/_([A-Z]{3})\b\s*$/) || name.match(/\b([A-Z]{3})\s*$/);
+      if (tailM) station = tailM[1].toUpperCase();
+      if (!station) {
+        for (const j of items) {
+          if (j === it) continue;
+          if (j.x >= 50) continue;
+          if (Math.abs(j.y - it.y) > 20) continue;
+          const pm = String(j.str).trim().match(/^([A-Z]{3})$/);
+          if (pm) { station = pm[1].toUpperCase(); break; }
+        }
+      }
+      if (!station) continue;
+
+      hotels.push({
+        date,
+        station,
+        hotel_name: name,
+        check_in: null,
+        check_out: null,
+      });
+    }
+  }
+
+  // ── pilot + month from flattened text (reuse existing grid helpers) ──────
+  const rawText = pages.map(p => (p.items || []).map(it => it.str).join(" ")).join("\n");
+  const flat    = norm(rawText.replace(/\n/g, " "));
+  const pilot   = extractPilotHeader(flat);
+  const month   = extractMonth(flat);
+
+  // NOTE: transfer-date correction is deliberately NOT applied here. The
+  // report/debrief-window date assignment above is reliable for EOM, and
+  // transfer correction has been observed to pull CCU arrivals back onto the
+  // wrong day (e.g. 30/01 6E223 gets clobbered to 29/01 by the 29/01 inbound
+  // transfer entry). The transfer path remains enabled for GRID.
+
+  // ── chronological sort ───────────────────────────────────────────────────
+  sectors.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    const ta = a.atd_local ?? "00:00";
+    const tb = b.atd_local ?? "00:00";
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  });
+
+  // De-duplicate hotel rows (same station+date) that can appear if a locator
+  // entry repeats across page boundaries.
+  const seen = new Set();
+  const uniqHotels = [];
+  for (const h of hotels) {
+    const k = `${h.station}|${h.date}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    uniqHotels.push(h);
+  }
+
+  return { format: "EOM", month, pilot, sectors, hotels: uniqHotels };
+}
+
 // ─── GRID format parser ───────────────────────────────────────────────────────
 
 /**
@@ -862,7 +1151,7 @@ export async function parsePcsrPdf(buffer) {
 
   let result;
   if (format === "EOM") {
-    result = parseEom(rawText);
+    result = parseEomItems(pages);
   } else {
     const page1Items = pages[0]?.items ?? [];
     result = parseGrid(rawText, rawText, page1Items);
@@ -918,7 +1207,7 @@ export function parsePcsrText(rawText) {
 export function parsePcsrItems(pages) {
   const rawText = pages.map(p => p.items.map(it => it.str).join(" ")).join("\n");
   const format = detectFormat(rawText);
-  if (format === "EOM") return parseEom(rawText);
+  if (format === "EOM") return parseEomItems(pages);
   const page1Items = pages[0]?.items ?? [];
   return parseGrid(rawText, rawText, page1Items);
 }
