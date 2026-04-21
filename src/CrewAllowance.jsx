@@ -70,10 +70,25 @@ const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
 
 /* Calculation is server-side via /api/calculate — see api/calculate.js */
 /* ═══════════════════════════════════════════════════════════════════
-   AERO DATABOX API  (via serverless proxy, with Supabase cache)
+   SCHEDULE DATA API  (AeroDataBox or FR24, via serverless proxy + Supabase cache)
 ═══════════════════════════════════════════════════════════════════ */
+// Read the global schedule_source admin setting from app_settings.
+// Returns "adb" (default) or "fr24". Fails open to "adb" on any error so a
+// missing settings table or permissions hiccup never breaks the calculator.
+async function fetchScheduleSource() {
+  if (!supabase) return "adb";
+  try {
+    const { data } = await supabase.from("app_settings")
+      .select("value").eq("key", "schedule_source").maybeSingle();
+    const v = (data?.value || "").toLowerCase();
+    return v === "fr24" ? "fr24" : "adb";
+  } catch {
+    return "adb";
+  }
+}
+
 // Returns { data, fromCache } or null
-async function fetchWithCache(flight, dep, arr, date) {
+async function fetchWithCache(flight, dep, arr, date, source = "adb") {
   if (supabase) {
     const { data, error: cacheReadErr } = await supabase.from("flight_schedule_cache")
       .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", date).limit(1).maybeSingle();
@@ -83,18 +98,20 @@ async function fetchWithCache(flight, dep, arr, date) {
       return { data, fromCache: true };
     }
   }
-  const url = `/api/aerodatabox?flight=${encodeURIComponent(flight)}&dep=${encodeURIComponent(dep)}&arr=${encodeURIComponent(arr)}&date=${encodeURIComponent(date)}`;
+  const endpoint = source === "fr24" ? "/api/fr24" : "/api/aerodatabox";
+  const providerName = source === "fr24" ? "FR24" : "AeroDataBox";
+  const url = `${endpoint}?flight=${encodeURIComponent(flight)}&dep=${encodeURIComponent(dep)}&arr=${encodeURIComponent(arr)}&date=${encodeURIComponent(date)}`;
   let resp;
   try {
     resp = await fetch(url);
   } catch (fetchErr) {
-    console.warn(`AeroDataBox fetch error for ${flight} ${dep}→${arr} ${date}:`, fetchErr.message);
+    console.warn(`${providerName} fetch error for ${flight} ${dep}→${arr} ${date}:`, fetchErr.message);
     return null;
   }
   if (!resp.ok) {
     let body = "";
     try { body = await resp.text(); } catch { /* ignore */ }
-    console.warn(`AeroDataBox ${resp.status} for ${flight} ${dep}→${arr} ${date}:`, body.slice(0, 200));
+    console.warn(`${providerName} ${resp.status} for ${flight} ${dep}→${arr} ${date}:`, body.slice(0, 200));
     return null;
   }
   const json = await resp.json();
@@ -112,7 +129,7 @@ async function fetchWithCache(flight, dep, arr, date) {
 }
 
 // Returns { map, fetched, cached, failed }
-async function buildSchedMap(sectors, onProgress) {
+async function buildSchedMap(sectors, onProgress, source = "adb") {
   const map = {};
   const unique = [];
   const seen = new Set();
@@ -135,7 +152,7 @@ async function buildSchedMap(sectors, onProgress) {
     lastWasLive = false;
     const key = `${s._flight}|${s.dep}|${s.arr}|${s.date}`;
     try {
-      const result = await fetchWithCache(s._flight, s.dep, s.arr, s.date);
+      const result = await fetchWithCache(s._flight, s.dep, s.arr, s.date, source);
       if (result) {
         map[key] = result.data;
         if (result.fromCache) { cached++; } else { fetched++; lastWasLive = true; }
@@ -957,17 +974,35 @@ function CalcScreen({ user, rates, onNeedProfile }) {
   const [phase,      setPhase]      = useState("idle"); // idle | fetching | calculating | done
   const [progress,   setProgress]   = useState({ current:0, total:0, flight:"" });
   const [svStatus,   setSvStatus]   = useState(null);   // "found" | "missing"
+  const [svSourceMonth, setSvSourceMonth] = useState(null); // actual month SV was loaded from (may differ from roster month)
   const [apiStats,   setApiStats]   = useState(null);   // { fetched, cached, failed }
 
   const homeBase = user.home_base || "DEL";
   const rank     = user.rank || "Captain";
 
-  // Fetch SV data for a given month from Supabase
+  // Fetch SV data for a given month from Supabase.
+  // Falls back up to 3 months prior if the target month has no upload yet —
+  // sector values rarely change month-to-month so this keeps night flying
+  // computable even before the current month's SV is uploaded. Returns
+  // { rows, sourceMonth } where sourceMonth may differ from the requested month.
   const fetchSV = async (month) => {
-    if (!supabase) return [];
-    const { data } = await supabase.from("sector_values")
-      .select("data").eq("month", month).order("uploaded_at", { ascending: false }).limit(1).maybeSingle();
-    return data?.data || [];
+    if (!supabase) return { rows: [], sourceMonth: null };
+    // Helper: subtract N months from a YYYY-MM string.
+    const subMonths = (yyyyMm, n) => {
+      const [y, m] = yyyyMm.split("-").map(Number);
+      const d = new Date(Date.UTC(y, m - 1 - n, 1));
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    };
+    for (let offset = 0; offset <= 3; offset++) {
+      const tryMonth = offset === 0 ? month : subMonths(month, offset);
+      const { data } = await supabase.from("sector_values")
+        .select("data").eq("month", tryMonth)
+        .order("uploaded_at", { ascending: false }).limit(1).maybeSingle();
+      if (data?.data?.length) {
+        return { rows: data.data, sourceMonth: tryMonth };
+      }
+    }
+    return { rows: [], sourceMonth: null };
   };
 
   const onPcsrParsed = useCallback((file, parsed) => {
@@ -979,9 +1014,10 @@ function CalcScreen({ user, rates, onNeedProfile }) {
     setErr(""); setResult(null); setPhase("fetching");
 
     try {
-      // 1. Fetch SV data from Supabase
-      const svData = await fetchSV(pcsrData.month);
+      // 1. Fetch SV data from Supabase (with up to 3 months of fallback)
+      const { rows: svData, sourceMonth: svFromMonth } = await fetchSV(pcsrData.month);
       setSvStatus(svData.length ? "found" : "missing");
+      setSvSourceMonth(svFromMonth);
 
       // 2. Map pcsrParser sector fields to calculate.js conventions
       const [y, mo] = pcsrData.month.split("-").map(Number);
@@ -1014,14 +1050,16 @@ function CalcScreen({ user, rates, onNeedProfile }) {
         return ta < tb ? -1 : ta > tb ? 1 : 0;
       });
 
-      // 5. Fetch AeroDataBox schedule data for parsed sectors
+      // 5. Fetch schedule data (ADB or FR24 per admin setting) for parsed sectors
       setPhase("fetching");
+      const source = await fetchScheduleSource();
       const { map: schedMap, fetched, cached, failed } = await buildSchedMap(
         sectors,
-        (cur, total, flight) => setProgress({ current: cur, total, flight })
+        (cur, total, flight) => setProgress({ current: cur, total, flight }),
+        source,
       );
-      setApiStats({ fetched, cached, failed });
-      console.log("[calculate] AeroDataBox done — fetched:", fetched, "cached:", cached, "failed:", failed);
+      setApiStats({ fetched, cached, failed, source });
+      console.log(`[calculate] ${source.toUpperCase()} done — fetched:`, fetched, "cached:", cached, "failed:", failed);
 
       // 6. Run deterministic JS calculations
       setPhase("calculating");
@@ -1049,7 +1087,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
   const reset = () => {
     setPcsrFile(null); setPcsrData(null); setResult(null);
     setErr(""); setPhase("idle"); setProgress({ current:0, total:0, flight:"" });
-    setApiStats(null);
+    setApiStats(null); setSvStatus(null); setSvSourceMonth(null);
   };
 
   const profileIncomplete = !user.home_base || !user.emp_id;
@@ -1208,13 +1246,19 @@ function CalcScreen({ user, rates, onNeedProfile }) {
             </div>
           )}
 
+          {svStatus === "found" && svSourceMonth && pcsrData?.month && svSourceMonth !== pcsrData.month && (
+            <div style={{ marginBottom:14, padding:"10px 14px", background:C.goldBg, border:"1px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText, lineHeight:1.55 }}>
+              <strong>⚠ Approximation in use.</strong> Sector Values for {result.period} have not been uploaded yet, so night flying has been calculated using the {new Date(svSourceMonth + "-01").toLocaleDateString("en-IN", { month:"long", year:"numeric" })} SV data. Since SVs rarely change month-to-month this is usually close to exact, but the final figure could differ by a few minutes once your admin uploads the current month.
+            </div>
+          )}
+
           {apiStats && (apiStats.failed > 0 || apiStats.fetched > 0 || apiStats.cached > 0) && (
             <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:10, fontSize:12,
               background: apiStats.failed === apiStats.fetched + apiStats.cached + apiStats.failed ? C.redBg : apiStats.failed > 0 ? C.goldBg : C.greenBg,
               border:"1px solid "+(apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 ? "#fca5a5" : apiStats.failed > 0 ? C.goldBorder : C.green),
               color: apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 ? C.red : apiStats.failed > 0 ? C.goldText : C.green }}>
-              Schedule data: {apiStats.fetched} fetched from AeroDataBox · {apiStats.cached} from cache · {apiStats.failed} failed
-              {apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 && " — tail-swap requires schedule data. Check RAPIDAPI_KEY or try again."}
+              Schedule data: {apiStats.fetched} fetched from {apiStats.source === "fr24" ? "FR24" : "AeroDataBox"} · {apiStats.cached} from cache · {apiStats.failed} failed
+              {apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 && ` — tail-swap requires schedule data. Check ${apiStats.source === "fr24" ? "FR24_API_TOKEN" : "RAPIDAPI_KEY"} or try again.`}
               {apiStats.failed > 0 && apiStats.fetched + apiStats.cached > 0 && " — deadhead/night calculated from actual times for failed sectors."}
             </div>
           )}
@@ -1317,11 +1361,15 @@ function AdminScreen({ rates }) {
   const [svUploading,setSvUploading]= useState(false);
   const [svMsg,      setSvMsg]      = useState("");
   const [svHistory,  setSvHistory]  = useState([]);
+  const [source,        setSource]        = useState("adb");
+  const [sourceSaving,  setSourceSaving]  = useState(false);
+  const [sourceMsg,     setSourceMsg]     = useState("");
   const svFileRef = useRef();
 
   const tabs = [
     { id:"users",  label:"Users" },
     { id:"sv",     label:"Sector Values" },
+    { id:"source", label:"Data Source" },
     { id:"rates",  label:"Current Rates" },
   ];
 
@@ -1334,7 +1382,30 @@ function AdminScreen({ rates }) {
       supabase.from("sector_values").select("month,uploaded_at,row_count").order("uploaded_at", { ascending: false }).limit(10)
         .then(({ data }) => { if (data) setSvHistory(data); });
     }
+    if (tab === "source") {
+      supabase.from("app_settings").select("value").eq("key", "schedule_source").maybeSingle()
+        .then(({ data }) => {
+          const v = (data?.value || "adb").toLowerCase();
+          setSource(v === "fr24" ? "fr24" : "adb");
+        });
+    }
   }, [tab]);
+
+  const saveSource = async (next) => {
+    if (!supabase) { setSourceMsg("Supabase not configured."); return; }
+    setSourceSaving(true); setSourceMsg("");
+    try {
+      const { error } = await supabase.from("app_settings").upsert({
+        key: "schedule_source", value: next, updated_at: new Date().toISOString(),
+      }, { onConflict: "key" });
+      if (error) throw error;
+      setSource(next);
+      setSourceMsg(`✓ Saved — new calculations will use ${next === "fr24" ? "FR24" : "AeroDataBox"}. Existing cached rows are unchanged.`);
+    } catch (e) {
+      setSourceMsg("Error: " + (e?.message || String(e)));
+    }
+    setSourceSaving(false);
+  };
 
   const toggleUser = async (id, currentState) => {
     if (!supabase) return;
@@ -1474,6 +1545,59 @@ function AdminScreen({ rates }) {
               ))}
             </Card>
           )}
+        </div>
+      )}
+
+      {tab === "source" && (
+        <div>
+          <Card color="blue" style={{ marginBottom:16 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:8 }}>Schedule Data Provider</div>
+            <div style={{ fontSize:12, color:C.textMid, marginBottom:14, lineHeight:1.6 }}>
+              Choose which external API supplies scheduled/actual flight times and aircraft registrations. This setting applies globally to every crew member using the app. Cached rows are never overwritten — switching sources only affects <em>new</em> lookups.
+            </div>
+
+            {[
+              { id:"adb",  title:"AeroDataBox",    note:"Forward-looking schedule data. Best for calculating allowances on upcoming rosters. Via RapidAPI." },
+              { id:"fr24", title:"Flightradar24",  note:"Historical actuals (last 30 days). Best for reconciling a completed month against payslips. Does NOT cover future rosters." },
+            ].map(opt => (
+              <label key={opt.id}
+                style={{ display:"block", cursor:"pointer", marginBottom:10,
+                  border:"1.5px solid "+(source === opt.id ? C.blue : C.border),
+                  borderRadius:12, padding:"12px 14px",
+                  background: source === opt.id ? C.blueLight : C.white,
+                  transition:"all 0.15s" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <input type="radio" name="scheduleSource" value={opt.id}
+                    checked={source === opt.id} onChange={() => setSource(opt.id)}
+                    style={{ accentColor: C.blue, transform:"scale(1.15)" }} />
+                  <div style={{ fontSize:14, fontWeight:700, color:C.navy }}>{opt.title}</div>
+                </div>
+                <div style={{ fontSize:12, color:C.textMid, marginTop:4, marginLeft:26, lineHeight:1.55 }}>{opt.note}</div>
+              </label>
+            ))}
+
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:6 }}>
+              <Btn onClick={() => saveSource(source)} disabled={sourceSaving} icon="💾" full={false}>
+                {sourceSaving ? "Saving..." : "Save selection"}
+              </Btn>
+              <div style={{ fontSize:11, color:C.textLo }}>Current: <strong>{source === "fr24" ? "FR24" : "AeroDataBox"}</strong></div>
+            </div>
+
+            {sourceMsg && (
+              <div style={{ marginTop:12, padding:"10px 14px", borderRadius:8, fontSize:12,
+                background: sourceMsg.startsWith("✓") ? C.greenBg : C.redBg,
+                color: sourceMsg.startsWith("✓") ? C.green : C.red,
+                border: "1px solid " + (sourceMsg.startsWith("✓") ? C.green : "#fca5a5") }}>
+                {sourceMsg}
+              </div>
+            )}
+          </Card>
+
+          <Card style={{ background:C.goldBg, border:"1.5px solid "+C.goldBorder }}>
+            <div style={{ fontSize:12, color:C.goldText, lineHeight:1.7 }}>
+              <strong>FR24 requires</strong> the <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>FR24_API_TOKEN</code> environment variable to be set in Vercel. The 30-day tier covers only the last month of flights; anything older returns an error and is not cached. AeroDataBox remains the default for forward rosters.
+            </div>
+          </Card>
         </div>
       )}
 
