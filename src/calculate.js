@@ -127,14 +127,37 @@ export function calculateDeadhead(sectors, scheduledTimes, pilot) {
   return { sectors: result, total };
 }
 
-export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMonthTail) {
+export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMonthTail, hotels) {
   const r = getRates(pilot.rank);
   const events = [];
   let total = 0;
 
+  // Build a hotel lookup: station -> array of date strings (YYYY-MM-DD).
+  // When `hotels` is supplied, a layover is only counted if the destination
+  // station appears in the hotel section for an overlapping date — this is
+  // what distinguishes a paid TLPD from an unpaid long sit (e.g. position
+  // trip the next morning where the pilot doesn't go to a hotel).
+  const hotelByStation = {};
+  if (Array.isArray(hotels)) {
+    for (const h of hotels) {
+      if (!h?.station) continue;
+      const st = String(h.station).trim().toUpperCase();
+      const dates = Array.isArray(h.dates) ? h.dates : (h.date ? [h.date] : []);
+      hotelByStation[st] = (hotelByStation[st] ?? []).concat(dates.filter(Boolean));
+    }
+  }
+  const hasHotelInfo = Object.keys(hotelByStation).length > 0;
+  const hotelMatches = (station, dateA, dateB) => {
+    if (!hasHotelInfo) return true; // no hotel data → don't gate
+    const dates = hotelByStation[String(station).trim().toUpperCase()];
+    if (!dates?.length) return false;
+    return dates.some(d => d === dateA || d === dateB);
+  };
+
   const addEvent = (station, date_in, date_out, chocksOnMs, chocksOffMs, chocksOnStr, chocksOffStr) => {
     const duration_hrs = (chocksOffMs - chocksOnMs) / 3600000;
     if (duration_hrs <= 10 + 1 / 60) return; // must be STRICTLY MORE than 10h01m
+    if (!hotelMatches(station, date_in, date_out)) return;  // gate on hotel section
     const base  = r.layoverBase;
     const extra = duration_hrs > 24 ? Math.ceil(duration_hrs - 24) * r.layoverExtra : 0;
     const eventTotal = base + extra;
@@ -208,15 +231,16 @@ export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
     const SV = Number(sv.SectorValue);
     if (!SV) continue;
 
+    // Night flying window: 00:00 – 06:00 local. Using STD-anchored, SV-based arrival.
     const SV_arrival = STD_mins + SV;
     let night_mins;
 
     if (SV_arrival <= 1440) {
-      night_mins = Math.max(0, Math.min(SV_arrival, 360) - Math.max(STD_mins, 1));
+      night_mins = Math.max(0, Math.min(SV_arrival, 360) - Math.max(STD_mins, 0));
     } else {
-      const seg1    = Math.max(0, Math.min(1440, 360) - Math.max(STD_mins, 1));
+      const seg1    = Math.max(0, Math.min(1440, 360) - Math.max(STD_mins, 0));
       const seg2End = SV_arrival % 1440;
-      const seg2    = Math.max(0, Math.min(seg2End, 360) - 1);
+      const seg2    = Math.max(0, Math.min(seg2End, 360) - 0);
       night_mins = seg1 + seg2;
     }
 
@@ -333,12 +357,12 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
   return { swaps, count: verifiedCount, total };
 }
 
-export function runCalculations(period, sectors, scheduledTimes, svData, pilot, priorMonthTail) {
+export function runCalculations(period, sectors, scheduledTimes, svData, pilot, priorMonthTail, hotels) {
   const corrected = applyMidnightCorrection(sectors);
   const duties    = groupIntoDuties(corrected, scheduledTimes);
 
   const dh = calculateDeadhead(corrected, scheduledTimes, pilot);
-  const lv = calculateLayover(corrected, duties, scheduledTimes, pilot, priorMonthTail);
+  const lv = calculateLayover(corrected, duties, scheduledTimes, pilot, priorMonthTail, hotels);
   const nt = calculateNightFlying(corrected, scheduledTimes, svData, pilot);
   const tr = calculateTransit(corrected, duties, scheduledTimes, pilot);
   const ts = calculateTailSwap(corrected, duties, scheduledTimes, pilot);

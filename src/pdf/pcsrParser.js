@@ -82,9 +82,16 @@ function extractPilotHeader(text) {
     if (parM[3] && !employee_id) employee_id = parM[3];
   }
 
-  // Name patterns
-  const nameM = head.match(/(?:Name\s*[:-]\s*)?([A-Z]{2,20},\s*[A-Z]{2,20}(?:\s+[A-Z]{2,20})?)/);
-  if (nameM) name = nameM[1].trim();
+  // Name patterns.
+  // Third token is optional (middle name), but must be 4+ letters so we don't
+  // accidentally swallow a 3-letter IATA base code (e.g. "GOYAL, VINEET DEL").
+  const nameM = head.match(/(?:Name\s*[:-]\s*)?([A-Z]{2,20},\s*[A-Z]{2,20}(?:\s+[A-Z]{4,20})?)/);
+  if (nameM) {
+    name = nameM[1].trim()
+      // Defensive: if we still captured a 3-letter trailing token followed by a base
+      // separator ("DEL-", "DEL,", "DEL "), strip it.
+      .replace(/\s+[A-Z]{3}$/, "");
+  }
 
   // Base: explicit label
   const baseM = head.match(/(?:Base|Home\s*Base|Station)\s*[:-]\s*([A-Z]{3})\b/i);
@@ -361,6 +368,7 @@ function parseGrid(text, allPagesText) {
         is_dht:    oc.is_dht,
         atd_local: gs?.atd_local || null,
         ata_local: gs?.ata_local || null,
+        _dateFromOC: true,
       });
     }
 
@@ -414,20 +422,38 @@ function parseGrid(text, allPagesText) {
 }
 
 function parseHotelSection(text, sectors, hotels) {
-  const hotelIdx = text.search(/\bHotel\b/i);
+  const hotelIdx = text.search(/\bHotel\s+Information\b/i);
   if (hotelIdx === -1) return;
-  const hotelSection = text.slice(hotelIdx, hotelIdx + 3000);
+  // Stop at the following section (Transfer Information) so we don't scan past.
+  let section = text.slice(hotelIdx, hotelIdx + 5000);
+  const cut = section.search(/\bTransfer\s+Information\b/i);
+  if (cut !== -1) section = section.slice(0, cut);
 
-  // "DD/MM  STATION  CHECK IN  CHECK OUT  HOTEL NAME"
-  const HOTEL_ROW_RE = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+([A-Z]{3})\s+(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})/g;
-  let m;
-  while ((m = HOTEL_ROW_RE.exec(hotelSection)) !== null) {
-    hotels.push({
-      date: m[1],
-      station: m[2].toUpperCase(),
-      check_in: hhmm(m[3]),
-      check_out: hhmm(m[4]),
-    });
+  // Real PCSR hotel layout (linearised):
+  //   "TRZ   TRZ HOTEL   11/01/2026 - BLOSSOMS_TRZ 12/01/2026 - BLOSSOMS_TRZ"
+  //   "HYD   HYD HOTEL   16/01/2026 - NOVOTELHYD"
+  // The entry starts with an IATA code doubled (e.g. "TRZ   TRZ HOTEL"), then
+  // one or more "DD/MM/YYYY - HOTEL_NAME" pairs. Check-in/check-out times are
+  // NOT in this section; they live in Transfer Information.
+  const BLOCK_RE = /\b([A-Z]{3})\s+\1\s+HOTEL\s+((?:\d{1,2}\/\d{1,2}\/\d{2,4}\s*-\s*\S+\s*)+)/gi;
+  let bm;
+  while ((bm = BLOCK_RE.exec(section)) !== null) {
+    const station = bm[1].toUpperCase();
+    const body = bm[2];
+    // Pull every "DD/MM/YYYY - NAME" pair out of this block.
+    const DATE_RE = /(\d{1,2}\/\d{1,2}\/\d{2,4})\s*-\s*(\S+)/g;
+    let dm;
+    while ((dm = DATE_RE.exec(body)) !== null) {
+      const date = parseDate(dm[1]);
+      if (!date) continue;
+      hotels.push({
+        date,
+        station,
+        hotel_name: dm[2],
+        check_in: null,
+        check_out: null,
+      });
+    }
   }
 }
 
@@ -440,21 +466,31 @@ function parseHotelSection(text, sectors, hotels) {
  * "Hotel to Airport" = outbound (pilot departing from layover station).
  */
 export function parseTransferSection(text) {
+  // Stop at the following section so we don't scan into "Pax Transfer Information".
   const idx = text.search(/\bTransfer\s+(?:Information|Details)\b/i);
   if (idx === -1) return [];
-  const section = text.slice(idx, idx + 5000);
+  let section = text.slice(idx, idx + 5000);
+  const paxIdx = section.search(/\bPax\s+Transfer\s+Information\b/i);
+  if (paxIdx !== -1) section = section.slice(0, paxIdx);
+
   const entries = [];
-  const ENTRY_RE = /(Airport\s+to\s+Hotel|Hotel\s+to\s+Airport)[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(\d{1,2}:\d{2})/gi;
+  // Format in the PCSR text stream (linearised):
+  //   "Airport to Hotel:   11/01/2026   18:00   TRZ TRANSPORT"
+  //   "Hotel to Airport:   13/01/2026   03:40   TRZ TRANSPORTER"
+  // The IATA station code sits immediately AFTER the time, before the
+  // transport company name (which may be "TRANSPORT", "TRANSPORTER", etc.).
+  const ENTRY_RE = /(Airport\s+to\s+Hotel|Hotel\s+to\s+Airport)[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(\d{1,2}:\d{2})\s+([A-Z]{3})\b/gi;
   let m;
   while ((m = ENTRY_RE.exec(section)) !== null) {
     const type = /Airport\s+to\s+Hotel/i.test(m[1]) ? "inbound" : "outbound";
     const date = parseDate(m[2]);
     if (!date) continue;
-    const time = hhmm(m[3]);
-    // Nearest preceding IATA station code in this section
-    const before = section.slice(0, m.index);
-    const stM = before.match(/\b([A-Z]{3})\b\s*$/);
-    entries.push({ type, date, time, station: stM ? stM[1] : null });
+    entries.push({
+      type,
+      date,
+      time: hhmm(m[3]),
+      station: m[4].toUpperCase(),
+    });
   }
   return entries;
 }
@@ -479,13 +515,31 @@ export function applyTransferDateCorrections(sectors, transfers) {
   // Track which sectors were corrected in Step 1 so Step 2 skips them.
   const correctedInStep1 = new Set();
 
-  // Step 1 — station-based matching only.
+  // Days-between helper. Strings are YYYY-MM-DD ISO dates.
+  const daysBetween = (a, b) => {
+    if (!a || !b) return Infinity;
+    const da = new Date(a).getTime();
+    const db = new Date(b).getTime();
+    if (isNaN(da) || isNaN(db)) return Infinity;
+    return Math.abs((da - db) / 86400000);
+  };
+
+  // Step 1 — station-based matching. The Other Crew section is the
+  // authoritative date source for flight sectors in the GRID format, so
+  // skip sectors whose date came from OC. Transfer dates then only
+  // correct grid-only sectors whose dates are inferred. We also keep the
+  // date-proximity gate so a single transfer entry can't reach across
+  // the month to clobber unrelated sectors.
+  const NEAR_DAYS = 1;
+
   for (let i = 0; i < sectors.length; i++) {
     const s = sectors[i];
+    if (s._dateFromOC) continue;
 
     for (const tr of outbound) {
       if (!tr.station) continue;
       if (s.dep !== tr.station) continue;
+      if (daysBetween(s.date, tr.date) > NEAR_DAYS) continue;
       s.date = tr.date;
       correctedInStep1.add(i);
       break;
@@ -494,6 +548,7 @@ export function applyTransferDateCorrections(sectors, transfers) {
     for (const tr of inbound) {
       if (!tr.station) continue;
       if (s.arr !== tr.station) continue;
+      if (daysBetween(s.date, tr.date) > NEAR_DAYS) continue;
       s.date = tr.date;
       correctedInStep1.add(i);
       break;

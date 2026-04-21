@@ -1026,7 +1026,11 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       // 6. Run deterministic JS calculations
       setPhase("calculating");
       const pilot = { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank };
-      const res = runCalculations(parsedPeriod, sectors, schedMap, svFiltered, pilot, null);
+      // Pass the hotel list from the PCSR — calculateLayover uses it to gate
+      // TLPD so long station sits that were not actually hotelled (e.g., early
+      // next-day positioning flights) are excluded.
+      const hotels = pcsrData?.hotels || [];
+      const res = runCalculations(parsedPeriod, sectors, schedMap, svFiltered, pilot, null, hotels);
 
       console.log("[calculate] Result — total:", res.total,
         "deadhead:", res.deadhead?.sectors?.length,
