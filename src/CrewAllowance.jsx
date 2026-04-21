@@ -1649,20 +1649,36 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) { Promise.resolve().then(() => setScreen("landing")); return; }
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
-        const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
-        if (profile && profile.is_active) {
-          setUser({ ...profile, email: session.user.email });
-          setTab(profile.is_admin ? "admin" : "calc");
-          setScreen("app");
+
+    // Password-recovery links land with `#access_token=…&type=recovery` in the URL.
+    // Supabase parses that into a real session, which means getSession() below
+    // would happily load the user's profile and boot them into the app —
+    // racing against the PASSWORD_RECOVERY event. Detect the recovery hash up
+    // front and stay on the reset-password screen until the user sets a new
+    // password (or signs out).
+    const isRecovery = typeof window !== "undefined"
+      && typeof window.location?.hash === "string"
+      && /[#&]type=recovery\b/.test(window.location.hash);
+
+    if (isRecovery) {
+      Promise.resolve().then(() => setScreen("reset-password"));
+    } else {
+      supabase.auth.getSession().then(async ({ data: { session } }) => {
+        if (session) {
+          const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
+          if (profile && profile.is_active) {
+            setUser({ ...profile, email: session.user.email });
+            setTab(profile.is_admin ? "admin" : "calc");
+            setScreen("app");
+          } else {
+            setScreen("login");
+          }
         } else {
-          setScreen("login");
+          setScreen("landing");
         }
-      } else {
-        setScreen("landing");
-      }
-    });
+      });
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "PASSWORD_RECOVERY") { setScreen("reset-password"); return; }
       if (event === "SIGNED_OUT" || !session) { setUser(null); setScreen("landing"); }
