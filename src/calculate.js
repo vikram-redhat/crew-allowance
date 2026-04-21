@@ -25,7 +25,22 @@ function applyMidnightCorrection(sectors) {
 
 function getScheduled(sector, scheduledTimes) {
   const key = `${sector.flight}|${sector.dep}|${sector.arr}|${sector.date}`;
-  return scheduledTimes[key] || null;
+  const exact = scheduledTimes[key];
+  if (exact) return exact;
+  // Defensive ±1 day fallback. AeroDataBox occasionally keys early-morning
+  // IST flights to the UTC departure date (off by one). Without this, any
+  // sector whose cache row was fetched with that convention would silently
+  // miss the night / transit / tail-swap lookups.
+  const d = sector.date ? new Date(sector.date + "T00:00:00Z") : null;
+  if (d && !isNaN(d)) {
+    for (const offset of [-1, 1]) {
+      const d2 = new Date(d.getTime() + offset * 86400000);
+      const ymd = d2.toISOString().slice(0, 10);
+      const alt = scheduledTimes[`${sector.flight}|${sector.dep}|${sector.arr}|${ymd}`];
+      if (alt) return alt;
+    }
+  }
+  return null;
 }
 
 // Absolute ms: corrected ATA datetime
@@ -179,6 +194,28 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
           chocksOnMs, chocksOffMs, priorMonthTail.chocks_on, firstSector.atd || "");
       }
     }
+  } else if (duties.length > 0 && hasHotelInfo) {
+    // Auto-detect cross-month spill from THIS month's own data:
+    // If the first duty starts at a non-home station AND the hotel section
+    // lists that station on/before the first sector's date, the layover
+    // belongs to THIS month (per IndiGo rule). We synthesise an 11-hour
+    // duration so the >10h01m gate passes and the base ₹3,000 is awarded
+    // (no "extra hours" is computed because we don't know the prior-month
+    // chocks-on time without parsing the prior PCSR).
+    const firstSector = duties[0][0];
+    const firstStation = firstSector?.dep?.trim();
+    if (firstStation && firstStation !== pilot.home_base.trim()) {
+      const stationHotels = hotelByStation[firstStation.toUpperCase()] ?? [];
+      const matchingHotel = stationHotels.find(d => d <= firstSector.date);
+      if (matchingHotel) {
+        const chocksOffMs = absAtdMs(firstSector, scheduledTimes);
+        if (chocksOffMs !== null) {
+          const chocksOnMs = chocksOffMs - 11 * 3600000;  // synthetic 11h
+          addEvent(firstStation, matchingHotel, firstSector.date,
+            chocksOnMs, chocksOffMs, "(prev month)", firstSector.atd || "");
+        }
+      }
+    }
   }
 
   // Regular layovers between consecutive duties
@@ -203,7 +240,7 @@ export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
   const r = getRates(pilot.rank);
   const eligible = sectors.filter(s => !s.is_dhf && !s.is_dht);
   const result = [];
-  let total = 0;
+  let totalNightMins = 0;
 
   for (const s of eligible) {
     const sched = getScheduled(s, scheduledTimes);
@@ -247,8 +284,8 @@ export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
     console.log('[night] night_mins:', night_mins, 'SV_arrival:', SV_arrival, 'for', s.flight);
     if (night_mins === 0) continue;
 
-    const amount = Math.round(night_mins * r.night);
-    total += amount;
+    const amount = Math.round(night_mins * r.night);  // per-sector display
+    totalNightMins += night_mins;
     const sv_arr = SV_arrival % 1440;
     result.push({
       date: s.date, flight: s.flight, from: s.dep, to: s.arr,
@@ -258,6 +295,10 @@ export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
     });
   }
 
+  // Total is computed once from summed minutes to match IndiGo's actuals.
+  // IndiGo truncates at the grand-total level (verified against Jan/Feb 2026
+  // rosters: 272 mins × ₹33.33 = ₹9066.67 → ₹9066, not rounded to 9067).
+  const total = Math.trunc(totalNightMins * r.night);
   return { sectors: result, total };
 }
 

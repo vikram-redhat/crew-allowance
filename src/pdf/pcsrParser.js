@@ -278,41 +278,48 @@ function parseGridFromItems(page1Items, pilot, year, mo) {
   if (headerY === null || bestCount < 20) return [];
 
   // 2. Build column list: one entry per date header item.
+  // IMPORTANT: use the mm from each header rather than `mo`. The grid is 31
+  // columns wide so short months (e.g. Feb) bleed into the *next* month for
+  // the trailing few columns ("01/03", "02/03"…). Dropping mm collapses those
+  // trailing columns onto report-month dates and corrupts bucketing.
   const columns = page1Items
     .filter(it => Math.abs(it.y - headerY) < 2 && DATE_HEADER_RE.test(it.str.trim()))
     .map(it => {
       const [, dd, mm] = it.str.trim().match(DATE_HEADER_RE);
+      const mmNum = parseInt(mm, 10);
+      // Trailing overflow stays in same calendar year (Dec→Jan never overflows
+      // since Dec already fills the 31-col grid). Defensive year handling:
+      // if header month < report month, treat as next year (Jan after Dec).
+      const colYear = mmNum < mo ? year + 1 : year;
       return {
         x_center: it.x + it.w / 2,
         x_left:   it.x,
-        date: `${year}-${String(mo).padStart(2, "0")}-${dd.padStart(2, "0")}`,
+        date: `${colYear}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`,
       };
     })
     .sort((a, b) => a.x_center - b.x_center);
 
-  // Column half-width = half the spacing to the adjacent column.
-  const colForX = (x) => {
-    let best = null, bestDist = Infinity;
-    for (const c of columns) {
-      const d = Math.abs(x - c.x_center);
-      if (d < bestDist) { bestDist = d; best = c; }
+  // Return column INDEX (not the column object) so duplicate/adjacent columns
+  // can't accidentally collide through a Map lookup downstream.
+  const colIdxForX = (x) => {
+    let bestIdx = -1, bestDist = Infinity;
+    for (let i = 0; i < columns.length; i++) {
+      const d = Math.abs(x - columns[i].x_center);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
-    return best;
+    return { idx: bestIdx, dist: bestDist };
   };
 
-  // 3. Index items by (column index, y) — one bucket per column.
-  // We use a column-index keyed map so we can look up the right-adjacent
-  // column when a sector's arrow "→" points to the next day.
-  const colIdxByDate = new Map();
-  columns.forEach((c, idx) => colIdxByDate.set(c.date, idx));
+  // 3. Index items by column index — one bucket per column.
   const buckets = columns.map(() => []);
   for (const it of page1Items) {
     if (it.y >= headerY - 1) continue;  // header + above = not grid data
-    const col = colForX(it.x + it.w / 2);
-    if (!col) continue;
+    const x_mid = it.x + it.w / 2;
+    const { idx, dist } = colIdxForX(x_mid);
+    if (idx < 0) continue;
     // Reject items too far horizontally from the nearest column (>18px).
-    if (Math.abs((it.x + it.w / 2) - col.x_center) > 18) continue;
-    buckets[colIdxByDate.get(col.date)].push(it);
+    if (dist > 18) continue;
+    buckets[idx].push(it);
   }
   for (const b of buckets) b.sort((a, b2) => b2.y - a.y);  // top of page first
 
