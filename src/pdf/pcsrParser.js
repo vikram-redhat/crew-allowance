@@ -239,6 +239,229 @@ function parseEom(text) {
 // ─── GRID format parser ───────────────────────────────────────────────────────
 
 /**
+ * Parse page-1 items as a 2-D grid, using the calendar date-header row
+ * (y≈486, items matching "DD/MM") to map each sector cell to a calendar date
+ * via x-coordinate nearest-column lookup.
+ *
+ * This is the authoritative source for sector dates. The Other Crew section
+ * on pages 2+ is known to mis-date overnight-continuation sectors (e.g.
+ * 6E770 TRZ→DEL on 2026-01-13 gets incorrectly dated 2026-01-12 in OC).
+ *
+ * Each grid cell has this vertical structure (top → bottom in y-descending
+ * order, ~8pt row height):
+ *    row 1: flight_no         e.g. "2073"
+ *    row 2: atd_local         e.g. "A15:53" ("A" = actual, else scheduled)
+ *    row 3: dep (IATA)        e.g. "HYD"    ("*DEL" = DHF — passenger leg)
+ *    row 4: arr (IATA)
+ *    row 5: ata_local
+ *    row 6: actype            e.g. "[321]" or "Delay" or "(T)" etc.
+ *
+ * Non-flight cells can contain just indicators (OFG, CL, single time like "07:25").
+ * Returns sectors with dates sourced from column x-position.
+ */
+function parseGridFromItems(page1Items, pilot, year, mo) {
+  if (!Array.isArray(page1Items) || !page1Items.length) return [];
+
+  // 1. Find the date-header row. Items look like "DD/MM" on a single y line.
+  const DATE_HEADER_RE = /^(\d{1,2})\/(\d{1,2})$/;
+  const headerCandidates = {};
+  for (const it of page1Items) {
+    if (!DATE_HEADER_RE.test(it.str.trim())) continue;
+    const yKey = Math.round(it.y);
+    headerCandidates[yKey] = (headerCandidates[yKey] ?? 0) + 1;
+  }
+  // Pick the y with the most date-pattern hits (≥20 strongly implies header row).
+  let headerY = null, bestCount = 0;
+  for (const [y, c] of Object.entries(headerCandidates)) {
+    if (c > bestCount) { bestCount = c; headerY = Number(y); }
+  }
+  if (headerY === null || bestCount < 20) return [];
+
+  // 2. Build column list: one entry per date header item.
+  const columns = page1Items
+    .filter(it => Math.abs(it.y - headerY) < 2 && DATE_HEADER_RE.test(it.str.trim()))
+    .map(it => {
+      const [, dd, mm] = it.str.trim().match(DATE_HEADER_RE);
+      return {
+        x_center: it.x + it.w / 2,
+        x_left:   it.x,
+        date: `${year}-${String(mo).padStart(2, "0")}-${dd.padStart(2, "0")}`,
+      };
+    })
+    .sort((a, b) => a.x_center - b.x_center);
+
+  // Column half-width = half the spacing to the adjacent column.
+  const colForX = (x) => {
+    let best = null, bestDist = Infinity;
+    for (const c of columns) {
+      const d = Math.abs(x - c.x_center);
+      if (d < bestDist) { bestDist = d; best = c; }
+    }
+    return best;
+  };
+
+  // 3. Index items by (column index, y) — one bucket per column.
+  // We use a column-index keyed map so we can look up the right-adjacent
+  // column when a sector's arrow "→" points to the next day.
+  const colIdxByDate = new Map();
+  columns.forEach((c, idx) => colIdxByDate.set(c.date, idx));
+  const buckets = columns.map(() => []);
+  for (const it of page1Items) {
+    if (it.y >= headerY - 1) continue;  // header + above = not grid data
+    const col = colForX(it.x + it.w / 2);
+    if (!col) continue;
+    // Reject items too far horizontally from the nearest column (>18px).
+    if (Math.abs((it.x + it.w / 2) - col.x_center) > 18) continue;
+    buckets[colIdxByDate.get(col.date)].push(it);
+  }
+  for (const b of buckets) b.sort((a, b2) => b2.y - a.y);  // top of page first
+
+  // 4. Parse each column top-to-bottom as a sequence of sector blocks.
+  const sectors = [];
+  const FLIGHT_RE  = /^\d{3,5}$/;
+  const IATA_RE    = /^(\*?)([A-Z]{3})$/;
+  const TIME_RE    = /^(A?)(\d{1,2}):(\d{2})$/;
+  const ACTYPE_RE  = /^\[\d{3}\]$/;
+  const ARROW_RE   = /^[\u2192\u2193]$/;  // → or ↓
+  const INDICATOR  = /^(OFG|CL|Delay|SL|AL|RP|DO|PL|\([A-Z]\))$/;  // includes (T),(R),(L),(W),(C)
+  const DAY_RE     = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/;  // column day names
+
+  // Helper: reads arr+ata from the top of a column's bucket and marks those
+  // items as consumed so we don't read them again for another sector.
+  const consumeTop = new WeakSet();
+  const readTopArrAta = (colIdx) => {
+    if (colIdx >= buckets.length) return null;
+    const col = buckets[colIdx];
+    let nArr = null, nAta = null;
+    for (const it of col) {
+      if (consumeTop.has(it)) continue;
+      const t = it.str.trim();
+      if (t === "" || t === "↓" || t === "→") { consumeTop.add(it); continue; }
+      // Day-of-week cells ("Mon"/"Tue"/…) sit between the date header and the
+      // cross-in arr. Skip past them. Same for stray indicator tokens.
+      if (DAY_RE.test(t)) { consumeTop.add(it); continue; }
+      if (INDICATOR.test(t)) { consumeTop.add(it); continue; }
+      if (!nArr) {
+        const ia = t.match(IATA_RE);
+        if (ia) { nArr = ia[2]; consumeTop.add(it); continue; }
+        // Real sector data (flight#, actype, or a bare time) → this column
+        // doesn't actually start with a cross-in arrival. Abort.
+        if (FLIGHT_RE.test(t) || TIME_RE.test(t) || ACTYPE_RE.test(t)) return null;
+        // Otherwise keep hunting — unknown stray token.
+        continue;
+      }
+      if (nArr && nAta === null) {
+        const tm = t.match(TIME_RE);
+        if (tm) {
+          const [, aFlag, hh, mm2] = tm;
+          nAta = { time: `${hh.padStart(2, "0")}:${mm2}`, actual: aFlag === "A" };
+          consumeTop.add(it);
+        }
+        break;
+      }
+    }
+    return nArr ? { arr: nArr, ata: nAta } : null;
+  };
+
+  for (let colIdx = 0; colIdx < buckets.length; colIdx++) {
+    const items = buckets[colIdx];
+    const date  = columns[colIdx].date;
+
+    for (let i = 0; i < items.length; i++) {
+      if (consumeTop.has(items[i])) continue;
+      const fi = items[i];
+      const s  = fi.str.trim();
+      if (!FLIGHT_RE.test(s)) continue;
+
+      // Find atd / dep / arr / ata / actype from subsequent items.
+      let atd = null, dep = null, arr = null, ata = null, star = false;
+      let crossedColumn = false;
+      let j = i + 1;
+      while (j < items.length) {
+        const it = items[j];
+        if (consumeTop.has(it)) { j++; continue; }
+        const t  = it.str.trim();
+        if (FLIGHT_RE.test(t)) break;  // next sector starts
+
+        if (atd === null && TIME_RE.test(t)) {
+          const [, aFlag, hh, mm2] = t.match(TIME_RE);
+          atd = { time: `${hh.padStart(2, "0")}:${mm2}`, actual: aFlag === "A" };
+          j++; continue;
+        }
+        const ia = t.match(IATA_RE);
+        // Normally atd comes before dep, but DHF sectors can omit atd
+        // entirely (the PCSR has no actual-departure time for a passive
+        // deadhead), so we only require "no dep yet" here.
+        if (!dep && ia) {
+          star = ia[1] === "*";
+          dep  = ia[2];
+          j++; continue;
+        }
+        // Arrow after dep → arr+ata live in top of next column.
+        if (dep && !arr && ARROW_RE.test(t)) {
+          const crossed = readTopArrAta(colIdx + 1);
+          if (crossed) {
+            arr = crossed.arr;
+            ata = crossed.ata;
+            crossedColumn = true;
+          }
+          j++; break;
+        }
+        if (dep && !arr && ia) {
+          arr = ia[2];
+          j++; continue;
+        }
+        if (arr && ata === null && TIME_RE.test(t)) {
+          const [, aFlag, hh, mm2] = t.match(TIME_RE);
+          ata = { time: `${hh.padStart(2, "0")}:${mm2}`, actual: aFlag === "A" };
+          j++; continue;
+        }
+        if (arr && ata && ACTYPE_RE.test(t)) { j++; break; }
+        if (INDICATOR.test(t)) { j++; continue; }
+        if (ACTYPE_RE.test(t)) { j++; continue; }  // stray actype before block
+        // Unknown token — if we've already got dep+arr, stop; else keep scanning.
+        if (arr) break;
+        // Bare HH:MM before ata is a scheduled-time display — skip it.
+        if (TIME_RE.test(t)) { j++; continue; }
+        j++;
+      }
+
+      if (!dep || !arr) continue;  // not a sector cell
+
+      sectors.push({
+        date,
+        flight_no: `6E${parseInt(s, 10)}`,
+        dep, arr,
+        atd_local: atd?.actual ? atd.time : null,
+        ata_local: ata?.actual ? ata.time : null,
+        is_dhf: star,
+        is_dht: false,
+        _gridX: fi.x,
+        _gridY: fi.y,
+        _crossedColumn: crossedColumn,
+      });
+
+      i = j - 1;
+    }
+  }
+
+  // Sort chronologically by (date asc, atd asc, y desc within day).
+  sectors.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    const ta = a.atd_local ?? "";
+    const tb = b.atd_local ?? "";
+    if (ta !== tb) return ta < tb ? -1 : 1;
+    return b._gridY - a._gridY;
+  });
+
+  // Strip internal debug coordinates before returning.
+  return sectors.map(s => {
+    const { _gridX, _gridY, _crossedColumn, ...rest } = s;
+    return rest;
+  });
+}
+
+/**
  * Grid layout (Vineet style).
  *
  * Page 1: calendar grid linearised as date-column headers then sector stream.
@@ -250,12 +473,15 @@ function parseEom(text) {
  *   Details: pipe-separated entries like "CP - PIC - 16612 - GOYAL, VINEET | FO - DHT - 91461 - ..."
  *   Each entry is either: RANK - DUTY - EMP_ID - NAME  or  RANK - EMP_ID - NAME
  *
- * Strategy:
- *  1. Parse Other Crew section → (date, flight_no, is_dhf, is_dht) per sector.
- *  2. Parse grid page 1 → (flight_no, dep, arr, atd_local, ata_local) per sector.
- *  3. Zip by flight_no in chronological order to produce complete sector records.
+ * Strategy (GRID-FIRST — page 1 is authoritative):
+ *  1. If page-1 items are available, parse the calendar grid via x-coordinate
+ *     → the primary source of (date, flight_no, dep, arr, atd, ata, is_dhf).
+ *  2. Parse Other Crew section only to determine is_dht per flight_no (needs
+ *     pilot's employee_id to disambiguate DHT rows from other crew rows).
+ *  3. Fallback: if no page-1 items were provided (legacy callers that only
+ *     pass raw text), use the original text-based regex parser.
  */
-function parseGrid(text, allPagesText) {
+function parseGrid(text, allPagesText, page1Items) {
   const flat = norm(allPagesText.replace(/\n/g, " "));
 
   const pilot = extractPilotHeader(flat);
@@ -317,106 +543,132 @@ function parseGrid(text, allPagesText) {
     }
   }
 
-  // ── 2. Grid page 1: flight_no + dep + arr + actual times ─────────────────
-  // Format: flight_no [A]atd [*]DEP [→ ↓ spaces] ARR [A]ata
-  // "A" prefix = actual time; no prefix = scheduled/unknown.
-  // Arrival time is optional (overnight sectors may span two columns in the grid).
-  // DEP→ARR gap widened to 120 to handle column-boundary linearisation artefacts.
-  const page1Text = otherCrewIdx !== -1 ? flat.slice(0, otherCrewIdx) : flat;
-  const G_RE = /\b(\d{3,5})\s+(A?)(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,120}([A-Z]{3})\s{0,20}(?:(A?)(\d{1,2}:\d{2}))?/gu;
-  const gridSectors = [];
-  let gm;
-  while ((gm = G_RE.exec(page1Text)) !== null) {
-    const _idx = gridSectors.length;
-    const _flt = normFlt(gm[1]);
-    const _dep = gm[5].toUpperCase();
-    const _arr = gm[6].toUpperCase();
-    const _atd = gm[2] === "A" ? hhmm(gm[3]) : `sched:${gm[3]}`;
-    const _ata = (gm[7] === "A" && gm[8]) ? hhmm(gm[8]) : (gm[8] ? `sched:${gm[8]}` : "—");
-    console.log(`[gridRow ${_idx}] flt=${_flt} dep=${_dep} arr=${_arr} atd=${_atd} ata=${_ata} star=${gm[4]==="*"} matchAt=${gm.index}`);
-    gridSectors.push({
-      flight_no: _flt,
-      atd_local: gm[2] === "A" ? hhmm(gm[3]) : null,
-      dep: _dep,
-      arr: _arr,
-      ata_local: (gm[7] === "A" && gm[8]) ? hhmm(gm[8]) : null,
-      star: gm[4] === "*",
-    });
-  }
-  console.log(`[gridRow total] ${gridSectors.length} grid sectors extracted`);
+  // ── 2a. GRID-FIRST path (preferred — requires page-1 items) ───────────────
+  // Ignores text-based regex completely and reads the calendar grid by
+  // x-coordinate, so sectors end up under the correct date column regardless
+  // of what the Other Crew section claims.
+  let usedGridFirst = false;
+  if (Array.isArray(page1Items) && page1Items.length) {
+    const gridSectors = parseGridFromItems(page1Items, pilot, year, mo);
+    if (gridSectors.length) {
+      usedGridFirst = true;
 
-  // ── 3. Merge ───────────────────────────────────────────────────────────────
-  if (ocSectors.length) {
-    // Zip OC entries with grid entries by flight_no in order
-    const gridByFlt = new Map();
-    for (const gs of gridSectors) {
-      if (!gridByFlt.has(gs.flight_no)) gridByFlt.set(gs.flight_no, []);
-      gridByFlt.get(gs.flight_no).push(gs);
+      // Build a flight_no -> is_dht lookup from OC (only signal we still
+      // need from pages 2+, because it requires employee_id matching).
+      // Key is `flt|YYYY-MM-DD` so multi-occurrence flights don't confuse.
+      const dhtByKey = new Map();
+      const dhfByKey = new Map();
+      for (const oc of ocSectors) {
+        const key = `${oc.flight_no}|${oc.date}`;
+        if (oc.is_dht) dhtByKey.set(key, true);
+        if (oc.is_dhf) dhfByKey.set(key, true);
+      }
+
+      for (const gs of gridSectors) {
+        const key = `${gs.flight_no}|${gs.date}`;
+        // Also match OC entries one day off (e.g. 6E770 grid=2026-01-13 but
+        // OC says 2026-01-12 — still pick up its DHT flag if set).
+        const [y2, m2, d2] = gs.date.split("-").map(Number);
+        const prev = `${gs.flight_no}|${y2}-${String(m2).padStart(2, "0")}-${String(d2 - 1).padStart(2, "0")}`;
+        const next = `${gs.flight_no}|${y2}-${String(m2).padStart(2, "0")}-${String(d2 + 1).padStart(2, "0")}`;
+        const is_dht = dhtByKey.get(key) || dhtByKey.get(prev) || dhtByKey.get(next) || false;
+        const is_dhf = gs.is_dhf || dhfByKey.get(key) || dhfByKey.get(prev) || dhfByKey.get(next) || false;
+
+        sectors.push({
+          ...gs,
+          is_dhf,
+          is_dht,
+        });
+      }
     }
-    const usedCount = new Map();
-    for (const oc of ocSectors) {
-      const list = gridByFlt.get(oc.flight_no) || [];
-      const n    = usedCount.get(oc.flight_no) || 0;
-      const gs   = list[n] || null;
-      usedCount.set(oc.flight_no, n + 1);
-      sectors.push({
-        date:      oc.date,
-        flight_no: oc.flight_no,
-        dep:       gs?.dep || "",
-        arr:       gs?.arr || "",
-        is_dhf:    oc.is_dhf || gs?.star || false,
-        is_dht:    oc.is_dht,
-        atd_local: gs?.atd_local || null,
-        ata_local: gs?.ata_local || null,
-        _dateFromOC: true,
+  }
+
+  // ── 2b. Text-fallback path (legacy — no page1Items available) ─────────────
+  if (!usedGridFirst) {
+    const page1Text = otherCrewIdx !== -1 ? flat.slice(0, otherCrewIdx) : flat;
+    const G_RE = /\b(\d{3,5})\s+(A?)(\d{1,2}:\d{2})\s+(\*?)([A-Z]{3})[\s\u2192\u2193]{1,120}([A-Z]{3})\s{0,20}(?:(A?)(\d{1,2}:\d{2}))?/gu;
+    const gridSectors = [];
+    let gm;
+    while ((gm = G_RE.exec(page1Text)) !== null) {
+      gridSectors.push({
+        flight_no: normFlt(gm[1]),
+        atd_local: gm[2] === "A" ? hhmm(gm[3]) : null,
+        dep: gm[5].toUpperCase(),
+        arr: gm[6].toUpperCase(),
+        ata_local: (gm[7] === "A" && gm[8]) ? hhmm(gm[8]) : null,
+        star: gm[4] === "*",
       });
     }
 
-    // Bug fix: if a flight has more grid legs than OC entries (same flight_no,
-    // multiple dep→arr pairs e.g. 6E6458 DIB→GAU then GAU→AMD), emit the
-    // unconsumed legs using the last matched OC entry for date/DHF/DHT.
-    for (const [fltNo, gridList] of gridByFlt) {
-      const used = usedCount.get(fltNo) || 0;
-      if (used >= gridList.length) continue;
-      const ocMatches = ocSectors.filter(oc => oc.flight_no === fltNo);
-      const refOC = ocMatches[ocMatches.length - 1] || null;
-      for (let k = used; k < gridList.length; k++) {
-        const gs = gridList[k];
+    if (ocSectors.length) {
+      const gridByFlt = new Map();
+      for (const gs of gridSectors) {
+        if (!gridByFlt.has(gs.flight_no)) gridByFlt.set(gs.flight_no, []);
+        gridByFlt.get(gs.flight_no).push(gs);
+      }
+      const usedCount = new Map();
+      for (const oc of ocSectors) {
+        const list = gridByFlt.get(oc.flight_no) || [];
+        const n    = usedCount.get(oc.flight_no) || 0;
+        const gs   = list[n] || null;
+        usedCount.set(oc.flight_no, n + 1);
         sectors.push({
-          date:      refOC?.date || `${year}-${String(mo).padStart(2,"0")}-01`,
-          flight_no: fltNo,
+          date:      oc.date,
+          flight_no: oc.flight_no,
+          dep:       gs?.dep || "",
+          arr:       gs?.arr || "",
+          is_dhf:    oc.is_dhf || gs?.star || false,
+          is_dht:    oc.is_dht,
+          atd_local: gs?.atd_local || null,
+          ata_local: gs?.ata_local || null,
+          _dateFromOC: true,
+        });
+      }
+      for (const [fltNo, gridList] of gridByFlt) {
+        const used = usedCount.get(fltNo) || 0;
+        if (used >= gridList.length) continue;
+        const ocMatches = ocSectors.filter(oc => oc.flight_no === fltNo);
+        const refOC = ocMatches[ocMatches.length - 1] || null;
+        for (let k = used; k < gridList.length; k++) {
+          const gs = gridList[k];
+          sectors.push({
+            date:      refOC?.date || `${year}-${String(mo).padStart(2,"0")}-01`,
+            flight_no: fltNo,
+            dep:       gs.dep,
+            arr:       gs.arr,
+            is_dhf:    refOC?.is_dhf || gs.star || false,
+            is_dht:    refOC?.is_dht || false,
+            atd_local: gs.atd_local,
+            ata_local: gs.ata_local,
+          });
+        }
+      }
+    } else if (gridSectors.length) {
+      for (const gs of gridSectors) {
+        sectors.push({
+          date:      `${year}-${String(mo).padStart(2,"0")}-01`,
+          flight_no: gs.flight_no,
           dep:       gs.dep,
           arr:       gs.arr,
-          is_dhf:    refOC?.is_dhf || gs.star || false,
-          is_dht:    refOC?.is_dht || false,
+          is_dhf:    gs.star,
+          is_dht:    false,
           atd_local: gs.atd_local,
           ata_local: gs.ata_local,
         });
       }
     }
-  } else if (gridSectors.length) {
-    // No OC section — use grid sectors, dates unknown (placeholder first of month)
-    for (const gs of gridSectors) {
-      sectors.push({
-        date:      `${year}-${String(mo).padStart(2,"0")}-01`,
-        flight_no: gs.flight_no,
-        dep:       gs.dep,
-        arr:       gs.arr,
-        is_dhf:    gs.star,
-        is_dht:    false,
-        atd_local: gs.atd_local,
-        ata_local: gs.ata_local,
-      });
-    }
   }
 
-  // ── 4. Hotel section ───────────────────────────────────────────────────────
+  // ── 3. Hotel section ───────────────────────────────────────────────────────
   parseHotelSection(flat, sectors, hotels);
 
-  // ── 5. Transfer section — correct early-morning sector dates ──────────────
-  const transfers = parseTransferSection(flat);
-  console.log("[parseGrid] transfers:", JSON.stringify(transfers));
-  applyTransferDateCorrections(sectors, transfers);
+  // ── 4. Transfer section — only applied in text-fallback path.
+  // The grid-first path already has authoritative dates from x-coordinates,
+  // so applying transfer corrections there can only introduce regressions.
+  if (!usedGridFirst) {
+    const transfers = parseTransferSection(flat);
+    applyTransferDateCorrections(sectors, transfers);
+  }
 
   return { format: "GRID", month, pilot, sectors, hotels };
 }
@@ -595,8 +847,9 @@ function detectFormat(text) {
  * Returns the parsed object or throws on failure.
  */
 export async function parsePcsrPdf(buffer) {
-  const { pdfArrayBufferToText } = await import("./pdfToText.js");
-  const rawText = await pdfArrayBufferToText(buffer);
+  const { pdfArrayBufferToItems } = await import("./pdfToText.js");
+  const { pages } = await pdfArrayBufferToItems(buffer);
+  const rawText = pages.map(p => p.items.map(it => it.str).join(" ")).join("\n");
 
   const format = detectFormat(rawText);
 
@@ -604,7 +857,8 @@ export async function parsePcsrPdf(buffer) {
   if (format === "EOM") {
     result = parseEom(rawText);
   } else {
-    result = parseGrid(rawText, rawText);
+    const page1Items = pages[0]?.items ?? [];
+    result = parseGrid(rawText, rawText, page1Items);
   }
 
   // Attach debug text
@@ -642,9 +896,22 @@ export async function parsePcsrPdf(buffer) {
 
 /**
  * Parse raw text (already extracted from PDF) — for testing without a real file.
+ * Falls back to text-based grid parsing (no x-coordinate dating).
  */
 export function parsePcsrText(rawText) {
   const format = detectFormat(rawText);
   if (format === "EOM") return parseEom(rawText);
   return parseGrid(rawText, rawText);
+}
+
+/**
+ * Parse PCSR from pre-extracted page items (diagnostic harness / Node-side).
+ * Prefers the grid-first (x-coordinate) path when items are available.
+ */
+export function parsePcsrItems(pages) {
+  const rawText = pages.map(p => p.items.map(it => it.str).join(" ")).join("\n");
+  const format = detectFormat(rawText);
+  if (format === "EOM") return parseEom(rawText);
+  const page1Items = pages[0]?.items ?? [];
+  return parseGrid(rawText, rawText, page1Items);
 }
