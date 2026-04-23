@@ -415,7 +415,7 @@ function PcsrDropZone({ file, onParsed, onFail }) {
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
   const steps = [
-    { icon:"📄", title:"Export your PCSR from AIMS", body:"Download your Pilot Combined Summary Report (PCSR) as a PDF from AIMS. Both end-of-month (EOM) tabular format and monthly grid format are supported." },
+    { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your Pilot Combined Summary Report (PCSR) as a PDF from eCrew. Both end-of-month (EOM) tabular format and monthly grid format are supported." },
     { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
     { icon:"⚡", title:"Instant enrichment & calculation", body:"The app fetches scheduled times and aircraft registrations automatically from AeroDataBox, then applies all IndiGo allowance rules instantly." },
     { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown of every allowance for the month — ready to verify against your payslip." },
@@ -490,7 +490,7 @@ function LandingPage({ goLogin, goSignup }) {
             One file. Instant breakdown.
           </h2>
           <p style={{ fontSize:13, color:C.textMid, marginTop:10, lineHeight:1.6, maxWidth:500, margin:"10px auto 0" }}>
-            Your Pilot Combined Summary Report (PCSR) from AIMS contains all your monthly flight data. Upload it and we do the rest.
+            Your Pilot Combined Summary Report (PCSR) from eCrew contains all your monthly flight data. Upload it and we do the rest.
           </p>
         </div>
 
@@ -561,39 +561,64 @@ function LandingPage({ goLogin, goSignup }) {
       </div>
       {/* ── Payslip vs Crew Allowance callout ── */}
       <div style={{ background:"linear-gradient(135deg,#0f3460,#1a6fd4)", padding:"50px 20px" }}>
-        <div style={{ maxWidth:640, margin:"0 auto", display:"grid", gridTemplateColumns:"1fr 40px 1fr", gap:16, alignItems:"center" }}>
+        <div style={{ maxWidth:660, margin:"0 auto", display:"grid", gridTemplateColumns:"1fr 40px 1fr", gap:16, alignItems:"start" }}>
+          {/* LEFT: what the payslip shows */}
           <div style={{ background:"rgba(255,255,255,0.08)", border:"1.5px solid rgba(255,255,255,0.15)",
-            borderRadius:16, padding:"24px 20px", textAlign:"center" }}>
+            borderRadius:16, padding:"24px 20px" }}>
             <div style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:"0.1em",
-              textTransform:"uppercase", marginBottom:12 }}>Your payslip shows</div>
-            <div style={{ fontSize:28, fontWeight:900, color:C.white, marginBottom:6 }}>₹24,350</div>
-            <div style={{ fontSize:13, color:"rgba(255,255,255,0.5)" }}>Total Allowance</div>
-            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginTop:10 }}>That's it — one number,<br/>no breakdown</div>
-          </div>
-          <div style={{ textAlign:"center", fontSize:24, color:"rgba(255,255,255,0.4)" }}>→</div>
-          <div style={{ background:"rgba(255,255,255,0.12)", border:"1.5px solid rgba(255,255,255,0.25)",
-            borderRadius:16, padding:"24px 20px", textAlign:"center" }}>
-            <div style={{ fontSize:12, fontWeight:700, color:"#b87000", letterSpacing:"0.1em",
-              textTransform:"uppercase", marginBottom:12 }}>Crew Allowance shows</div>
-            <div style={{ display:"grid", gap:5, textAlign:"left", padding:"0 4px" }}>
+              textTransform:"uppercase", marginBottom:14, textAlign:"center" }}>Your payslip shows</div>
+            <div style={{ display:"grid", gap:6, textAlign:"left", padding:"0 4px" }}>
               {[["Deadhead","₹8,000"],["Night Flying","₹6,000"],["Layover","₹6,600"],["Tail-Swap","₹3,000"],["Transit","₹750"]].map(([name, amt]) => (
                 <div key={name} style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:C.white }}>
-                  <span style={{ opacity:0.8 }}>{name}</span>
-                  <span style={{ fontWeight:800 }}>{amt}</span>
+                  <span style={{ opacity:0.6 }}>{name}</span>
+                  <span style={{ fontWeight:800, opacity:0.8 }}>{amt}</span>
                 </div>
               ))}
             </div>
-            <div style={{ borderTop:"1px solid rgba(255,255,255,0.2)", marginTop:8, paddingTop:8,
-              display:"flex", justifyContent:"space-between", fontSize:14, fontWeight:900, color:C.white, padding:"8px 4px 0" }}>
-              <span>Total</span><span>₹24,350</span>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginTop:14, textAlign:"center", lineHeight:1.5 }}>
+              Just totals per type — no way to know<br/>which flights or layovers make up each number
+            </div>
+          </div>
+          <div style={{ textAlign:"center", fontSize:24, color:"rgba(255,255,255,0.4)", paddingTop:60 }}>→</div>
+          {/* RIGHT: what Crew Allowance shows */}
+          <div style={{ background:"rgba(255,255,255,0.12)", border:"1.5px solid rgba(255,255,255,0.25)",
+            borderRadius:16, padding:"24px 20px" }}>
+            <div style={{ fontSize:12, fontWeight:700, color:"#b87000", letterSpacing:"0.1em",
+              textTransform:"uppercase", marginBottom:14, textAlign:"center" }}>Crew Allowance shows</div>
+            <div style={{ marginBottom:6 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, fontWeight:800, color:C.white, marginBottom:4 }}>
+                <span>Deadhead</span><span>₹8,000</span>
+              </div>
+              <div style={{ padding:"0 2px" }}>
+                {[["6E204 DEL→BOM","2h 10m","₹4,000"],["6E892 DEL→CCU","2h 05m","₹4,000"]].map(([flt, dur, amt]) => (
+                  <div key={flt} style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"rgba(255,255,255,0.55)", padding:"2px 0" }}>
+                    <span>{flt}</span><span>{dur}</span><span>{amt}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginBottom:6 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, fontWeight:800, color:C.white, marginBottom:4 }}>
+                <span>Layover</span><span>₹6,600</span>
+              </div>
+              <div style={{ padding:"0 2px" }}>
+                {[["CCU 3–4 Mar","18h 42m","₹3,000"],["BLR 7–8 Mar","22h 15m","₹3,600"]].map(([loc, dur, amt]) => (
+                  <div key={loc} style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"rgba(255,255,255,0.55)", padding:"2px 0" }}>
+                    <span>{loc}</span><span>{dur}</span><span>{amt}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", fontStyle:"italic", textAlign:"center" }}>
+              + Night Flying, Tail-Swap, Transit...
             </div>
           </div>
         </div>
-        <div style={{ textAlign:"center", marginTop:20, fontSize:14, fontWeight:700, color:C.white }}>
-          Know exactly where every rupee comes from
+        <div style={{ textAlign:"center", marginTop:24, fontSize:14, fontWeight:700, color:C.white }}>
+          See exactly which sectors and layovers make up every number on your payslip
         </div>
         <div style={{ textAlign:"center", marginTop:6, fontSize:12, color:"rgba(255,255,255,0.5)" }}>
-          Your payslip only shows the total. We break it down by each allowance type so you can verify every component.
+          Your payslip shows totals per allowance type. We show you the sector-by-sector breakdown behind each one — so you can verify every rupee.
         </div>
       </div>
 
