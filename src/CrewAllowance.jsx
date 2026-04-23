@@ -1469,8 +1469,8 @@ function ProfileScreen({ user, onSave }) {
         </div>
       </Card>
 
-      {/* Subscription management — hidden for admins (they have unlimited access) */}
-      {!user.is_admin && user.stripe_customer_id && (
+      {/* Subscription management — hidden for admins (unlimited) and comp users (free, no Stripe relationship) */}
+      {!user.is_admin && user.subscription_plan !== "free" && user.stripe_customer_id && (
         <Card style={{ marginTop:16 }}>
           <div style={{ fontSize:14, fontWeight:800, color:C.navy, marginBottom:10 }}>Subscription</div>
           <div style={{ display:"grid", gap:6, fontSize:13, color:C.textMid, marginBottom:14 }}>
@@ -1494,6 +1494,21 @@ function ProfileScreen({ user, onSave }) {
             )}
           </div>
           <ManageSubscriptionBtn userId={user.id} />
+        </Card>
+      )}
+
+      {/* Comp account — read-only info card */}
+      {!user.is_admin && user.subscription_plan === "free" && (
+        <Card style={{ marginTop:16 }}>
+          <div style={{ fontSize:14, fontWeight:800, color:C.navy, marginBottom:8 }}>Account</div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:C.textMid, marginBottom:6 }}>
+            <span>Plan</span>
+            <span style={{ fontWeight:700, color:C.green }}>Comp · Free</span>
+          </div>
+          <div style={{ fontSize:12, color:C.textLo, lineHeight:1.5 }}>
+            You have complimentary access to Crew Allowance. Questions?{" "}
+            <a href="mailto:help@crewallowance.com" style={{ color:C.blue }}>help@crewallowance.com</a>
+          </div>
         </Card>
       )}
     </div>
