@@ -22,17 +22,16 @@ const CONFIG = {
   airline:       "IndiGo",
   tagline:       "Eff. Jan 2026",
   copyrightYear: "2026",
-  siteUrl:       "https://crewallowance.in",
-  emailSupport:  "support@crewallowance.in",
-  emailPrivacy:  "privacy@crewallowance.in",
+  siteUrl:       "https://crewallowance.com",
+  emailSupport:  "support@crewallowance.com",
+  emailPrivacy:  "privacy@crewallowance.com",
   currency:      "₹",
-  priceMonthly:  299,
-  priceLabel:    "₹299",
-  discountCodes: {
-    "CREW2026": { pct: 100, label: "100% off — Free"   },
-    "LAUNCH50": { pct: 50,  label: "50% off — ₹149/mo" },
-    "INDIGO10": { pct: 10,  label: "10% off — ₹269/mo" },
+  // Subscription tiers. Server validates plan key against STRIPE_PRICE_* env vars.
+  plans: {
+    "1mo":  { months: 1,  total: 100,  perMonth: 100, label: "Monthly",  sub: "₹100/month",                    badge: "" },
+    "12mo": { months: 12, total: 1000, perMonth: 83,  label: "Annual",   sub: "₹83/month, billed ₹1,000/year", badge: "Save 17%" },
   },
+  defaultPlan: "1mo",
   ranks: ["Captain", "Senior Captain", "First Officer", "Senior First Officer", "Cabin Crew"],
   layoverMinHours: 10.0167,
   governingLaw:    "New Delhi, India",
@@ -41,9 +40,8 @@ const CONFIG = {
 
 const APP_NAME       = CONFIG.appName;
 const RANKS          = CONFIG.ranks;
-const PRICE_INR      = CONFIG.priceMonthly;
-const PRICE_LABEL    = CONFIG.priceLabel;
-const DISCOUNT_CODES = CONFIG.discountCodes;
+const PLANS          = CONFIG.plans;
+const DEFAULT_PLAN   = CONFIG.defaultPlan;
 
 // Map display ranks → rate bucket
 const rankBucket = r => {
@@ -467,7 +465,7 @@ function LandingPage({ goLogin, goSignup }) {
             <button onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
               color:C.blue, fontSize:15, padding:"14px 28px", cursor:"pointer", fontWeight:800,
               fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)" }}>
-              Get started — {PRICE_LABEL}/month →
+              Get started — ₹100/month →
             </button>
             <button onClick={goLogin} style={{ background:"rgba(255,255,255,0.15)",
               border:"1.5px solid rgba(255,255,255,0.3)", borderRadius:12, color:C.white,
@@ -545,13 +543,14 @@ function LandingPage({ goLogin, goSignup }) {
         </div>
       </div>
       <div style={{ maxWidth:480, margin:"0 auto", padding:"60px 20px", textAlign:"center" }}>
-        <h2 style={{ fontSize:"clamp(22px,4vw,30px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em", marginBottom:24 }}>Simple, affordable, monthly</h2>
+        <h2 style={{ fontSize:"clamp(22px,4vw,30px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em", marginBottom:24 }}>Simple, affordable pricing</h2>
         <div style={{ background:C.white, borderRadius:20, padding:"32px 28px",
           border:"2px solid "+C.blue, boxShadow:C.shadowMd, marginBottom:20 }}>
           <div style={{ fontSize:48, fontWeight:900, color:C.navy, letterSpacing:"-0.02em" }}>
-            ₹299<span style={{ fontSize:16, fontWeight:600, color:C.textMid }}>/month</span>
+            ₹100<span style={{ fontSize:16, fontWeight:600, color:C.textMid }}>/month</span>
           </div>
-          <div style={{ fontSize:13, color:C.textMid, margin:"12px 0 24px" }}>Per crew member · Cancel anytime</div>
+          <div style={{ fontSize:13, color:C.textMid, margin:"4px 0 0" }}>or ₹1,000/year (save 17%)</div>
+          <div style={{ fontSize:13, color:C.textMid, margin:"8px 0 24px" }}>Per crew member · Cancel anytime</div>
           <div style={{ display:"grid", gap:8, marginBottom:24, textAlign:"left" }}>
             {["Upload only your PCSR PDF","All 5 allowance types","Auto schedule data via AeroDataBox","CSV breakdown download","Rates kept up-to-date"].map(f => (
               <div key={f} style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:C.text }}>
@@ -604,7 +603,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
     if (error) { setErr("Invalid email or password."); setBusy(false); return; }
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
     if (!profile) { setErr("Account not found. Please contact admin."); setBusy(false); return; }
-    if (!profile.is_active) { setErr("Your account is not yet active. Please wait for admin approval."); setBusy(false); return; }
+    if (!profile.is_active) { setErr("Your account is not yet active. Please complete your subscription or contact support@crewallowance.com."); setBusy(false); return; }
     onLogin({ ...profile, email: data.user.email });
     setBusy(false);
   };
@@ -679,20 +678,19 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
 }
 
 function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
-  const [code,     setCode]     = useState("");
-  const [discount, setDiscount] = useState(null);
-  const [codeErr,  setCodeErr]  = useState("");
-  const [loading,  setLoading]  = useState(false);
-  const [done,     setDone]     = useState(false);
-  const [payErr,   setPayErr]   = useState("");
+  const [planKey,    setPlanKey]    = useState(DEFAULT_PLAN);
+  const [freeCode,   setFreeCode]   = useState("");
+  const [showFree,   setShowFree]   = useState(false);
+  const [loading,    setLoading]    = useState(false);
+  const [done,       setDone]       = useState(false);
+  const [payErr,     setPayErr]     = useState("");
   const [stripeReady, setStripeReady] = useState(false);
 
   const stripeRef      = useRef(null);
   const cardElementRef = useRef(null);
   const cardDivRef     = useRef(null);
 
-  const finalPrice = discount ? Math.round(PRICE_INR * (1 - discount.pct / 100)) : PRICE_INR;
-  const isFree     = finalPrice === 0;
+  const plan = PLANS[planKey];
 
   useEffect(() => {
     const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
@@ -715,8 +713,9 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
     return () => { if (cardElementRef.current) { cardElementRef.current.unmount(); cardElementRef.current = null; } };
   }, []);
 
+  // Re-mount card when toggling free-code mode off (the div may have been unmounted).
   useEffect(() => {
-    if (!isFree && !cardElementRef.current && window.Stripe && cardDivRef.current) {
+    if (!showFree && !cardElementRef.current && window.Stripe && cardDivRef.current) {
       const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
       if (!STRIPE_PK) return;
       const stripe = window.Stripe(STRIPE_PK);
@@ -728,35 +727,44 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       card.mount(cardDivRef.current);
       stripeRef.current = stripe; cardElementRef.current = card; setStripeReady(true);
     }
-  }, [isFree]);
+  }, [showFree]);
 
-  const applyCode = () => {
-    const upper = code.trim().toUpperCase();
-    const d = DISCOUNT_CODES[upper];
-    if (d) { setDiscount({ ...d, code: upper }); setCodeErr(""); }
-    else   { setCodeErr("Invalid discount code."); setDiscount(null); }
-  };
-
-  const activateUser = async () => {
-    if (supabase && pendingUser?.id) await supabase.from("profiles").update({ is_active: true }).eq("id", pendingUser.id);
-    onActivate(pendingUser); setDone(true);
-  };
+  const finishActivation = () => { onActivate(pendingUser); setDone(true); };
 
   const handlePay = async () => {
     setPayErr(""); setLoading(true);
-    if (isFree) { await activateUser(); setLoading(false); return; }
-    if (!stripeRef.current || !cardElementRef.current) { setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return; }
+
+    // Free-access path: server verifies the code and activates the user.
+    if (showFree) {
+      try {
+        const resp = await fetch("/api/create-subscription", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ plan:planKey, userId:pendingUser?.id||"", email:pendingUser?.email||"", freeCode:freeCode.trim() }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || "Activation failed.");
+        finishActivation();
+      } catch (err) { setPayErr(err.message); }
+      setLoading(false);
+      return;
+    }
+
+    // Paid path
+    if (!stripeRef.current || !cardElementRef.current) {
+      setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return;
+    }
     try {
-      const resp = await fetch("/api/create-payment-intent", {
+      const resp = await fetch("/api/create-subscription", {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ amount:finalPrice, discountCode:discount?.code||"", userId:pendingUser?.id||"", email:pendingUser?.email||"" }),
+        body: JSON.stringify({ plan:planKey, userId:pendingUser?.id||"", email:pendingUser?.email||"" }),
       });
       const { clientSecret, error: serverErr } = await resp.json();
       if (serverErr) throw new Error(serverErr);
       const { paymentIntent, error: stripeErr } = await stripeRef.current.confirmCardPayment(clientSecret, { payment_method:{ card:cardElementRef.current } });
       if (stripeErr) throw new Error(stripeErr.message);
       if (paymentIntent.status !== "succeeded") throw new Error("Payment did not complete. Please try again.");
-      await activateUser();
+      // Webhook will flip is_active server-side; we optimistically advance the UI.
+      finishActivation();
     } catch (err) { setPayErr(err.message); }
     setLoading(false);
   };
@@ -767,7 +775,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
         <div style={{ width:60, height:60, borderRadius:"50%", background:C.greenBg, border:"2px solid "+C.green,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, margin:"0 auto 16px" }}>✓</div>
         <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
-          {isFree ? "Your free account is activated." : "Payment confirmed. Your account is now active."}
+          {showFree ? "Your free account is activated." : "Payment confirmed. Your subscription is active."}
           <br />Welcome to Crew Allowance, {pendingUser?.name?.split(" ")[0]}!
         </p>
       </div>
@@ -776,39 +784,56 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   );
 
   return (
-    <AuthShell title="Complete your subscription" sub={PRICE_LABEL+"/month · Cancel anytime"} wide>
-      <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:12, padding:"14px 16px", marginBottom:20 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:discount?8:0 }}>
-          <span style={{ fontSize:13, color:C.textMid }}>Crew Allowance — Monthly</span>
-          <span style={{ fontSize:14, fontWeight:700, color:C.navy }}>{PRICE_LABEL}/mo</span>
+    <AuthShell title="Choose your plan" sub="Cancel anytime · Auto-renews until cancelled" wide>
+      {/* Plan picker — two cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:10, marginBottom:20 }}>
+        {Object.entries(PLANS).map(([key, p]) => {
+          const selected = key === planKey;
+          return (
+            <button key={key} onClick={() => setPlanKey(key)} type="button"
+              style={{
+                textAlign:"left", cursor:"pointer", fontFamily:"inherit",
+                background: selected ? C.blueXLight : C.white,
+                border: "2px solid " + (selected ? C.blue : C.border),
+                borderRadius:12, padding:"14px 16px",
+                display:"flex", justifyContent:"space-between", alignItems:"center", gap:12,
+              }}>
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:15, fontWeight:800, color:C.navy }}>{p.label}</span>
+                  {p.badge && (
+                    <span style={{ fontSize:10, fontWeight:800, background:C.green, color:C.white,
+                      padding:"2px 7px", borderRadius:99, letterSpacing:"0.04em" }}>{p.badge}</span>
+                  )}
+                </div>
+                <div style={{ fontSize:12, color:C.textMid, marginTop:3 }}>{p.sub}</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:18, fontWeight:900, color:C.navy }}>{fmtINR(p.total)}</div>
+                <div style={{ fontSize:11, color:C.textLo }}>billed today</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Order summary */}
+      <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:12, padding:"14px 16px", marginBottom:18 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <span style={{ fontSize:13, color:C.textMid }}>Crew Allowance — {plan.label}</span>
+          <span style={{ fontSize:14, fontWeight:700, color:C.navy }}>{fmtINR(plan.total)}</span>
         </div>
-        {discount && (
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", paddingTop:8, borderTop:"1px solid "+C.border }}>
-            <span style={{ fontSize:12, color:C.green, fontWeight:700 }}>Discount ({discount.code}) — {discount.pct}% off</span>
-            <span style={{ fontSize:13, fontWeight:700, color:C.green }}>−₹{PRICE_INR - finalPrice}</span>
-          </div>
-        )}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-          paddingTop:8, borderTop:"1px solid "+C.borderMid, marginTop:discount?8:0 }}>
+          paddingTop:8, borderTop:"1px solid "+C.borderMid, marginTop:8 }}>
           <span style={{ fontSize:14, fontWeight:800, color:C.navy }}>Total today</span>
-          <span style={{ fontSize:18, fontWeight:900, color:isFree?C.green:C.navy }}>{isFree?"Free":fmtINR(finalPrice)}</span>
+          <span style={{ fontSize:18, fontWeight:900, color:showFree?C.green:C.navy }}>
+            {showFree ? "Free" : fmtINR(plan.total)}
+          </span>
         </div>
       </div>
-      <div style={{ marginBottom:20 }}>
-        <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:5 }}>Discount Code</label>
-        <div style={{ display:"flex", gap:8 }}>
-          <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="Enter code if you have one"
-            onKeyDown={e => e.key==="Enter" && applyCode()}
-            style={{ flex:1, background:C.white, border:"1.5px solid "+(codeErr?C.red:discount?C.green:C.border),
-              borderRadius:10, padding:"11px 14px", color:C.text, fontFamily:"inherit", fontSize:14, outline:"none", letterSpacing:"0.06em" }} />
-          <button onClick={applyCode} style={{ background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
-            border:"none", borderRadius:10, color:C.white, fontSize:13, padding:"11px 18px",
-            cursor:"pointer", fontWeight:700, fontFamily:"inherit", whiteSpace:"nowrap" }}>Apply</button>
-        </div>
-        {codeErr  && <div style={{ fontSize:11, color:C.red,   marginTop:4 }}>{codeErr}</div>}
-        {discount && <div style={{ fontSize:11, color:C.green, marginTop:4, fontWeight:700 }}>✓ {discount.label} applied</div>}
-      </div>
-      {!isFree && (
+
+      {/* Card form OR free-access code input */}
+      {!showFree ? (
         <div style={{ marginBottom:16 }}>
           <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:11, color:C.textMid }}>
             🔒 Card details handled directly by <strong>Stripe</strong>. We never see or store your card number.
@@ -817,12 +842,30 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
           <div ref={cardDivRef} style={{ background:C.white, border:"1.5px solid "+C.border, borderRadius:10, padding:"13px 14px", minHeight:46 }} />
           {!stripeReady && <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Loading secure card form...</div>}
         </div>
+      ) : (
+        <div style={{ marginBottom:16 }}>
+          <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:6 }}>Free-access code</label>
+          <input value={freeCode} onChange={e => setFreeCode(e.target.value)} placeholder="Enter code"
+            style={{ width:"100%", boxSizing:"border-box", background:C.white, border:"1.5px solid "+C.border,
+              borderRadius:10, padding:"11px 14px", color:C.text, fontFamily:"inherit", fontSize:14, outline:"none", letterSpacing:"0.08em" }} />
+          <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Activates {plan.label.toLowerCase()} of access without payment.</div>
+        </div>
       )}
+
       {payErr && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{payErr}</div>}
-      <Btn onClick={handlePay} variant={isFree?"gold":"primary"} disabled={loading||(!isFree&&!stripeReady)} icon={loading?"⟳":isFree?"✨":"🔒"}>
-        {loading ? (isFree?"Activating...":"Processing...") : (isFree?"Activate free account →":"Pay "+fmtINR(finalPrice)+" & activate →")}
+
+      <Btn onClick={handlePay} variant={showFree?"gold":"primary"} disabled={loading||(!showFree&&!stripeReady)||(showFree&&!freeCode.trim())} icon={loading?"⟳":showFree?"✨":"🔒"}>
+        {loading
+          ? (showFree?"Activating...":"Processing...")
+          : (showFree
+              ? `Activate ${plan.label.toLowerCase()} →`
+              : `Pay ${fmtINR(plan.total)} & subscribe →`)}
       </Btn>
-      <div style={{ marginTop:12, textAlign:"center" }}>
+
+      <div style={{ marginTop:14, textAlign:"center", display:"flex", flexDirection:"column", gap:6 }}>
+        <button onClick={() => { setShowFree(s => !s); setPayErr(""); }} style={{ background:"none", border:"none", color:C.textMid, fontSize:12, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>
+          {showFree ? "← Back to card payment" : "Have a free-access code?"}
+        </button>
         <button onClick={goLogin} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Already have an account? Sign in</button>
       </div>
     </AuthShell>
