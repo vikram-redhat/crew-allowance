@@ -974,7 +974,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
   );
 }
 
-function SignupScreen({ goLogin, goLanding, goCheckout }) {
+function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
   const [name,    setName]    = useState("");
   const [email,   setEmail]   = useState("");
   const [empId,   setEmpId]   = useState("");
@@ -998,7 +998,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
     // an empty identities array when the email already exists. Detect this
     // and show a clear error instead of proceeding to checkout.
     if (!data.user?.id || (data.user.identities && data.user.identities.length === 0)) {
-      setErr("An account with this email already exists. Please sign in instead.");
+      setErr("duplicate");
       setBusy(false);
       return;
     }
@@ -1007,7 +1007,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
       is_admin: false, is_active: false,
     });
     if (profileErr) {
-      setErr("Could not create your profile. This email may already be registered. Please try signing in.");
+      setErr("duplicate");
       setBusy(false);
       return;
     }
@@ -1024,7 +1024,15 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
       <FInput label="Home Base (IATA)" value={base} onChange={setBase} placeholder="e.g. DEL" hint="3-letter IATA code of your home airport" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Choose a strong password (min 8 characters)" />
       <FInput label="Confirm password" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat your password" />
-      {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
+      {err && err !== "duplicate" && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
+      {err === "duplicate" && (
+        <div style={{ padding:"12px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14, lineHeight:1.7 }}>
+          An account with this email already exists.{" "}
+          <button onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>Sign in</button>
+          {" or "}
+          <button onClick={goForgot} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>reset your password</button>.
+        </div>
+      )}
       <Btn onClick={submit} disabled={busy}>{busy ? "Creating account..." : "Continue to payment →"}</Btn>
       <div style={{ marginTop:12, textAlign:"center", fontSize:13, color:C.textMid }}>
         Already registered?{" "}
@@ -2166,7 +2174,7 @@ export default function App() {
 
   if (screen === "landing")        return <LandingPage goLogin={() => setScreen("login")} goSignup={() => setScreen("signup")} />;
   if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} />;
-  if (screen === "signup")         return <SignupScreen goLogin={() => setScreen("login")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} />;
+  if (screen === "signup")         return <SignupScreen goLogin={() => setScreen("login")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} goForgot={() => setScreen("forgot")} />;
   if (screen === "checkout")       return <CheckoutScreen pendingUser={pendingUser} goLogin={() => setScreen("login")} onActivate={onActivate} />;
   if (screen === "forgot")         return <ForgotScreen goLogin={() => setScreen("login")} />;
   if (screen === "reset-password") return <ResetPasswordScreen goLogin={() => setScreen("login")} />;
