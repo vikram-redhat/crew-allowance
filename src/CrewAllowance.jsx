@@ -1031,49 +1031,75 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   const [done,       setDone]       = useState(false);
   const [payErr,     setPayErr]     = useState("");
   const [stripeReady, setStripeReady] = useState(false);
+  const [clientSecret, setClientSecret] = useState(null);
 
-  const stripeRef      = useRef(null);
-  const cardElementRef = useRef(null);
-  const cardDivRef     = useRef(null);
+  const stripeRef          = useRef(null);
+  const elementsRef        = useRef(null);
+  const paymentElementRef  = useRef(null);
+  const paymentDivRef      = useRef(null);
 
   const plan = PLANS[planKey];
 
+  // Load Stripe.js once
   useEffect(() => {
     const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
-    const mountCard = () => {
-      if (!STRIPE_PK || !cardDivRef.current || cardElementRef.current) return;
-      const stripe   = window.Stripe(STRIPE_PK);
-      const elements = stripe.elements();
-      const card = elements.create("card", {
-        style: { base: { fontFamily:"'Nunito','Segoe UI',sans-serif", fontSize:"15px", color:"#1e293b", "::placeholder":{ color:"#94a3b8" } }, invalid:{ color:"#c0132a" } },
-        hidePostalCode: true,
-      });
-      card.mount(cardDivRef.current);
-      stripeRef.current = stripe; cardElementRef.current = card; setStripeReady(true);
-    };
+    if (!STRIPE_PK) return;
     if (!window.Stripe) {
       const script = document.createElement("script");
-      script.src = "https://js.stripe.com/v3/"; script.onload = mountCard;
+      script.src = "https://js.stripe.com/v3/";
+      script.onload = () => { stripeRef.current = window.Stripe(STRIPE_PK); };
       document.head.appendChild(script);
-    } else { mountCard(); }
-    return () => { if (cardElementRef.current) { cardElementRef.current.unmount(); cardElementRef.current = null; } };
+    } else {
+      stripeRef.current = window.Stripe(STRIPE_PK);
+    }
   }, []);
 
-  // Re-mount card when toggling free-code mode off (the div may have been unmounted).
+  // Fetch a clientSecret whenever the plan changes (for the Payment Element).
+  // The Subscription starts in `incomplete` state — no charge until the user confirms.
   useEffect(() => {
-    if (!showFree && !cardElementRef.current && window.Stripe && cardDivRef.current) {
-      const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
-      if (!STRIPE_PK) return;
-      const stripe = window.Stripe(STRIPE_PK);
-      const elements = stripe.elements();
-      const card = elements.create("card", {
-        style: { base: { fontFamily:"'Nunito','Segoe UI',sans-serif", fontSize:"15px", color:"#1e293b", "::placeholder":{ color:"#94a3b8" } }, invalid:{ color:"#c0132a" } },
-        hidePostalCode: true,
-      });
-      card.mount(cardDivRef.current);
-      stripeRef.current = stripe; cardElementRef.current = card; setStripeReady(true);
-    }
-  }, [showFree]);
+    if (showFree || !pendingUser?.id) return;
+    let cancelled = false;
+    setStripeReady(false);
+    setClientSecret(null);
+
+    (async () => {
+      try {
+        const resp = await fetch("/api/create-subscription", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ plan:planKey, userId:pendingUser?.id||"", email:pendingUser?.email||"" }),
+        });
+        const data = await resp.json();
+        if (cancelled) return;
+        if (data.error) { setPayErr(data.error); return; }
+        setClientSecret(data.clientSecret);
+      } catch (err) { if (!cancelled) setPayErr(err.message); }
+    })();
+
+    return () => { cancelled = true; };
+  }, [planKey, showFree, pendingUser?.id, pendingUser?.email]);
+
+  // Mount the Payment Element once we have both Stripe.js and a clientSecret.
+  useEffect(() => {
+    if (!clientSecret || !stripeRef.current || !paymentDivRef.current || showFree) return;
+
+    // Clean up any previous Payment Element
+    if (paymentElementRef.current) { paymentElementRef.current.unmount(); paymentElementRef.current = null; }
+
+    const elements = stripeRef.current.elements({
+      clientSecret,
+      appearance: {
+        theme: "stripe",
+        variables: { fontFamily:"'Nunito','Segoe UI',sans-serif", colorPrimary:"#1a6fd4", borderRadius:"10px" },
+      },
+    });
+    const paymentEl = elements.create("payment", { layout: "tabs" });
+    paymentEl.mount(paymentDivRef.current);
+    paymentEl.on("ready", () => setStripeReady(true));
+    elementsRef.current = elements;
+    paymentElementRef.current = paymentEl;
+
+    return () => { if (paymentElementRef.current) { paymentElementRef.current.unmount(); paymentElementRef.current = null; } };
+  }, [clientSecret, showFree]);
 
   const finishActivation = () => { onActivate(pendingUser); setDone(true); };
 
@@ -1095,22 +1121,32 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       return;
     }
 
-    // Paid path
-    if (!stripeRef.current || !cardElementRef.current) {
+    // Paid path — confirm with the Payment Element (supports card, UPI, etc.)
+    if (!stripeRef.current || !elementsRef.current) {
       setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return;
     }
     try {
-      const resp = await fetch("/api/create-subscription", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ plan:planKey, userId:pendingUser?.id||"", email:pendingUser?.email||"" }),
+      const { error: submitErr } = await elementsRef.current.submit();
+      if (submitErr) throw new Error(submitErr.message);
+
+      const { error: confirmErr, paymentIntent } = await stripeRef.current.confirmPayment({
+        elements: elementsRef.current,
+        clientSecret,
+        confirmParams: {
+          return_url: window.location.origin + "?payment_status=success",
+        },
+        redirect: "if_required",
       });
-      const { clientSecret, error: serverErr } = await resp.json();
-      if (serverErr) throw new Error(serverErr);
-      const { paymentIntent, error: stripeErr } = await stripeRef.current.confirmCardPayment(clientSecret, { payment_method:{ card:cardElementRef.current } });
-      if (stripeErr) throw new Error(stripeErr.message);
-      if (paymentIntent.status !== "succeeded") throw new Error("Payment did not complete. Please try again.");
-      // Webhook will flip is_active server-side; we optimistically advance the UI.
-      finishActivation();
+      if (confirmErr) throw new Error(confirmErr.message);
+      if (paymentIntent && paymentIntent.status === "succeeded") {
+        // Webhook will flip is_active server-side; we optimistically advance the UI.
+        finishActivation();
+      } else if (paymentIntent && paymentIntent.status === "requires_action") {
+        // UPI / 3DS redirect happened and came back — still need to check
+        setPayErr("Payment requires additional action. Please complete the authentication.");
+      } else {
+        finishActivation(); // processing or other terminal state — webhook will reconcile
+      }
     } catch (err) { setPayErr(err.message); }
     setLoading(false);
   };
@@ -1178,15 +1214,15 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
         </div>
       </div>
 
-      {/* Card form OR free-access code input */}
+      {/* Payment form (card, UPI, etc.) OR free-access code input */}
       {!showFree ? (
         <div style={{ marginBottom:16 }}>
           <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:11, color:C.textMid }}>
-            🔒 Card details handled directly by <strong>Stripe</strong>. We never see or store your card number.
+            🔒 Payment handled securely by <strong>Stripe</strong>. We never see or store your payment details.
           </div>
-          <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:6 }}>Card details</label>
-          <div ref={cardDivRef} style={{ background:C.white, border:"1.5px solid "+C.border, borderRadius:10, padding:"13px 14px", minHeight:46 }} />
-          {!stripeReady && <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Loading secure card form...</div>}
+          <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:6 }}>Payment method</label>
+          <div ref={paymentDivRef} style={{ minHeight:46 }} />
+          {!stripeReady && <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Loading secure payment form...</div>}
         </div>
       ) : (
         <div style={{ marginBottom:16 }}>
@@ -2045,6 +2081,14 @@ export default function App() {
     // racing against the PASSWORD_RECOVERY event. Detect the recovery hash up
     // front and stay on the reset-password screen until the user sets a new
     // password (or signs out).
+    // UPI / redirect-based payments return with ?payment_status=success.
+    // Clean the URL and go to login so they can sign in with their new active account.
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("payment_status") === "success") {
+      window.history.replaceState({}, "", window.location.pathname);
+      Promise.resolve().then(() => setScreen("login"));
+      return;
+    }
+
     const isRecovery = typeof window !== "undefined"
       && typeof window.location?.hash === "string"
       && /[#&]type=recovery\b/.test(window.location.hash);

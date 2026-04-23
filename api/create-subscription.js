@@ -100,11 +100,16 @@ export default async function handler(req, res) {
 
     // Create the Subscription in `default_incomplete` state — Stripe won't
     // activate it until the first invoice is paid via the returned clientSecret.
+    // payment_method_types is omitted so Stripe auto-surfaces all methods
+    // enabled in the Dashboard (card, UPI, etc.).
     const subscription = await stripe.subscriptions.create({
       customer:          customerId,
       items:             [{ price: priceId }],
       payment_behavior:  "default_incomplete",
-      payment_settings:  { save_default_payment_method: "on_subscription" },
+      payment_settings:  {
+        save_default_payment_method: "on_subscription",
+        payment_method_types:        null,   // auto-detect from Dashboard settings
+      },
       expand:            ["latest_invoice.payment_intent"],
       metadata:          { userId, plan },
     });
