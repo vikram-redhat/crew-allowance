@@ -23,8 +23,8 @@ const CONFIG = {
   tagline:       "Eff. Jan 2026",
   copyrightYear: "2026",
   siteUrl:       "https://crewallowance.com",
-  emailSupport:  "support@crewallowance.com",
-  emailPrivacy:  "privacy@crewallowance.com",
+  emailSupport:  "help@crewallowance.com",
+  emailPrivacy:  "help@crewallowance.com",
   currency:      "₹",
   // Subscription tiers. Server validates plan key against STRIPE_PRICE_* env vars.
   plans: {
@@ -397,7 +397,7 @@ function PcsrDropZone({ file, onParsed, onFail }) {
         {file ? "PCSR loaded ✓" : "Upload your PCSR PDF"}
       </div>
       <div style={{ fontSize:12, color:C.textMid, marginBottom:8 }}>
-        Personal Crew Schedule Report — both EOM and grid formats supported
+        Pilot Combined Summary Report — both EOM and grid formats supported
       </div>
       {parsing
         ? <div style={{ fontSize:12, color:C.blue, fontWeight:700 }}>Reading PDF...</div>
@@ -415,8 +415,8 @@ function PcsrDropZone({ file, onParsed, onFail }) {
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
   const steps = [
-    { icon:"📄", title:"Export your PCSR from AIMS", body:"Download your Personal Crew Schedule Report as a PDF from AIMS. Both end-of-month (EOM) tabular format and monthly grid format are supported." },
-    { icon:"⬆", title:"Upload your PCSR PDF", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
+    { icon:"📄", title:"Export your PCSR from AIMS", body:"Download your Pilot Combined Summary Report (PCSR) as a PDF from AIMS. Both end-of-month (EOM) tabular format and monthly grid format are supported." },
+    { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
     { icon:"⚡", title:"Instant enrichment & calculation", body:"The app fetches scheduled times and aircraft registrations automatically from AeroDataBox, then applies all IndiGo allowance rules instantly." },
     { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown of every allowance for the month — ready to verify against your payslip." },
   ];
@@ -459,7 +459,7 @@ function LandingPage({ goLogin, goSignup }) {
           </h1>
           <p style={{ fontSize:"clamp(14px,2.5vw,18px)", color:"rgba(255,255,255,0.75)",
             maxWidth:480, margin:"0 auto 32px", lineHeight:1.6 }}>
-            Upload your PCSR PDF. Get an instant, itemised breakdown of every allowance — Deadhead, Night Flying, Layover, Tail-Swap, and Transit.
+            Upload your Pilot Combined Summary Report (PCSR) and get an instant, itemised breakdown of every allowance — Deadhead, Night Flying, Layover, Tail-Swap, and Transit.
           </p>
           <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
             <button onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
@@ -489,6 +489,55 @@ function LandingPage({ goLogin, goSignup }) {
           <h2 style={{ fontSize:"clamp(22px,4vw,32px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>
             One file. Instant breakdown.
           </h2>
+          <p style={{ fontSize:13, color:C.textMid, marginTop:10, lineHeight:1.6, maxWidth:500, margin:"10px auto 0" }}>
+            Your Pilot Combined Summary Report (PCSR) from AIMS contains all your monthly flight data. Upload it and we do the rest.
+          </p>
+        </div>
+
+        {/* PCSR mini-preview — shows what the document looks like */}
+        <div style={{ maxWidth:420, margin:"0 auto 32px", background:C.white, borderRadius:14, border:"1.5px solid "+C.border,
+          boxShadow:C.shadowMd, overflow:"hidden" }}>
+          <div style={{ background:C.navy, padding:"10px 16px", display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ fontSize:18 }}>📄</span>
+            <div>
+              <div style={{ fontSize:12, fontWeight:800, color:C.white, letterSpacing:"0.04em" }}>PCSR — Pilot Combined Summary Report</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)" }}>Sample preview · Your actual data will differ</div>
+            </div>
+          </div>
+          <div style={{ padding:"14px 16px", fontSize:11, fontFamily:"'Courier New', monospace", color:C.textMid, lineHeight:1.8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+              <span style={{ color:C.navy, fontWeight:700 }}>Name: A. SHARMA</span>
+              <span>Emp: 28XXX</span>
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
+              <span>Rank: CAPTAIN</span>
+              <span>Base: DEL</span>
+              <span>Fleet: A320</span>
+            </div>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:10 }}>
+              <thead>
+                <tr style={{ borderBottom:"1.5px solid "+C.border, textAlign:"left" }}>
+                  {["Date","Flt","From","To","STD","ATD","STA","ATA","Reg"].map(h => (
+                    <th key={h} style={{ padding:"4px 3px", color:C.navy, fontWeight:700 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["01","6E204","DEL","BOM","06:00","06:12","08:10","08:05","VT-IXX"],
+                  ["01","6E521","BOM","DEL","10:35","10:42","12:50","12:44","VT-IYY"],
+                  ["03","6E892","DEL","CCU","14:20","14:28","16:45","16:50","VT-IZZ"],
+                  ["04","6E117","CCU","DEL","08:10","08:15","10:30","10:22","VT-IZZ"],
+                  ["07","6E304","DEL","BLR","05:15","05:20","08:00","07:55","VT-IAA"],
+                ].map((r, i) => (
+                  <tr key={i} style={{ borderBottom:"1px solid "+C.border, color:C.textMid }}>
+                    {r.map((c, j) => <td key={j} style={{ padding:"3px" }}>{c}</td>)}
+                  </tr>
+                ))}
+                <tr><td colSpan={9} style={{ padding:"4px 3px", color:C.textLo, fontStyle:"italic" }}>... 18 more sectors</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
         <div style={{ display:"grid", gap:16 }}>
           {steps.map((s, i) => (
@@ -510,6 +559,44 @@ function LandingPage({ goLogin, goSignup }) {
           ))}
         </div>
       </div>
+      {/* ── Payslip vs Crew Allowance callout ── */}
+      <div style={{ background:"linear-gradient(135deg,#0f3460,#1a6fd4)", padding:"50px 20px" }}>
+        <div style={{ maxWidth:640, margin:"0 auto", display:"grid", gridTemplateColumns:"1fr 40px 1fr", gap:16, alignItems:"center" }}>
+          <div style={{ background:"rgba(255,255,255,0.08)", border:"1.5px solid rgba(255,255,255,0.15)",
+            borderRadius:16, padding:"24px 20px", textAlign:"center" }}>
+            <div style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:"0.1em",
+              textTransform:"uppercase", marginBottom:12 }}>Your payslip shows</div>
+            <div style={{ fontSize:28, fontWeight:900, color:C.white, marginBottom:6 }}>₹24,350</div>
+            <div style={{ fontSize:13, color:"rgba(255,255,255,0.5)" }}>Total Allowance</div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginTop:10 }}>That's it — one number,<br/>no breakdown</div>
+          </div>
+          <div style={{ textAlign:"center", fontSize:24, color:"rgba(255,255,255,0.4)" }}>→</div>
+          <div style={{ background:"rgba(255,255,255,0.12)", border:"1.5px solid rgba(255,255,255,0.25)",
+            borderRadius:16, padding:"24px 20px", textAlign:"center" }}>
+            <div style={{ fontSize:12, fontWeight:700, color:"#b87000", letterSpacing:"0.1em",
+              textTransform:"uppercase", marginBottom:12 }}>Crew Allowance shows</div>
+            <div style={{ display:"grid", gap:5, textAlign:"left", padding:"0 4px" }}>
+              {[["Deadhead","₹8,000"],["Night Flying","₹6,000"],["Layover","₹6,600"],["Tail-Swap","₹3,000"],["Transit","₹750"]].map(([name, amt]) => (
+                <div key={name} style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:C.white }}>
+                  <span style={{ opacity:0.8 }}>{name}</span>
+                  <span style={{ fontWeight:800 }}>{amt}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ borderTop:"1px solid rgba(255,255,255,0.2)", marginTop:8, paddingTop:8,
+              display:"flex", justifyContent:"space-between", fontSize:14, fontWeight:900, color:C.white, padding:"8px 4px 0" }}>
+              <span>Total</span><span>₹24,350</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ textAlign:"center", marginTop:20, fontSize:14, fontWeight:700, color:C.white }}>
+          Know exactly where every rupee comes from
+        </div>
+        <div style={{ textAlign:"center", marginTop:6, fontSize:12, color:"rgba(255,255,255,0.5)" }}>
+          Your payslip only shows the total. We break it down by each allowance type so you can verify every component.
+        </div>
+      </div>
+
       <div style={{ background:C.sky, padding:"60px 20px" }}>
         <div style={{ maxWidth:700, margin:"0 auto" }}>
           <div style={{ textAlign:"center", marginBottom:32 }}>
@@ -552,7 +639,7 @@ function LandingPage({ goLogin, goSignup }) {
           <div style={{ fontSize:13, color:C.textMid, margin:"4px 0 0" }}>or ₹1,000/year (save 17%)</div>
           <div style={{ fontSize:13, color:C.textMid, margin:"8px 0 24px" }}>Per crew member · Cancel anytime</div>
           <div style={{ display:"grid", gap:8, marginBottom:24, textAlign:"left" }}>
-            {["Upload only your PCSR PDF","All 5 allowance types","Auto schedule data via AeroDataBox","CSV breakdown download","Rates kept up-to-date"].map(f => (
+            {["Upload only your PCSR","All 5 allowance types broken down","Auto schedule data via AeroDataBox","CSV breakdown download","Rates kept up-to-date"].map(f => (
               <div key={f} style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:C.text }}>
                 <span style={{ color:C.green, fontWeight:800, fontSize:15 }}>✓</span>{f}
               </div>
@@ -603,7 +690,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
     if (error) { setErr("Invalid email or password."); setBusy(false); return; }
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
     if (!profile) { setErr("Account not found. Please contact admin."); setBusy(false); return; }
-    if (!profile.is_active) { setErr("Your account is not yet active. Please complete your subscription or contact support@crewallowance.com."); setBusy(false); return; }
+    if (!profile.is_active) { setErr("Your account is not yet active. Please complete your subscription or contact help@crewallowance.com."); setBusy(false); return; }
     onLogin({ ...profile, email: data.user.email });
     setBusy(false);
   };
@@ -1144,7 +1231,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
         </div>
         <div style={{ fontSize:22, fontWeight:900, color:C.white }}>Hi, {user.name?.split(" ")[0]} 👋</div>
         <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginTop:3 }}>
-          Upload your PCSR PDF to calculate this month's allowances.
+          Upload your Pilot Combined Summary Report (PCSR) to calculate this month's allowances.
         </div>
       </div>
 
