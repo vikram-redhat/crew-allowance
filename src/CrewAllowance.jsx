@@ -411,6 +411,131 @@ function PcsrDropZone({ file, onParsed, onFail }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   PAYSLIP vs CREW ALLOWANCE — animated before/after toggle
+═══════════════════════════════════════════════════════════════════ */
+function PayslipCompare() {
+  const [showDetail, setShowDetail] = useState(false);
+
+  // Auto-toggle every 4 seconds
+  useEffect(() => {
+    const id = setInterval(() => setShowDetail(v => !v), 4000);
+    return () => clearInterval(id);
+  }, []);
+
+  const fade = "all 0.5s ease";
+
+  return (
+    <div style={{ background:"linear-gradient(135deg,#0f3460,#1a6fd4)", padding:"50px 20px" }}>
+      <div style={{ textAlign:"center", marginBottom:20 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:"0.12em",
+          textTransform:"uppercase", marginBottom:8 }}>The difference</div>
+        <h2 style={{ fontSize:"clamp(20px,4vw,28px)", fontWeight:900, color:C.white, margin:0 }}>
+          Your payslip shows the total. We show the proof.
+        </h2>
+      </div>
+
+      {/* Toggle buttons */}
+      <div style={{ display:"flex", justifyContent:"center", gap:0, marginBottom:20 }}>
+        <button onClick={() => setShowDetail(false)} style={{
+          background: !showDetail ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
+          border:"1.5px solid " + (!showDetail ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.1)"),
+          borderRadius:"10px 0 0 10px", padding:"10px 20px", cursor:"pointer",
+          fontSize:13, fontWeight:700, color:C.white, fontFamily:"inherit", transition:fade,
+        }}>Payslip view</button>
+        <button onClick={() => setShowDetail(true)} style={{
+          background: showDetail ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
+          border:"1.5px solid " + (showDetail ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.1)"),
+          borderRadius:"0 10px 10px 0", padding:"10px 20px", cursor:"pointer",
+          fontSize:13, fontWeight:700, color: showDetail ? "#b87000" : C.white, fontFamily:"inherit", transition:fade,
+        }}>Crew Allowance view</button>
+      </div>
+
+      {/* Single card — content crossfades */}
+      <div style={{ maxWidth:380, margin:"0 auto", background:"rgba(255,255,255,0.08)",
+        border:"1.5px solid rgba(255,255,255,0.15)", borderRadius:16, padding:"24px 20px",
+        minHeight:260, position:"relative", overflow:"hidden" }}>
+
+        {/* Payslip view — totals only */}
+        <div style={{ opacity: showDetail ? 0 : 1, transform: showDetail ? "translateY(-12px)" : "translateY(0)",
+          transition:fade, position: showDetail ? "absolute" : "relative", top:0, left:0, right:0, padding: showDetail ? "24px 20px" : 0 }}>
+          <div style={{ display:"grid", gap:8 }}>
+            {[["Deadhead","₹8,000"],["Night Flying","₹6,000"],["Layover","₹6,600"],["Tail-Swap","₹3,000"],["Transit","₹750"]].map(([name, amt]) => (
+              <div key={name} style={{ display:"flex", justifyContent:"space-between", fontSize:14, color:C.white }}>
+                <span style={{ opacity:0.7 }}>{name}</span>
+                <span style={{ fontWeight:800 }}>{amt}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ borderTop:"1px solid rgba(255,255,255,0.2)", marginTop:12, paddingTop:10,
+            display:"flex", justifyContent:"space-between", fontSize:15, fontWeight:900, color:C.white }}>
+            <span>Total</span><span>₹24,350</span>
+          </div>
+          <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginTop:14, textAlign:"center", lineHeight:1.6 }}>
+            Which flights make up ₹8,000 in Deadhead?<br/>Which layovers add to ₹6,600? No way to tell.
+          </div>
+        </div>
+
+        {/* Crew Allowance view — sector-level detail */}
+        <div style={{ opacity: showDetail ? 1 : 0, transform: showDetail ? "translateY(0)" : "translateY(12px)",
+          transition:fade, position: showDetail ? "relative" : "absolute", top:0, left:0, right:0, padding: showDetail ? 0 : "24px 20px" }}>
+          {/* Deadhead breakdown */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:14, fontWeight:800, color:C.white, marginBottom:6 }}>
+              <span>Deadhead</span><span>₹8,000</span>
+            </div>
+            {[["6E204","DEL → BOM","2h 10m","₹4,000"],["6E892","DEL → CCU","2h 05m","₹4,000"]].map(([flt, route, dur, amt]) => (
+              <div key={flt} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"rgba(255,255,255,0.6)", padding:"3px 4px",
+                background:"rgba(255,255,255,0.04)", borderRadius:6, marginBottom:3 }}>
+                <span style={{ fontWeight:700 }}>{flt}</span>
+                <span>{route}</span>
+                <span>{dur}</span>
+                <span style={{ fontWeight:700 }}>{amt}</span>
+              </div>
+            ))}
+          </div>
+          {/* Layover breakdown */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:14, fontWeight:800, color:C.white, marginBottom:6 }}>
+              <span>Layover</span><span>₹6,600</span>
+            </div>
+            {[["CCU","3–4 Mar","18h 42m","₹3,000"],["BLR","7–8 Mar","22h 15m","₹3,600"]].map(([loc, dates, dur, amt]) => (
+              <div key={loc} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"rgba(255,255,255,0.6)", padding:"3px 4px",
+                background:"rgba(255,255,255,0.04)", borderRadius:6, marginBottom:3 }}>
+                <span style={{ fontWeight:700 }}>{loc}</span>
+                <span>{dates}</span>
+                <span>{dur}</span>
+                <span style={{ fontWeight:700 }}>{amt}</span>
+              </div>
+            ))}
+          </div>
+          {/* Others collapsed */}
+          <div style={{ display:"grid", gap:4 }}>
+            {[["Night Flying","₹6,000","3 sectors"],["Tail-Swap","₹3,000","2 swaps"],["Transit","₹750","1 halt"]].map(([name, amt, detail]) => (
+              <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:13, color:C.white }}>
+                <span style={{ opacity:0.7 }}>{name}</span>
+                <span style={{ fontSize:11, color:"rgba(255,255,255,0.4)" }}>{detail}</span>
+                <span style={{ fontWeight:800 }}>{amt}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ borderTop:"1px solid rgba(255,255,255,0.2)", marginTop:10, paddingTop:8,
+            display:"flex", justifyContent:"space-between", fontSize:15, fontWeight:900, color:C.white }}>
+            <span>Total</span><span>₹24,350</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ textAlign:"center", marginTop:18, fontSize:12, color:"rgba(255,255,255,0.45)" }}>
+        Tap to switch · Auto-toggles every 4s
+      </div>
+      <div style={{ textAlign:"center", marginTop:8, fontSize:13, color:"rgba(255,255,255,0.6)", maxWidth:420, margin:"8px auto 0", lineHeight:1.6 }}>
+        Your payslip shows totals per allowance type. We show you the sector-by-sector breakdown behind each one — so you can verify every rupee.
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    LANDING PAGE
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
@@ -559,68 +684,8 @@ function LandingPage({ goLogin, goSignup }) {
           ))}
         </div>
       </div>
-      {/* ── Payslip vs Crew Allowance callout ── */}
-      <div style={{ background:"linear-gradient(135deg,#0f3460,#1a6fd4)", padding:"50px 20px" }}>
-        <div style={{ maxWidth:660, margin:"0 auto", display:"grid", gridTemplateColumns:"1fr 40px 1fr", gap:16, alignItems:"start" }}>
-          {/* LEFT: what the payslip shows */}
-          <div style={{ background:"rgba(255,255,255,0.08)", border:"1.5px solid rgba(255,255,255,0.15)",
-            borderRadius:16, padding:"24px 20px" }}>
-            <div style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:"0.1em",
-              textTransform:"uppercase", marginBottom:14, textAlign:"center" }}>Your payslip shows</div>
-            <div style={{ display:"grid", gap:6, textAlign:"left", padding:"0 4px" }}>
-              {[["Deadhead","₹8,000"],["Night Flying","₹6,000"],["Layover","₹6,600"],["Tail-Swap","₹3,000"],["Transit","₹750"]].map(([name, amt]) => (
-                <div key={name} style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:C.white }}>
-                  <span style={{ opacity:0.6 }}>{name}</span>
-                  <span style={{ fontWeight:800, opacity:0.8 }}>{amt}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginTop:14, textAlign:"center", lineHeight:1.5 }}>
-              Just totals per type — no way to know<br/>which flights or layovers make up each number
-            </div>
-          </div>
-          <div style={{ textAlign:"center", fontSize:24, color:"rgba(255,255,255,0.4)", paddingTop:60 }}>→</div>
-          {/* RIGHT: what Crew Allowance shows */}
-          <div style={{ background:"rgba(255,255,255,0.12)", border:"1.5px solid rgba(255,255,255,0.25)",
-            borderRadius:16, padding:"24px 20px" }}>
-            <div style={{ fontSize:12, fontWeight:700, color:"#b87000", letterSpacing:"0.1em",
-              textTransform:"uppercase", marginBottom:14, textAlign:"center" }}>Crew Allowance shows</div>
-            <div style={{ marginBottom:6 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, fontWeight:800, color:C.white, marginBottom:4 }}>
-                <span>Deadhead</span><span>₹8,000</span>
-              </div>
-              <div style={{ padding:"0 2px" }}>
-                {[["6E204 DEL→BOM","2h 10m","₹4,000"],["6E892 DEL→CCU","2h 05m","₹4,000"]].map(([flt, dur, amt]) => (
-                  <div key={flt} style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"rgba(255,255,255,0.55)", padding:"2px 0" }}>
-                    <span>{flt}</span><span>{dur}</span><span>{amt}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ marginBottom:6 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, fontWeight:800, color:C.white, marginBottom:4 }}>
-                <span>Layover</span><span>₹6,600</span>
-              </div>
-              <div style={{ padding:"0 2px" }}>
-                {[["CCU 3–4 Mar","18h 42m","₹3,000"],["BLR 7–8 Mar","22h 15m","₹3,600"]].map(([loc, dur, amt]) => (
-                  <div key={loc} style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"rgba(255,255,255,0.55)", padding:"2px 0" }}>
-                    <span>{loc}</span><span>{dur}</span><span>{amt}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", fontStyle:"italic", textAlign:"center" }}>
-              + Night Flying, Tail-Swap, Transit...
-            </div>
-          </div>
-        </div>
-        <div style={{ textAlign:"center", marginTop:24, fontSize:14, fontWeight:700, color:C.white }}>
-          See exactly which sectors and layovers make up every number on your payslip
-        </div>
-        <div style={{ textAlign:"center", marginTop:6, fontSize:12, color:"rgba(255,255,255,0.5)" }}>
-          Your payslip shows totals per allowance type. We show you the sector-by-sector breakdown behind each one — so you can verify every rupee.
-        </div>
-      </div>
+      {/* ── Payslip vs Crew Allowance — animated toggle callout ── */}
+      <PayslipCompare />
 
       <div style={{ background:C.sky, padding:"60px 20px" }}>
         <div style={{ maxWidth:700, margin:"0 auto" }}>
