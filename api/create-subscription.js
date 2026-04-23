@@ -42,8 +42,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "userId and email are required." });
   }
 
-  // ─── Free-access path (no Stripe call) ──────────────────────────────────
-  // Activates the user for the chosen plan duration. Used for comp accounts.
+  // ─── Free-access (comp) path — pending admin approval ───────────────────
+  // The user enters the comp code; we mark them as a free-plan account but
+  // leave is_active = false. An admin must manually activate them from the
+  // Users tab. This stops blanket abuse if the comp code ever leaks.
   if (freeCode) {
     const expected = process.env.FREE_ACCESS_CODE;
     if (!expected || freeCode !== expected) {
@@ -56,14 +58,14 @@ export default async function handler(req, res) {
     periodEnd.setMonth(periodEnd.getMonth() + PLAN_DURATION_MONTHS[plan]);
 
     const { error } = await supa.from("profiles").update({
-      is_active:                       true,
+      is_active:                       false,           // ← admin must approve
       subscription_plan:               "free",
-      subscription_status:             "active",
+      subscription_status:             "pending_approval",
       subscription_current_period_end: periodEnd.toISOString(),
     }).eq("id", userId);
 
     if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ free: true });
+    return res.status(200).json({ free: true, pending_approval: true });
   }
 
   // ─── Paid path: create Customer + Subscription ──────────────────────────

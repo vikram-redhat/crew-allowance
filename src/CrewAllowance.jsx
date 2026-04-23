@@ -962,7 +962,14 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
     if (error) { setErr("Invalid email or password."); setBusy(false); return; }
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
     if (!profile) { setErr("Account not found. Please contact admin."); setBusy(false); return; }
-    if (!profile.is_active && !profile.is_admin) { setErr("Your account is not yet active. Please complete your subscription or contact help@crewallowance.com."); setBusy(false); return; }
+    if (!profile.is_active && !profile.is_admin) {
+      if (profile.subscription_status === "pending_approval") {
+        setErr("Your comp-access request is awaiting admin approval. We'll activate your account shortly. Questions? help@crewallowance.com");
+      } else {
+        setErr("Your account is not yet active. Please complete your subscription or contact help@crewallowance.com.");
+      }
+      setBusy(false); return;
+    }
     onLogin({ ...profile, email: data.user.email });
     setBusy(false);
   };
@@ -1004,34 +1011,44 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
     if (pass !== confirm) { setErr("Passwords do not match."); return; }
     if (pass.length < 8)  { setErr("Password must be at least 8 characters."); return; }
     setErr(""); setBusy(true);
-    if (!supabase) { sbWarn(); setErr("Database not configured."); setBusy(false); return; }
-    const { data, error } = await supabase.auth.signUp({ email, password: pass });
-    if (error) { setErr(error.message); setBusy(false); return; }
-    // Supabase with email-enumeration protection returns a fake user with
-    // an empty identities array when the email already exists. Detect this
-    // and show a clear error instead of proceeding to checkout.
-    if (!data.user?.id || (data.user.identities && data.user.identities.length === 0)) {
-      setErr("duplicate_email");
-      setBusy(false);
-      return;
-    }
-    const { error: profileErr } = await supabase.from("profiles").insert({
-      id: data.user.id, name, email, emp_id: empId.trim(), rank, home_base: base.toUpperCase().slice(0, 3),
-      is_admin: false, is_active: false,
-    });
-    if (profileErr) {
-      // Duplicate emp_id constraint violation → distinct error message.
-      const msg = (profileErr.message || "").toLowerCase();
-      if (msg.includes("emp_id") || msg.includes("profiles_emp_id_unique")) {
-        setErr("duplicate_emp_id");
-      } else {
-        setErr("duplicate_email");
+
+    // Server-side signup: does auth.createUser + profiles.insert atomically.
+    // If profile insert fails (e.g. duplicate emp_id), the auth user is rolled
+    // back so the email/password are freed for a clean retry.
+    try {
+      const resp = await fetch("/api/signup", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          name, email, password: pass, emp_id: empId,
+          rank, home_base: base,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        // Server returns either "duplicate_email" / "duplicate_emp_id" tokens
+        // (which the UI renders as friendly clickable messages) or a plain
+        // string for unexpected errors.
+        setErr(data.error || "Signup failed.");
+        setBusy(false);
+        return;
+      }
+      // Auto sign-in so the browser has a live Supabase session for the
+      // checkout/trial endpoints and any subsequent calls.
+      if (supabase) {
+        const { error: signinErr } = await supabase.auth.signInWithPassword({ email, password: pass });
+        if (signinErr) {
+          // Edge case: account exists but sign-in failed. Send to login.
+          setErr("Account created. Please sign in to continue.");
+          setBusy(false);
+          return;
+        }
       }
       setBusy(false);
-      return;
+      goCheckout(data.user);
+    } catch (e) {
+      setErr(e?.message || "Network error during signup.");
+      setBusy(false);
     }
-    setBusy(false);
-    goCheckout({ id: data.user.id, name, email, emp_id: empId.trim(), rank, home_base: base });
   };
 
   return (
@@ -1209,16 +1226,29 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   };
 
   if (done) return (
-    <AuthShell title="You're all set! 🎉" sub="">
+    <AuthShell title={showFree ? "Application received ⏳" : "You're all set! 🎉"} sub="">
       <div style={{ textAlign:"center", padding:"8px 0 18px" }}>
-        <div style={{ width:60, height:60, borderRadius:"50%", background:C.greenBg, border:"2px solid "+C.green,
-          display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, margin:"0 auto 16px" }}>✓</div>
-        <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
-          {showFree ? "Your free account is activated." : "Payment confirmed. Your subscription is active."}
-          <br />Welcome to Crew Allowance, {pendingUser?.name?.split(" ")[0]}!
-        </p>
+        <div style={{ width:60, height:60, borderRadius:"50%",
+          background: showFree ? C.goldBg : C.greenBg,
+          border:"2px solid " + (showFree ? C.goldBorder : C.green),
+          display:"flex", alignItems:"center", justifyContent:"center",
+          fontSize:28, margin:"0 auto 16px" }}>{showFree ? "⏳" : "✓"}</div>
+        {showFree ? (
+          <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
+            Thanks {pendingUser?.name?.split(" ")[0]}! Your comp-access request has been submitted.
+            <br /><br />
+            An admin will review and activate your account shortly. You'll be able to sign in once approved.
+            <br /><br />
+            Questions? Email <a href="mailto:help@crewallowance.com" style={{ color:C.blue }}>help@crewallowance.com</a>.
+          </p>
+        ) : (
+          <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
+            Payment confirmed. Your subscription is active.
+            <br />Welcome to Crew Allowance, {pendingUser?.name?.split(" ")[0]}!
+          </p>
+        )}
       </div>
-      <Btn onClick={goLogin}>Sign in to your account →</Btn>
+      <Btn onClick={goLogin}>{showFree ? "Back to sign in" : "Sign in to your account →"}</Btn>
     </AuthShell>
   );
 
@@ -2232,7 +2262,10 @@ function AdminScreen({ rates }) {
                 <div style={{ fontSize:11, color:C.textLo, marginTop:2 }}>ID: {u.emp_id} · {u.rank} · Base: {u.home_base}</div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
-                <Badge color={effectivelyActive ? "green" : "red"}>{effectivelyActive ? "Active" : "Inactive"}</Badge>
+                {u.subscription_status === "pending_approval" && !u.is_active
+                  ? <Badge color="gold">Pending approval (comp)</Badge>
+                  : <Badge color={effectivelyActive ? "green" : "red"}>{effectivelyActive ? "Active" : "Inactive"}</Badge>
+                }
                 {!u.is_admin && (
                   <Btn onClick={() => toggleUser(u.id, u.is_active)} variant={u.is_active?"danger":"ghost"} small full={false}>
                     {u.is_active ? "Deactivate" : "Activate"}
