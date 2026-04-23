@@ -397,7 +397,7 @@ function PcsrDropZone({ file, onParsed, onFail }) {
         {file ? "PCSR loaded ✓" : "Upload your PCSR PDF"}
       </div>
       <div style={{ fontSize:12, color:C.textMid, marginBottom:8 }}>
-        Pilot Combined Summary Report — both EOM and grid formats supported
+        Personal Crew Schedule Report — both EOM and grid formats supported
       </div>
       {parsing
         ? <div style={{ fontSize:12, color:C.blue, fontWeight:700 }}>Reading PDF...</div>
@@ -540,7 +540,7 @@ function PayslipCompare() {
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
   const steps = [
-    { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your Pilot Combined Summary Report (PCSR) as a PDF from eCrew. Both end-of-month (EOM) tabular format and monthly grid format are supported." },
+    { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your Personal Crew Schedule Report (PCSR) as a PDF from eCrew. Both end-of-month (EOM) tabular format and monthly grid format are supported." },
     { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
     { icon:"⚡", title:"Instant enrichment & calculation", body:"The app fetches scheduled times and aircraft registrations automatically from AeroDataBox, then applies all IndiGo allowance rules instantly." },
     { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown of every allowance for the month — ready to verify against your payslip." },
@@ -584,7 +584,7 @@ function LandingPage({ goLogin, goSignup }) {
           </h1>
           <p style={{ fontSize:"clamp(14px,2.5vw,18px)", color:"rgba(255,255,255,0.75)",
             maxWidth:480, margin:"0 auto 32px", lineHeight:1.6 }}>
-            Upload your Pilot Combined Summary Report (PCSR) and get an instant, itemised breakdown of every allowance — Deadhead, Night Flying, Layover, Tail-Swap, and Transit.
+            Upload your Personal Crew Schedule Report (PCSR) and get an instant, itemised breakdown of every allowance — Deadhead, Night Flying, Layover, Tail-Swap, and Transit.
           </p>
           <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
             <button onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
@@ -615,7 +615,7 @@ function LandingPage({ goLogin, goSignup }) {
             One file. Instant breakdown.
           </h2>
           <p style={{ fontSize:13, color:C.textMid, marginTop:10, lineHeight:1.6, maxWidth:500, margin:"10px auto 0" }}>
-            Your Pilot Combined Summary Report (PCSR) from eCrew contains all your monthly flight data. Upload it and we do the rest.
+            Your Personal Crew Schedule Report (PCSR) from eCrew contains all your monthly flight data. Upload it and we do the rest.
           </p>
         </div>
 
@@ -625,7 +625,7 @@ function LandingPage({ goLogin, goSignup }) {
           <div style={{ background:C.navy, padding:"10px 16px", display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:18 }}>📄</span>
             <div>
-              <div style={{ fontSize:12, fontWeight:800, color:C.white, letterSpacing:"0.04em" }}>PCSR — Pilot Combined Summary Report</div>
+              <div style={{ fontSize:12, fontWeight:800, color:C.white, letterSpacing:"0.04em" }}>PCSR — Personal Crew Schedule Report</div>
               <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)" }}>Sample preview · Your actual data will differ</div>
             </div>
           </div>
@@ -825,7 +825,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
     const { data, error } = await supabase.auth.signUp({ email, password: pass });
     if (error) { setErr(error.message); setBusy(false); return; }
     await supabase.from("profiles").insert({
-      id: data.user.id, name, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3),
+      id: data.user.id, name, email, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3),
       is_admin: false, is_active: false,
     });
     setBusy(false);
@@ -1321,7 +1321,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
         </div>
         <div style={{ fontSize:22, fontWeight:900, color:C.white }}>Hi, {user.name?.split(" ")[0]} 👋</div>
         <div style={{ fontSize:13, color:"rgba(255,255,255,0.6)", marginTop:3 }}>
-          Upload your Pilot Combined Summary Report (PCSR) to calculate this month's allowances.
+          Upload your Personal Crew Schedule Report (PCSR) to calculate this month's allowances.
         </div>
       </div>
 
