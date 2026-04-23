@@ -422,10 +422,34 @@ function PcsrBeforeAfter() {
   }, []);
 
   const fade = "all 0.5s ease";
-  const mono = "'Courier New', Consolas, monospace";
+
+  // Dummy PCSR grid data — 7 visible days with stacked flight cells (mimics the real calendar grid)
+  const gridDays = [
+    { day:"01", dow:"Wed", flights:[
+      {flt:"6327",dep:"DEL",arr:"BOM",t1:"A08:25",t2:"A09:12",ac:"[320]"},
+    ]},
+    { day:"02", dow:"Thu", flights:[
+      {flt:"2312",dep:"BOM",arr:"DEL",t1:"A09:55",t2:"A09:46",ac:"[320]",hl:true},
+    ]},
+    { day:"03", dow:"Fri", flights:[
+      {flt:"6836",dep:"DEL",arr:"CCU",t1:"A06:54",t2:"A08:57",ac:"[321]"},
+    ]},
+    { day:"04", dow:"Sat", flights:[]},
+    { day:"05", dow:"Sun", flights:[
+      {flt:"2052",dep:"DEL",arr:"HYD",t1:"A12:06",t2:"A14:15",ac:"[321]"},
+      {flt:"2073",dep:"HYD",arr:"DEL",t1:"A15:53",t2:"A17:30",ac:"[320]"},
+    ]},
+    { day:"06", dow:"Mon", flights:[
+      {flt:"770",dep:"TRZ",arr:"DEL",t1:"A05:27",t2:"A08:19",ac:"[320]"},
+    ]},
+    { day:"07", dow:"Tue", flights:[]},
+  ];
+
+  const cellBorder = "1px solid #d4dce8";
+  const gridFont = "'Arial Narrow', Arial, sans-serif";
 
   return (
-    <div style={{ maxWidth:480, margin:"0 auto 32px" }}>
+    <div style={{ maxWidth:520, margin:"0 auto 32px" }}>
       {/* Toggle */}
       <div style={{ display:"flex", justifyContent:"center", gap:0, marginBottom:16 }}>
         <button onClick={() => setShowResult(false)} style={{
@@ -445,51 +469,77 @@ function PcsrBeforeAfter() {
       </div>
 
       <div style={{ background:C.white, borderRadius:14, border:"1.5px solid "+C.border,
-        boxShadow:C.shadowMd, overflow:"hidden", position:"relative", minHeight:320 }}>
+        boxShadow:C.shadowMd, overflow:"hidden", position:"relative", minHeight:340 }}>
 
-        {/* ── PCSR view ── */}
+        {/* ── PCSR view — calendar grid format ── */}
         <div style={{ opacity: showResult ? 0 : 1, transform: showResult ? "translateX(-20px)" : "translateX(0)",
           transition:fade, position: showResult ? "absolute" : "relative", top:0, left:0, right:0 }}>
-          <div style={{ background:C.navy, padding:"10px 16px", display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:18 }}>📄</span>
-            <div>
-              <div style={{ fontSize:12, fontWeight:800, color:C.white }}>PCSR — Personal Crew Schedule Report</div>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)" }}>Sample with dummy data</div>
+          {/* Header mimicking real PCSR */}
+          <div style={{ padding:"12px 16px 8px", borderBottom:"2px solid #1a1a1a" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span style={{ fontSize:11, color:C.textMid }}>InterGlobe Aviation</span>
+              <span style={{ fontSize:13, fontWeight:800, color:"#1a1a1a" }}>Personal Crew Schedule Report</span>
+            </div>
+            <div style={{ fontSize:10, color:C.textMid, textAlign:"center", marginTop:3 }}>
+              01/03/2026 - 31/03/2026 (All times in Local Station)
             </div>
           </div>
-          <div style={{ padding:"14px 16px", fontFamily:mono, fontSize:11, color:C.textMid, lineHeight:1.7 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-              <span style={{ color:C.navy, fontWeight:700 }}>Name: A. SHARMA</span>
-              <span>Emp: 28XXX</span>
-            </div>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
-              <span>Rank: CPT</span><span>Base: DEL</span><span>Fleet: A320</span>
-            </div>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:10 }}>
+          {/* Crew info bar */}
+          <div style={{ background:"#e8f0e8", padding:"5px 12px", fontSize:10, fontWeight:700, color:"#2a5a2a",
+            fontFamily:gridFont }}>
+            28XXX SHARMA, A. DEL,CP,320
+          </div>
+          {/* Calendar grid */}
+          <div style={{ overflowX:"auto", padding:"0 4px 10px" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontFamily:gridFont, fontSize:8.5, minWidth:340 }}>
               <thead>
-                <tr style={{ borderBottom:"1.5px solid "+C.border, textAlign:"left" }}>
-                  {["Dt","Flt","Fr","To","STD","ATD","STA","ATA","Reg"].map(h => (
-                    <th key={h} style={{ padding:"3px 2px", color:C.navy, fontWeight:700 }}>{h}</th>
+                <tr>
+                  {gridDays.map(d => (
+                    <th key={d.day} style={{ border:cellBorder, padding:"3px 2px", textAlign:"center",
+                      background:"#f5f7fa", fontWeight:700, color:C.navy, width:`${100/7}%` }}>
+                      <div>{d.day}/03</div>
+                      <div style={{ fontWeight:400, color:C.textLo }}>{d.dow}</div>
+                    </th>
                   ))}
+                  <th style={{ border:cellBorder, padding:"3px 2px", textAlign:"center", background:"#f5f7fa",
+                    color:C.textLo, fontSize:8 }}>...</th>
                 </tr>
               </thead>
               <tbody>
-                {[
-                  ["01","6E204","DEL","BOM","06:00","06:12","08:10","08:05","VT-IXX"],
-                  ["01","6E521","BOM","DEL","10:35","10:42","12:50","12:44","VT-IYY"],
-                  ["03","6E892","DEL","CCU","14:20","14:28","16:45","16:50","VT-IZZ"],
-                  ["04","6E117","CCU","DEL","08:10","08:15","10:30","10:22","VT-IZZ"],
-                  ["07","6E304","DEL","BLR","05:15","05:20","08:00","07:55","VT-IAA"],
-                  ["07","6E819","BLR","DEL","11:40","11:48","14:10","14:02","VT-IBB"],
-                  ["10","6E031","DEL","MAA","04:50","04:55","07:30","07:25","VT-ICC"],
-                ].map((r, i) => (
-                  <tr key={i} style={{ borderBottom:"1px solid "+C.border, color:C.textMid }}>
-                    {r.map((c, j) => <td key={j} style={{ padding:"2px" }}>{c}</td>)}
-                  </tr>
-                ))}
-                <tr><td colSpan={9} style={{ padding:"3px 2px", color:C.textLo, fontStyle:"italic" }}>... 16 more sectors</td></tr>
+                <tr>
+                  {gridDays.map(d => (
+                    <td key={d.day} style={{ border:cellBorder, padding:"3px 2px", verticalAlign:"top",
+                      background: d.flights.length ? C.white : "#fafbfc", minHeight:80 }}>
+                      {d.flights.length === 0 && (
+                        <div style={{ textAlign:"center", color:C.textLo, padding:"16px 0", fontSize:9 }}></div>
+                      )}
+                      {d.flights.map((f,i) => (
+                        <div key={i} style={{ marginBottom: i < d.flights.length-1 ? 6 : 0, lineHeight:1.4 }}>
+                          <div style={{ color: f.hl ? "#c04000" : "#1a6fd4", fontWeight:700, fontSize:9 }}>{f.flt}</div>
+                          <div style={{ color:C.textMid }}>{f.dep}</div>
+                          <div style={{ color:C.textMid }}>{f.arr}</div>
+                          <div style={{ color:C.textLo }}>{f.t1}</div>
+                          <div style={{ color:C.textLo }}>{f.t2}</div>
+                          <div style={{ color:C.textLo }}>{f.ac}</div>
+                        </div>
+                      ))}
+                    </td>
+                  ))}
+                  <td style={{ border:cellBorder, verticalAlign:"middle", textAlign:"center" }}>
+                    <div style={{ color:C.textLo, fontSize:9, lineHeight:1.5 }}>24<br/>more<br/>days</div>
+                  </td>
+                </tr>
               </tbody>
             </table>
+          </div>
+          {/* Stats bar like real PCSR */}
+          <div style={{ background:"#e8eef6", padding:"6px 12px", fontSize:9, color:C.navy, fontFamily:gridFont,
+            display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:4, borderTop:"1.5px solid "+C.border }}>
+            <span><b>Block Hours</b> 69:59</span>
+            <span><b>Duty Hours</b> 137:24</span>
+            <span><b>Dead Head</b> 12:51</span>
+            <span><b>Flights</b> 15</span>
+            <span><b>Landings</b> 37</span>
           </div>
         </div>
 
