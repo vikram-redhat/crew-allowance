@@ -1712,10 +1712,11 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
     // Access gate: a user can run a calculation if they have an active
     // subscription, OR if they paid for a trial and haven't used it yet,
     // OR if they have free-code access (subscription_plan = 'free').
-    const hasActiveSub = ["active", "trialing"].includes(user.subscription_status);
+    const isAdmin        = !!user.is_admin;
+    const hasActiveSub   = ["active", "trialing"].includes(user.subscription_status);
     const hasUnusedTrial = !!user.trial_paid_at && !user.trial_used;
-    const hasFreeAccess = user.subscription_plan === "free";
-    if (!hasActiveSub && !hasUnusedTrial && !hasFreeAccess) {
+    const hasFreeAccess  = user.subscription_plan === "free";
+    if (!isAdmin && !hasActiveSub && !hasUnusedTrial && !hasFreeAccess) {
       if (typeof onUpgrade === "function") onUpgrade();
       return;
     }
@@ -1791,7 +1792,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
       // If this calculation was the trial run, mark it used (server-side + local).
       // We deliberately do this AFTER setResult so failures upstream don't
       // burn the trial — only successful completions count.
-      if (hasUnusedTrial && !hasActiveSub && !hasFreeAccess) {
+      if (hasUnusedTrial && !isAdmin && !hasActiveSub && !hasFreeAccess) {
         if (supabase) {
           await supabase.from("profiles").update({ trial_used: true }).eq("id", user.id);
         }
@@ -1834,7 +1835,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
       )}
 
       {/* Trial banner — shown when user paid trial but hasn't used it yet */}
-      {user.trial_paid_at && !user.trial_used && !["active","trialing"].includes(user.subscription_status) && (
+      {user.trial_paid_at && !user.trial_used && !user.is_admin && !["active","trialing"].includes(user.subscription_status) && (
         <div style={{ padding:"12px 14px", background:C.blueXLight, border:"1.5px solid "+C.blue, borderRadius:10, fontSize:12, color:C.navy, marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
           <span style={{ fontSize:16 }}>✨</span>
           <div>
