@@ -18,6 +18,7 @@
  *       customer.subscription.deleted
  *       invoice.payment_succeeded
  *       invoice.payment_failed
+ *       payment_intent.succeeded     ← needed for one-time trial purchases
  */
 
 import Stripe from "stripe";
@@ -74,6 +75,21 @@ export default async function handler(req, res) {
         if (invoice.subscription) {
           const sub = await stripe.subscriptions.retrieve(invoice.subscription);
           await syncSubscription(stripe, supa, sub);
+        }
+        break;
+      }
+
+      case "payment_intent.succeeded": {
+        // Trial payments use a one-off PaymentIntent (kind: "trial" in metadata).
+        // Subscription invoices also produce payment_intent.succeeded events,
+        // but those have invoice attached — skip them here (handled above).
+        const pi = event.data.object;
+        if (pi.metadata?.kind === "trial" && pi.metadata?.userId && !pi.invoice) {
+          await supa.from("profiles").update({
+            is_active:      true,
+            trial_paid_at:  new Date().toISOString(),
+            trial_used:     false,
+          }).eq("id", pi.metadata.userId);
         }
         break;
       }

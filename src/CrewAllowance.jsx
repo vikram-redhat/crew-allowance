@@ -28,10 +28,11 @@ const CONFIG = {
   currency:      "₹",
   // Subscription tiers. Server validates plan key against STRIPE_PRICE_* env vars.
   plans: {
-    "1mo":  { months: 1,  total: 100,  perMonth: 100, label: "Monthly",  sub: "₹100/month",                    badge: "" },
-    "12mo": { months: 12, total: 1000, perMonth: 83,  label: "Annual",   sub: "₹83/month, billed ₹1,000/year", badge: "Save 17%" },
+    "trial": { kind: "trial",        total: 100,  label: "Try once",  sub: "₹100 · One report · No auto-renewal", badge: "Recommended for first-time users" },
+    "1mo":   { kind: "subscription", total: 100,  label: "Monthly",   sub: "₹100/month · unlimited reports",      badge: "" },
+    "12mo":  { kind: "subscription", total: 1000, label: "Annual",    sub: "₹1,000/year (save 17%) · unlimited",  badge: "Best value" },
   },
-  defaultPlan: "1mo",
+  defaultPlan: "trial",
   ranks: ["Captain", "Senior Captain", "First Officer", "Senior First Officer", "Cabin Crew"],
   layoverMinHours: 10.0167,
   governingLaw:    "New Delhi, India",
@@ -998,7 +999,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
   const [busy,    setBusy]    = useState(false);
 
   const submit = async () => {
-    if (!name || !email || !pass) { setErr("Name, email, and password are required."); return; }
+    if (!name || !email || !empId || !pass) { setErr("Name, email, employee ID, and password are required."); return; }
     if (!/\S+@\S+\.\S+/.test(email)) { setErr("Please enter a valid email address."); return; }
     if (pass !== confirm) { setErr("Passwords do not match."); return; }
     if (pass.length < 8)  { setErr("Password must be at least 8 characters."); return; }
@@ -1010,39 +1011,54 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
     // an empty identities array when the email already exists. Detect this
     // and show a clear error instead of proceeding to checkout.
     if (!data.user?.id || (data.user.identities && data.user.identities.length === 0)) {
-      setErr("duplicate");
+      setErr("duplicate_email");
       setBusy(false);
       return;
     }
     const { error: profileErr } = await supabase.from("profiles").insert({
-      id: data.user.id, name, email, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3),
+      id: data.user.id, name, email, emp_id: empId.trim(), rank, home_base: base.toUpperCase().slice(0, 3),
       is_admin: false, is_active: false,
     });
     if (profileErr) {
-      setErr("duplicate");
+      // Duplicate emp_id constraint violation → distinct error message.
+      const msg = (profileErr.message || "").toLowerCase();
+      if (msg.includes("emp_id") || msg.includes("profiles_emp_id_unique")) {
+        setErr("duplicate_emp_id");
+      } else {
+        setErr("duplicate_email");
+      }
       setBusy(false);
       return;
     }
     setBusy(false);
-    goCheckout({ id: data.user.id, name, email, emp_id: empId, rank, home_base: base });
+    goCheckout({ id: data.user.id, name, email, emp_id: empId.trim(), rank, home_base: base });
   };
 
   return (
     <AuthShell title="Create account" sub="IndiGo crew only · Takes 60 seconds" onSubmit={submit}>
       <FInput label="Full name" value={name} onChange={setName} placeholder="Your full name as it appears on your ID" />
       <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your email address" />
-      <FInput label="Employee ID (optional)" value={empId} onChange={setEmpId} placeholder="Helps match your PCSR data more accurately" />
+      <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your IndiGo employee number" hint="Required — keeps your account secure and unique" />
       <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
       <FInput label="Home Base (IATA)" value={base} onChange={setBase} placeholder="e.g. DEL" hint="3-letter IATA code of your home airport" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Choose a strong password (min 8 characters)" />
       <FInput label="Confirm password" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat your password" />
-      {err && err !== "duplicate" && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
-      {err === "duplicate" && (
+      {err && !["duplicate_email","duplicate_emp_id"].includes(err) && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
+      {err === "duplicate_email" && (
         <div style={{ padding:"12px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14, lineHeight:1.7 }}>
           An account with this email already exists.{" "}
           <button type="button" onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>Sign in</button>
           {" or "}
           <button type="button" onClick={goForgot} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>reset your password</button>.
+        </div>
+      )}
+      {err === "duplicate_emp_id" && (
+        <div style={{ padding:"12px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14, lineHeight:1.7 }}>
+          An account with this employee ID already exists.{" "}
+          <button type="button" onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>Sign in</button>
+          {" or "}
+          <button type="button" onClick={goForgot} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>reset your password</button> if it's yours.
+          If this isn't you, please email <a href="mailto:help@crewallowance.com" style={{ color:C.blue }}>help@crewallowance.com</a>.
         </div>
       )}
       <Btn onClick={submit} disabled={busy} submit>{busy ? "Creating account..." : "Continue to payment →"}</Btn>
@@ -1089,18 +1105,25 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   }, []);
 
   // Fetch a clientSecret whenever the plan changes (for the Payment Element).
-  // The Subscription starts in `incomplete` state — no charge until the user confirms.
+  // Trial → /api/create-trial-payment (one-off PaymentIntent).
+  // 1mo / 12mo → /api/create-subscription (recurring).
   useEffect(() => {
     if (showFree || !pendingUser?.id) return;
     let cancelled = false;
     setStripeReady(false);
     setClientSecret(null);
 
+    const isTrial = plan?.kind === "trial";
+    const endpoint = isTrial ? "/api/create-trial-payment" : "/api/create-subscription";
+    const body = isTrial
+      ? { userId: pendingUser?.id || "", email: pendingUser?.email || "" }
+      : { plan: planKey, userId: pendingUser?.id || "", email: pendingUser?.email || "" };
+
     (async () => {
       try {
-        const resp = await fetch("/api/create-subscription", {
+        const resp = await fetch(endpoint, {
           method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ plan:planKey, userId:pendingUser?.id||"", email:pendingUser?.email||"" }),
+          body: JSON.stringify(body),
         });
         const data = await resp.json();
         if (cancelled) return;
@@ -1110,7 +1133,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
     })();
 
     return () => { cancelled = true; };
-  }, [planKey, showFree, pendingUser?.id, pendingUser?.email]);
+  }, [planKey, showFree, pendingUser?.id, pendingUser?.email, plan?.kind]);
 
   // Mount the Payment Element once we have both Stripe.js and a clientSecret.
   useEffect(() => {
@@ -1380,18 +1403,26 @@ function ProfileScreen({ user, onSave }) {
   const [err,   setErr]   = useState("");
   const [busy,  setBusy]  = useState(false);
 
-  const incomplete = !name || !base;
+  const incomplete = !name || !base || !empId;
 
   const save = async () => {
-    if (!name || !base) { setErr("Name and Home Base are required."); return; }
+    if (!name || !empId || !base) { setErr("Name, Employee ID, and Home Base are required."); return; }
     setBusy(true); setErr("");
     if (supabase) {
       const { error } = await supabase.from("profiles").update({
-        name, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3),
+        name, emp_id: empId.trim(), rank, home_base: base.toUpperCase().slice(0, 3),
       }).eq("id", user.id);
-      if (error) { setErr(error.message); setBusy(false); return; }
+      if (error) {
+        const msg = (error.message || "").toLowerCase();
+        if (msg.includes("emp_id") || msg.includes("profiles_emp_id_unique")) {
+          setErr("This employee ID is already registered to another account.");
+        } else {
+          setErr(error.message);
+        }
+        setBusy(false); return;
+      }
     }
-    onSave({ ...user, name, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3) });
+    onSave({ ...user, name, emp_id: empId.trim(), rank, home_base: base.toUpperCase().slice(0, 3) });
     setBusy(false);
   };
 
@@ -1413,7 +1444,7 @@ function ProfileScreen({ user, onSave }) {
       <Card>
         <div onKeyDown={e => { if (e.key === "Enter") save(); }}>
           <FInput label="Full Name" value={name}  onChange={setName}  placeholder="Your name as on IndiGo ID" />
-          <FInput label="Employee ID (optional)" value={empId} onChange={setEmpId} placeholder="Helps match your PCSR data more accurately" />
+          <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your IndiGo employee number" hint="Required" />
           <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
           <FInput label="Home Base (IATA)" value={base} onChange={v => setBase(v.toUpperCase().slice(0,3))} placeholder="e.g. DEL" hint="3-letter IATA code of your home base airport" />
           {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -1475,9 +1506,164 @@ function ManageSubscriptionBtn({ userId }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   UPGRADE SCREEN  (after trial used — pick a subscription)
+═══════════════════════════════════════════════════════════════════ */
+function UpgradeScreen({ user, onActivated, goBack }) {
+  // Filter out the trial plan — only show the 2 subscription options.
+  const subPlans = Object.entries(PLANS).filter(([, p]) => p.kind === "subscription");
+  const [planKey,    setPlanKey]    = useState(subPlans[0][0]);
+  const [loading,    setLoading]    = useState(false);
+  const [payErr,     setPayErr]     = useState("");
+  const [stripeReady,setStripeReady]= useState(false);
+  const [clientSecret,setClientSecret] = useState(null);
+
+  const stripeRef         = useRef(null);
+  const elementsRef       = useRef(null);
+  const paymentElementRef = useRef(null);
+  const paymentDivRef     = useRef(null);
+
+  const plan = PLANS[planKey];
+
+  // Load Stripe.js
+  useEffect(() => {
+    const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
+    if (!STRIPE_PK) return;
+    if (!window.Stripe) {
+      const script = document.createElement("script");
+      script.src = "https://js.stripe.com/v3/";
+      script.onload = () => { stripeRef.current = window.Stripe(STRIPE_PK); };
+      document.head.appendChild(script);
+    } else { stripeRef.current = window.Stripe(STRIPE_PK); }
+  }, []);
+
+  // Fetch clientSecret when plan changes
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    setStripeReady(false); setClientSecret(null);
+    (async () => {
+      try {
+        const resp = await fetch("/api/create-subscription", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ plan:planKey, userId:user.id, email:user.email }),
+        });
+        const data = await resp.json();
+        if (cancelled) return;
+        if (data.error) { setPayErr(data.error); return; }
+        setClientSecret(data.clientSecret);
+      } catch (err) { if (!cancelled) setPayErr(err.message); }
+    })();
+    return () => { cancelled = true; };
+  }, [planKey, user?.id, user?.email]);
+
+  // Mount Payment Element
+  useEffect(() => {
+    if (!clientSecret || !stripeRef.current || !paymentDivRef.current) return;
+    if (paymentElementRef.current) { paymentElementRef.current.unmount(); paymentElementRef.current = null; }
+    const elements = stripeRef.current.elements({
+      clientSecret,
+      appearance: { theme:"stripe", variables: { fontFamily:"'Nunito','Segoe UI',sans-serif", colorPrimary:"#1a6fd4", borderRadius:"10px" } },
+    });
+    const paymentEl = elements.create("payment", { layout: "tabs" });
+    paymentEl.mount(paymentDivRef.current);
+    paymentEl.on("ready", () => setStripeReady(true));
+    elementsRef.current = elements;
+    paymentElementRef.current = paymentEl;
+    return () => { if (paymentElementRef.current) { paymentElementRef.current.unmount(); paymentElementRef.current = null; } };
+  }, [clientSecret]);
+
+  const handlePay = async () => {
+    setPayErr(""); setLoading(true);
+    if (!stripeRef.current || !elementsRef.current) {
+      setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return;
+    }
+    try {
+      const { error: submitErr } = await elementsRef.current.submit();
+      if (submitErr) throw new Error(submitErr.message);
+      const { error: confirmErr, paymentIntent } = await stripeRef.current.confirmPayment({
+        elements: elementsRef.current,
+        clientSecret,
+        confirmParams: { return_url: window.location.origin + "?payment_status=success" },
+        redirect: "if_required",
+      });
+      if (confirmErr) throw new Error(confirmErr.message);
+      if (paymentIntent?.status === "succeeded" || !paymentIntent) {
+        onActivated();
+      } else {
+        setPayErr("Payment did not complete. Please try again.");
+      }
+    } catch (err) { setPayErr(err.message); }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ padding:"16px 16px 90px", maxWidth:520, margin:"0 auto" }}>
+      <div style={{ background:"linear-gradient(120deg,"+C.blue+","+C.navy+")", borderRadius:18,
+        padding:"24px 20px", marginBottom:20, textAlign:"center", boxShadow:"0 4px 20px rgba(26,111,212,0.22)" }}>
+        <div style={{ fontSize:32, marginBottom:8 }}>🎉</div>
+        <div style={{ fontSize:20, fontWeight:900, color:C.white, marginBottom:6 }}>Liked what you saw?</div>
+        <div style={{ fontSize:13, color:"rgba(255,255,255,0.7)", lineHeight:1.5 }}>
+          Your trial run is complete. Pick a subscription to keep running unlimited reports each month.
+        </div>
+      </div>
+
+      <div style={{ display:"grid", gap:10, marginBottom:18 }}>
+        {subPlans.map(([key, p]) => {
+          const selected = key === planKey;
+          return (
+            <button key={key} type="button" onClick={() => setPlanKey(key)}
+              style={{
+                textAlign:"left", cursor:"pointer", fontFamily:"inherit",
+                background: selected ? C.blueXLight : C.white,
+                border: "2px solid " + (selected ? C.blue : C.border),
+                borderRadius:12, padding:"14px 16px",
+                display:"flex", justifyContent:"space-between", alignItems:"center", gap:12,
+              }}>
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:15, fontWeight:800, color:C.navy }}>{p.label}</span>
+                  {p.badge && (
+                    <span style={{ fontSize:10, fontWeight:800, background:C.green, color:C.white,
+                      padding:"2px 7px", borderRadius:99, letterSpacing:"0.04em" }}>{p.badge}</span>
+                  )}
+                </div>
+                <div style={{ fontSize:12, color:C.textMid, marginTop:3 }}>{p.sub}</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontSize:18, fontWeight:900, color:C.navy }}>{fmtINR(p.total)}</div>
+                <div style={{ fontSize:11, color:C.textLo }}>billed today</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ background:C.white, borderRadius:14, border:"1.5px solid "+C.border, padding:"16px 18px", marginBottom:14 }}>
+        <div style={{ fontSize:11, color:C.textMid, marginBottom:10 }}>
+          🔒 Payment handled securely by Stripe. Card and UPI accepted.
+        </div>
+        <div ref={paymentDivRef} style={{ minHeight:46 }} />
+        {!stripeReady && <div style={{ fontSize:11, color:C.textLo, marginTop:6 }}>Loading secure payment form...</div>}
+      </div>
+
+      {payErr && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{payErr}</div>}
+
+      <Btn onClick={handlePay} disabled={loading || !stripeReady} icon={loading?"⟳":"🔒"}>
+        {loading ? "Processing..." : `Subscribe — ${fmtINR(plan.total)} →`}
+      </Btn>
+      <div style={{ marginTop:10, textAlign:"center" }}>
+        <button type="button" onClick={goBack} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+          ← Back to calculator
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    CALC SCREEN  (PCSR-based, single file upload)
 ═══════════════════════════════════════════════════════════════════ */
-function CalcScreen({ user, rates, onNeedProfile }) {
+function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
   const [pcsrFile,   setPcsrFile]   = useState(null);
   const [pcsrData,   setPcsrData]   = useState(null);   // parsed PCSR result
   const [result,     setResult]     = useState(null);
@@ -1522,6 +1708,18 @@ function CalcScreen({ user, rates, onNeedProfile }) {
 
   const calculate = async () => {
     if (!pcsrData) return;
+
+    // Access gate: a user can run a calculation if they have an active
+    // subscription, OR if they paid for a trial and haven't used it yet,
+    // OR if they have free-code access (subscription_plan = 'free').
+    const hasActiveSub = ["active", "trialing"].includes(user.subscription_status);
+    const hasUnusedTrial = !!user.trial_paid_at && !user.trial_used;
+    const hasFreeAccess = user.subscription_plan === "free";
+    if (!hasActiveSub && !hasUnusedTrial && !hasFreeAccess) {
+      if (typeof onUpgrade === "function") onUpgrade();
+      return;
+    }
+
     setErr(""); setResult(null); setPhase("fetching");
 
     try {
@@ -1589,6 +1787,18 @@ function CalcScreen({ user, rates, onNeedProfile }) {
 
       setResult(res);
       setPhase("done");
+
+      // If this calculation was the trial run, mark it used (server-side + local).
+      // We deliberately do this AFTER setResult so failures upstream don't
+      // burn the trial — only successful completions count.
+      if (hasUnusedTrial && !hasActiveSub && !hasFreeAccess) {
+        if (supabase) {
+          await supabase.from("profiles").update({ trial_used: true }).eq("id", user.id);
+        }
+        // Mutate user object so subsequent calc attempts in this session also
+        // hit the upgrade gate. Parent App holds the source of truth — propagate.
+        if (typeof onTrialUsed === "function") onTrialUsed();
+      }
     } catch (e) {
       setErr(e?.message || String(e));
       setPhase("idle");
@@ -1601,7 +1811,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
     setApiStats(null); setSvStatus(null); setSvSourceMonth(null);
   };
 
-  const profileIncomplete = !user.home_base;
+  const profileIncomplete = !user.home_base || !user.emp_id;
 
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:680, margin:"0 auto" }}>
@@ -1618,8 +1828,19 @@ function CalcScreen({ user, rates, onNeedProfile }) {
 
       {profileIncomplete && (
         <div style={{ padding:"12px 14px", background:C.goldBg, border:"1.5px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText, marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
-          <span>⚠ Your pilot profile is incomplete — home base is missing.</span>
+          <span>⚠ Your pilot profile is incomplete — please add your home base and employee ID.</span>
           <button type="button" onClick={onNeedProfile} style={{ background:"none", border:"1px solid "+C.goldBorder, borderRadius:8, padding:"4px 10px", color:C.goldText, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Complete profile →</button>
+        </div>
+      )}
+
+      {/* Trial banner — shown when user paid trial but hasn't used it yet */}
+      {user.trial_paid_at && !user.trial_used && !["active","trialing"].includes(user.subscription_status) && (
+        <div style={{ padding:"12px 14px", background:C.blueXLight, border:"1.5px solid "+C.blue, borderRadius:10, fontSize:12, color:C.navy, marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:16 }}>✨</span>
+          <div>
+            <div style={{ fontWeight:800 }}>Trial active — one calculation remaining</div>
+            <div style={{ color:C.textMid, marginTop:2 }}>Upload your PCSR and run your report below. Unlimited reports require a subscription.</div>
+          </div>
         </div>
       )}
 
@@ -2217,6 +2438,16 @@ export default function App() {
   const onActivate   = u => setPendingUser(u);
   const goCheckout   = u => { setPendingUser(u); setScreen("checkout"); };
   const onProfileSave = u => { setUser(u); setTab("calc"); };
+  const onTrialUsed  = () => setUser(u => u ? { ...u, trial_used: true } : u);
+  // After upgrading from trial → subscription, refresh the user from the DB
+  // so subscription_status / plan are picked up before we go back to the calc.
+  const onTrialReset = async () => {
+    if (supabase && user?.id) {
+      const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
+      if (profile) setUser({ ...profile, email: user.email });
+    }
+    setTab("calc");
+  };
 
   const nav = [
     { id:"calc",    icon:"🧮", label:"Calculator" },
@@ -2267,7 +2498,8 @@ export default function App() {
       </div>
 
       <div style={{ animation:"fadeUp 0.25s ease" }}>
-        {tab === "calc"    && <CalcScreen    user={user} rates={rates} onNeedProfile={() => setTab("profile")} />}
+        {tab === "calc"    && <CalcScreen    user={user} rates={rates} onNeedProfile={() => setTab("profile")} onTrialUsed={onTrialUsed} onUpgrade={() => setTab("upgrade")} />}
+        {tab === "upgrade" && <UpgradeScreen user={user} onActivated={onTrialReset} goBack={() => setTab("calc")} />}
         {tab === "profile" && <ProfileScreen user={user} onSave={onProfileSave} />}
         {tab === "admin"   && <AdminScreen   rates={rates} />}
       </div>
