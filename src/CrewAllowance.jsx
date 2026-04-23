@@ -255,10 +255,12 @@ const BtnS = {
   disabled: { background:"#e9eef5", color:C.textLo, border:"none", boxShadow:"none", cursor:"not-allowed" },
 };
 
-function Btn({ children, onClick, variant="primary", small, disabled, full=true, icon }) {
+function Btn({ children, onClick, variant="primary", small, disabled, full=true, icon, submit }) {
   const s = disabled ? BtnS.disabled : (BtnS[variant] || BtnS.primary);
+  // When submit=true, the click is handled by the parent <form>'s onSubmit —
+  // don't also fire onClick here, that would double-trigger the action.
   return (
-    <button type="button" onClick={disabled ? undefined : onClick}
+    <button type={submit ? "submit" : "button"} onClick={disabled || submit ? undefined : onClick}
       style={{ ...s, width:full?"100%":"auto", padding:small?"8px 14px":"13px 20px",
         borderRadius:10, fontFamily:"inherit", fontSize:small?12:14, fontWeight:700,
         letterSpacing:"0.02em", cursor:disabled?"not-allowed":"pointer",
@@ -453,14 +455,14 @@ function PcsrBeforeAfter() {
     <div style={{ maxWidth:520, margin:"0 auto" }}>
       {/* Toggle */}
       <div style={{ display:"flex", justifyContent:"center", gap:0, marginBottom:16 }}>
-        <button onClick={() => setShowResult(false)} style={{
+        <button type="button" onClick={() => setShowResult(false)} style={{
           background: !showResult ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
           border:"1.5px solid " + (!showResult ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"),
           borderRadius:"10px 0 0 10px", padding:"10px 20px", cursor:"pointer",
           fontSize:13, fontWeight:700, color: C.white,
           fontFamily:"inherit", transition:fade,
         }}>📄 Your PCSR</button>
-        <button onClick={() => setShowResult(true)} style={{
+        <button type="button" onClick={() => setShowResult(true)} style={{
           background: showResult ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
           border:"1.5px solid " + (showResult ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"),
           borderRadius:"0 10px 10px 0", padding:"10px 20px", cursor:"pointer",
@@ -649,13 +651,13 @@ function PayslipCompare() {
 
       {/* Toggle buttons */}
       <div style={{ display:"flex", justifyContent:"center", gap:0, marginBottom:20 }}>
-        <button onClick={() => setShowDetail(false)} style={{
+        <button type="button" onClick={() => setShowDetail(false)} style={{
           background: !showDetail ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
           border:"1.5px solid " + (!showDetail ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.1)"),
           borderRadius:"10px 0 0 10px", padding:"10px 20px", cursor:"pointer",
           fontSize:13, fontWeight:700, color:C.white, fontFamily:"inherit", transition:fade,
         }}>Payslip view</button>
-        <button onClick={() => setShowDetail(true)} style={{
+        <button type="button" onClick={() => setShowDetail(true)} style={{
           background: showDetail ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
           border:"1.5px solid " + (showDetail ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.1)"),
           borderRadius:"0 10px 10px 0", padding:"10px 20px", cursor:"pointer",
@@ -778,9 +780,9 @@ function LandingPage({ goLogin, goSignup }) {
           <div style={{ fontSize:16, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
         </div>
         <div style={{ display:"flex", gap:8 }}>
-          <button onClick={goLogin} style={{ background:"transparent", border:"1.5px solid "+C.borderMid,
+          <button type="button" onClick={goLogin} style={{ background:"transparent", border:"1.5px solid "+C.borderMid,
             borderRadius:9, color:C.textMid, fontSize:13, padding:"7px 14px", cursor:"pointer", fontWeight:700, fontFamily:"inherit" }}>Sign in</button>
-          <button onClick={goSignup} style={{ background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
+          <button type="button" onClick={goSignup} style={{ background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
             border:"none", borderRadius:9, color:C.white, fontSize:13, padding:"7px 16px",
             cursor:"pointer", fontWeight:700, fontFamily:"inherit", boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>Get started →</button>
         </div>
@@ -800,12 +802,12 @@ function LandingPage({ goLogin, goSignup }) {
             Upload your Personal Crew Schedule Report (PCSR) and get an instant, itemised breakdown of every allowance — Deadhead, Night Flying, Layover, Tail-Swap, and Transit.
           </p>
           <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
-            <button onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
+            <button type="button" onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
               color:C.blue, fontSize:15, padding:"14px 28px", cursor:"pointer", fontWeight:800,
               fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)" }}>
               Get started — ₹100/month →
             </button>
-            <button onClick={goLogin} style={{ background:"rgba(255,255,255,0.15)",
+            <button type="button" onClick={goLogin} style={{ background:"rgba(255,255,255,0.15)",
               border:"1.5px solid rgba(255,255,255,0.3)", borderRadius:12, color:C.white,
               fontSize:15, padding:"14px 28px", cursor:"pointer", fontWeight:700, fontFamily:"inherit" }}>Sign in</button>
           </div>
@@ -914,7 +916,7 @@ function LandingPage({ goLogin, goSignup }) {
               </div>
             ))}
           </div>
-          <button onClick={goSignup} style={{ width:"100%", background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
+          <button type="button" onClick={goSignup} style={{ width:"100%", background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
             border:"none", borderRadius:11, color:C.white, fontSize:15, padding:"14px",
             cursor:"pointer", fontWeight:800, fontFamily:"inherit", boxShadow:"0 3px 12px rgba(26,111,212,0.3)" }}>
             Get started →
@@ -925,7 +927,7 @@ function LandingPage({ goLogin, goSignup }) {
         <h2 style={{ fontSize:"clamp(20px,4vw,28px)", fontWeight:900, color:C.white, letterSpacing:"-0.01em", marginBottom:12 }}>
           Ready to know what you're owed?
         </h2>
-        <button onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
+        <button type="button" onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
           color:C.blue, fontSize:15, padding:"14px 32px", cursor:"pointer", fontWeight:800,
           fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)", marginTop:16 }}>
           Create your account →
@@ -969,16 +971,16 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
       <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your registered email address" autoComplete="email" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Your password" autoComplete="current-password" />
       {err && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
-      <Btn onClick={submit} disabled={busy}>{busy ? "Signing in..." : "Sign In →"}</Btn>
+      <Btn onClick={submit} disabled={busy} submit>{busy ? "Signing in..." : "Sign In →"}</Btn>
       <div style={{ marginTop:14, textAlign:"center" }}>
-        <button onClick={goForgot} style={{ background:"none", border:"none", color:C.blue, fontSize:13, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>Forgot password?</button>
+        <button type="button" onClick={goForgot} style={{ background:"none", border:"none", color:C.blue, fontSize:13, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>Forgot password?</button>
       </div>
       <div style={{ marginTop:10, textAlign:"center", fontSize:13, color:C.textMid }}>
         New user?{" "}
-        <button onClick={goSignup} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700 }}>Create an account</button>
+        <button type="button" onClick={goSignup} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700 }}>Create an account</button>
       </div>
       <div style={{ marginTop:10, textAlign:"center" }}>
-        <button onClick={goLanding} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>← Back to home</button>
+        <button type="button" onClick={goLanding} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>← Back to home</button>
       </div>
     </AuthShell>
   );
@@ -1038,18 +1040,18 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
       {err === "duplicate" && (
         <div style={{ padding:"12px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14, lineHeight:1.7 }}>
           An account with this email already exists.{" "}
-          <button onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>Sign in</button>
+          <button type="button" onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>Sign in</button>
           {" or "}
-          <button onClick={goForgot} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>reset your password</button>.
+          <button type="button" onClick={goForgot} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:12, fontWeight:700, textDecoration:"underline", padding:0 }}>reset your password</button>.
         </div>
       )}
-      <Btn onClick={submit} disabled={busy}>{busy ? "Creating account..." : "Continue to payment →"}</Btn>
+      <Btn onClick={submit} disabled={busy} submit>{busy ? "Creating account..." : "Continue to payment →"}</Btn>
       <div style={{ marginTop:12, textAlign:"center", fontSize:13, color:C.textMid }}>
         Already registered?{" "}
-        <button onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700 }}>Sign in</button>
+        <button type="button" onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700 }}>Sign in</button>
       </div>
       <div style={{ marginTop:8, textAlign:"center" }}>
-        <button onClick={goLanding} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>← Back to home</button>
+        <button type="button" onClick={goLanding} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>← Back to home</button>
       </div>
     </AuthShell>
   );
@@ -1277,10 +1279,10 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       </Btn>
 
       <div style={{ marginTop:14, textAlign:"center", display:"flex", flexDirection:"column", gap:6 }}>
-        <button onClick={() => { setShowFree(s => !s); setPayErr(""); }} style={{ background:"none", border:"none", color:C.textMid, fontSize:12, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>
+        <button type="button" onClick={() => { setShowFree(s => !s); setPayErr(""); }} style={{ background:"none", border:"none", color:C.textMid, fontSize:12, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>
           {showFree ? "← Back to card payment" : "Have a free-access code?"}
         </button>
-        <button onClick={goLogin} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Already have an account? Sign in</button>
+        <button type="button" onClick={goLogin} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Already have an account? Sign in</button>
       </div>
     </AuthShell>
   );
@@ -1305,9 +1307,9 @@ function ForgotScreen({ goLogin }) {
         <>
           <FInput label="Your registered email address" type="email" value={email} onChange={setEmail} placeholder="The email address on your account" />
           {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
-          <Btn onClick={send} disabled={busy}>{busy?"Sending...":"Send Reset Link"}</Btn>
+          <Btn onClick={send} disabled={busy} submit>{busy?"Sending...":"Send Reset Link"}</Btn>
           <div style={{ marginTop:12, textAlign:"center" }}>
-            <button onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>← Back to sign in</button>
+            <button type="button" onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>← Back to sign in</button>
           </div>
         </>
       ) : (
@@ -1362,7 +1364,7 @@ function ResetPasswordScreen({ goLogin }) {
       <FInput label="New password" type="password" value={pass} onChange={setPass} placeholder="Minimum 8 characters" />
       <FInput label="Confirm new password" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat your new password" />
       {err && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
-      <Btn onClick={submit} disabled={busy}>{busy?"Updating password...":"Update password →"}</Btn>
+      <Btn onClick={submit} disabled={busy} submit>{busy?"Updating password...":"Update password →"}</Btn>
     </AuthShell>
   );
 }
@@ -1617,7 +1619,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
       {profileIncomplete && (
         <div style={{ padding:"12px 14px", background:C.goldBg, border:"1.5px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText, marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
           <span>⚠ Your pilot profile is incomplete — home base is missing.</span>
-          <button onClick={onNeedProfile} style={{ background:"none", border:"1px solid "+C.goldBorder, borderRadius:8, padding:"4px 10px", color:C.goldText, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Complete profile →</button>
+          <button type="button" onClick={onNeedProfile} style={{ background:"none", border:"1px solid "+C.goldBorder, borderRadius:8, padding:"4px 10px", color:C.goldText, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Complete profile →</button>
         </div>
       )}
 
@@ -2019,7 +2021,7 @@ function AdminScreen({ rates }) {
             <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:14 }}>
               <input ref={svFileRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }}
                 onChange={e => { if (e.target.files[0]) setSvFile(e.target.files[0]); }} />
-              <button onClick={() => svFileRef.current?.click()}
+              <button type="button" onClick={() => svFileRef.current?.click()}
                 style={{ background:C.white, border:"1.5px solid "+C.borderMid, borderRadius:10,
                   padding:"10px 16px", fontSize:13, fontWeight:700, color:C.blue, cursor:"pointer", fontFamily:"inherit" }}>
                 Choose Excel file
@@ -2258,7 +2260,7 @@ export default function App() {
             <div style={{ fontSize:9, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", opacity:0.75 }}>{CONFIG.airline}</div>
           </div>
         </div>
-        <button onClick={onLogout} style={{ background:C.blueXLight, border:"1px solid "+C.border,
+        <button type="button" onClick={onLogout} style={{ background:C.blueXLight, border:"1px solid "+C.border,
           borderRadius:9, color:C.textMid, fontSize:12, padding:"7px 14px", cursor:"pointer", fontWeight:700 }}>
           Sign out
         </button>
