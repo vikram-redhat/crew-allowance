@@ -1452,8 +1452,8 @@ function ProfileScreen({ user, onSave }) {
         </div>
       </Card>
 
-      {/* Subscription management */}
-      {user.stripe_customer_id && (
+      {/* Subscription management — hidden for admins (they have unlimited access) */}
+      {!user.is_admin && user.stripe_customer_id && (
         <Card style={{ marginTop:16 }}>
           <div style={{ fontSize:14, fontWeight:800, color:C.navy, marginBottom:10 }}>Subscription</div>
           <div style={{ display:"grid", gap:6, fontSize:13, color:C.textMid, marginBottom:14 }}>
@@ -1703,8 +1703,20 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
   };
 
   const onPcsrParsed = useCallback((file, parsed) => {
+    // Ownership check: a non-admin can only upload their own PCSR. We compare
+    // the employee_id parsed from the PDF against the user's profile emp_id.
+    // Admins can upload anyone's PCSR (they need this to help debug user reports).
+    if (!user.is_admin) {
+      const pcsrEmpId = String(parsed?.pilot?.employee_id || "").trim();
+      const myEmpId   = String(user.emp_id || "").trim();
+      if (pcsrEmpId && myEmpId && pcsrEmpId !== myEmpId) {
+        setPcsrFile(null); setPcsrData(null); setResult(null);
+        setErr(`This PCSR belongs to employee ${pcsrEmpId}, but your account is registered to employee ${myEmpId}. You can only upload your own PCSR.`);
+        return;
+      }
+    }
     setErr(""); setPcsrFile(file); setPcsrData(parsed); setResult(null);
-  }, []);
+  }, [user.is_admin, user.emp_id]);
 
   const calculate = async () => {
     if (!pcsrData) return;
@@ -2207,10 +2219,12 @@ function AdminScreen({ rates }) {
         <div>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
             <div style={{ fontSize:15, fontWeight:700, color:C.navy }}>Registered Users</div>
-            <Badge color="green">{users.filter(u => u.is_active).length} active</Badge>
+            <Badge color="green">{users.filter(u => u.is_active || u.is_admin).length} active</Badge>
           </div>
           {users.length === 0 && <div style={{ textAlign:"center", padding:40, color:C.textLo }}>No users yet, or database not connected.</div>}
-          {users.map(u => (
+          {users.map(u => {
+            const effectivelyActive = u.is_active || u.is_admin;
+            return (
             <Card key={u.id} style={{ marginBottom:10, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:14, fontWeight:700, color:C.navy, marginBottom:2 }}>{u.name}</div>
@@ -2218,7 +2232,7 @@ function AdminScreen({ rates }) {
                 <div style={{ fontSize:11, color:C.textLo, marginTop:2 }}>ID: {u.emp_id} · {u.rank} · Base: {u.home_base}</div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
-                <Badge color={u.is_active ? "green" : "red"}>{u.is_active ? "Active" : "Inactive"}</Badge>
+                <Badge color={effectivelyActive ? "green" : "red"}>{effectivelyActive ? "Active" : "Inactive"}</Badge>
                 {!u.is_admin && (
                   <Btn onClick={() => toggleUser(u.id, u.is_active)} variant={u.is_active?"danger":"ghost"} small full={false}>
                     {u.is_active ? "Deactivate" : "Activate"}
@@ -2227,7 +2241,8 @@ function AdminScreen({ rates }) {
                 {u.is_admin && <Badge color="blue">Admin</Badge>}
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
