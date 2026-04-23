@@ -987,16 +987,30 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
 
   const submit = async () => {
     if (!name || !email || !pass) { setErr("Name, email, and password are required."); return; }
+    if (!/\S+@\S+\.\S+/.test(email)) { setErr("Please enter a valid email address."); return; }
     if (pass !== confirm) { setErr("Passwords do not match."); return; }
     if (pass.length < 8)  { setErr("Password must be at least 8 characters."); return; }
     setErr(""); setBusy(true);
     if (!supabase) { sbWarn(); setErr("Database not configured."); setBusy(false); return; }
     const { data, error } = await supabase.auth.signUp({ email, password: pass });
     if (error) { setErr(error.message); setBusy(false); return; }
-    await supabase.from("profiles").insert({
+    // Supabase with email-enumeration protection returns a fake user with
+    // an empty identities array when the email already exists. Detect this
+    // and show a clear error instead of proceeding to checkout.
+    if (!data.user?.id || (data.user.identities && data.user.identities.length === 0)) {
+      setErr("An account with this email already exists. Please sign in instead.");
+      setBusy(false);
+      return;
+    }
+    const { error: profileErr } = await supabase.from("profiles").insert({
       id: data.user.id, name, email, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3),
       is_admin: false, is_active: false,
     });
+    if (profileErr) {
+      setErr("Could not create your profile. This email may already be registered. Please try signing in.");
+      setBusy(false);
+      return;
+    }
     setBusy(false);
     goCheckout({ id: data.user.id, name, email, emp_id: empId, rank, home_base: base });
   };
