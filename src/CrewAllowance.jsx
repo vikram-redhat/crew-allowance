@@ -640,7 +640,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
   const [busy,    setBusy]    = useState(false);
 
   const submit = async () => {
-    if (!name || !email || !empId || !pass) { setErr("All fields are required."); return; }
+    if (!name || !email || !pass) { setErr("Name, email, and password are required."); return; }
     if (pass !== confirm) { setErr("Passwords do not match."); return; }
     if (pass.length < 8)  { setErr("Password must be at least 8 characters."); return; }
     setErr(""); setBusy(true);
@@ -648,7 +648,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
     const { data, error } = await supabase.auth.signUp({ email, password: pass });
     if (error) { setErr(error.message); setBusy(false); return; }
     await supabase.from("profiles").insert({
-      id: data.user.id, name, emp_id: empId, rank, home_base: base.toUpperCase().slice(0, 3),
+      id: data.user.id, name, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3),
       is_admin: false, is_active: false,
     });
     setBusy(false);
@@ -658,8 +658,8 @@ function SignupScreen({ goLogin, goLanding, goCheckout }) {
   return (
     <AuthShell title="Create account" sub="IndiGo crew only · Takes 60 seconds">
       <FInput label="Full name" value={name} onChange={setName} placeholder="Your full name as it appears on your ID" />
-      <FInput label="IndiGo email address" type="email" value={email} onChange={setEmail} placeholder="Your official IndiGo email address" />
-      <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your IndiGo employee number" />
+      <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your email address" />
+      <FInput label="Employee ID (optional)" value={empId} onChange={setEmpId} placeholder="Helps match your PCSR data more accurately" />
       <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
       <FInput label="Home Base (IATA)" value={base} onChange={setBase} placeholder="e.g. DEL" hint="3-letter IATA code of your home airport" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Choose a strong password (min 8 characters)" />
@@ -964,18 +964,18 @@ function ProfileScreen({ user, onSave }) {
   const [err,   setErr]   = useState("");
   const [busy,  setBusy]  = useState(false);
 
-  const incomplete = !name || !empId || !base;
+  const incomplete = !name || !base;
 
   const save = async () => {
-    if (!name || !empId || !base) { setErr("Name, Employee ID and Home Base are required."); return; }
+    if (!name || !base) { setErr("Name and Home Base are required."); return; }
     setBusy(true); setErr("");
     if (supabase) {
       const { error } = await supabase.from("profiles").update({
-        name, emp_id: empId, rank, home_base: base.toUpperCase().slice(0, 3),
+        name, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3),
       }).eq("id", user.id);
       if (error) { setErr(error.message); setBusy(false); return; }
     }
-    onSave({ ...user, name, emp_id: empId, rank, home_base: base.toUpperCase().slice(0, 3) });
+    onSave({ ...user, name, emp_id: empId || null, rank, home_base: base.toUpperCase().slice(0, 3) });
     setBusy(false);
   };
 
@@ -996,7 +996,7 @@ function ProfileScreen({ user, onSave }) {
       )}
       <Card>
         <FInput label="Full Name" value={name}  onChange={setName}  placeholder="Your name as on IndiGo ID" />
-        <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your IndiGo employee number" />
+        <FInput label="Employee ID (optional)" value={empId} onChange={setEmpId} placeholder="Helps match your PCSR data more accurately" />
         <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
         <FInput label="Home Base (IATA)" value={base} onChange={v => setBase(v.toUpperCase().slice(0,3))} placeholder="e.g. DEL" hint="3-letter IATA code of your home base airport" />
         {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -1133,7 +1133,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
     setApiStats(null); setSvStatus(null); setSvSourceMonth(null);
   };
 
-  const profileIncomplete = !user.home_base || !user.emp_id;
+  const profileIncomplete = !user.home_base;
 
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:680, margin:"0 auto" }}>
@@ -1150,7 +1150,7 @@ function CalcScreen({ user, rates, onNeedProfile }) {
 
       {profileIncomplete && (
         <div style={{ padding:"12px 14px", background:C.goldBg, border:"1.5px solid "+C.goldBorder, borderRadius:10, fontSize:12, color:C.goldText, marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
-          <span>⚠ Your pilot profile is incomplete — home base or employee ID missing.</span>
+          <span>⚠ Your pilot profile is incomplete — home base is missing.</span>
           <button onClick={onNeedProfile} style={{ background:"none", border:"1px solid "+C.goldBorder, borderRadius:8, padding:"4px 10px", color:C.goldText, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Complete profile →</button>
         </div>
       )}
