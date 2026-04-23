@@ -25,7 +25,9 @@ const PLAN_TO_ENV = {
   "12mo": "STRIPE_PRICE_12MO",
 };
 
-const PLAN_DURATION_MONTHS = { "1mo": 1, "12mo": 12 };
+// Comp accounts can pick any plan (including the trial). Trial maps to 1mo
+// of comp access — they're getting it free, no point limiting them to one run.
+const COMP_PLAN_DURATION_MONTHS = { "trial": 1, "1mo": 1, "12mo": 12 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -35,17 +37,26 @@ export default async function handler(req, res) {
 
   const { plan, userId, email, freeCode } = req.body || {};
 
-  if (!plan || !PLAN_TO_ENV[plan]) {
-    return res.status(400).json({ error: "Invalid plan. Must be '1mo' or '12mo'." });
-  }
   if (!userId || !email) {
     return res.status(400).json({ error: "userId and email are required." });
   }
 
-  // ─── Free-access (comp) path — pending admin approval ───────────────────
-  // The user enters the comp code; we mark them as a free-plan account but
-  // leave is_active = false. An admin must manually activate them from the
-  // Users tab. This stops blanket abuse if the comp code ever leaks.
+  // Comp path uses a permissive plan check (trial / 1mo / 12mo all OK).
+  // Paid path requires a real Stripe price, so only 1mo / 12mo accepted.
+  const isComp = !!freeCode;
+  if (isComp && !COMP_PLAN_DURATION_MONTHS[plan]) {
+    return res.status(400).json({ error: "Invalid plan." });
+  }
+  if (!isComp && !PLAN_TO_ENV[plan]) {
+    return res.status(400).json({ error: "Invalid plan. Must be '1mo' or '12mo'." });
+  }
+
+  // ─── Free-access (comp) path — auto-approved ────────────────────────────
+  // Comp users are activated immediately. If the code leaks, rotate the
+  // FREE_ACCESS_CODE env var in Vercel — existing comp users keep working
+  // (their is_active is already true), but new signups with the leaked code
+  // will be rejected. To revoke an individual, deactivate them from the
+  // admin Users tab.
   if (freeCode) {
     const expected = process.env.FREE_ACCESS_CODE;
     if (!expected || freeCode !== expected) {
@@ -55,17 +66,17 @@ export default async function handler(req, res) {
     if (!supa) return res.status(500).json({ error: "Supabase service role not configured." });
 
     const periodEnd = new Date();
-    periodEnd.setMonth(periodEnd.getMonth() + PLAN_DURATION_MONTHS[plan]);
+    periodEnd.setMonth(periodEnd.getMonth() + COMP_PLAN_DURATION_MONTHS[plan]);
 
     const { error } = await supa.from("profiles").update({
-      is_active:                       false,           // ← admin must approve
+      is_active:                       true,
       subscription_plan:               "free",
-      subscription_status:             "pending_approval",
+      subscription_status:             "active",
       subscription_current_period_end: periodEnd.toISOString(),
     }).eq("id", userId);
 
     if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ free: true, pending_approval: true });
+    return res.status(200).json({ free: true });
   }
 
   // ─── Paid path: create Customer + Subscription ──────────────────────────

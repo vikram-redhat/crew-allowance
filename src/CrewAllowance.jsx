@@ -1226,29 +1226,16 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   };
 
   if (done) return (
-    <AuthShell title={showFree ? "Application received ⏳" : "You're all set! 🎉"} sub="">
+    <AuthShell title="You're all set! 🎉" sub="">
       <div style={{ textAlign:"center", padding:"8px 0 18px" }}>
-        <div style={{ width:60, height:60, borderRadius:"50%",
-          background: showFree ? C.goldBg : C.greenBg,
-          border:"2px solid " + (showFree ? C.goldBorder : C.green),
-          display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:28, margin:"0 auto 16px" }}>{showFree ? "⏳" : "✓"}</div>
-        {showFree ? (
-          <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
-            Thanks {pendingUser?.name?.split(" ")[0]}! Your comp-access request has been submitted.
-            <br /><br />
-            An admin will review and activate your account shortly. You'll be able to sign in once approved.
-            <br /><br />
-            Questions? Email <a href="mailto:help@crewallowance.com" style={{ color:C.blue }}>help@crewallowance.com</a>.
-          </p>
-        ) : (
-          <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
-            Payment confirmed. Your subscription is active.
-            <br />Welcome to Crew Allowance, {pendingUser?.name?.split(" ")[0]}!
-          </p>
-        )}
+        <div style={{ width:60, height:60, borderRadius:"50%", background:C.greenBg, border:"2px solid "+C.green,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, margin:"0 auto 16px" }}>✓</div>
+        <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
+          {showFree ? "Your free account is activated." : "Payment confirmed. Your subscription is active."}
+          <br />Welcome to Crew Allowance, {pendingUser?.name?.split(" ")[0]}!
+        </p>
       </div>
-      <Btn onClick={goLogin}>{showFree ? "Back to sign in" : "Sign in to your account →"}</Btn>
+      <Btn onClick={goLogin}>Sign in to your account →</Btn>
     </AuthShell>
   );
 
