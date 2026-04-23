@@ -962,7 +962,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
     if (error) { setErr("Invalid email or password."); setBusy(false); return; }
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
     if (!profile) { setErr("Account not found. Please contact admin."); setBusy(false); return; }
-    if (!profile.is_active) { setErr("Your account is not yet active. Please complete your subscription or contact help@crewallowance.com."); setBusy(false); return; }
+    if (!profile.is_active && !profile.is_admin) { setErr("Your account is not yet active. Please complete your subscription or contact help@crewallowance.com."); setBusy(false); return; }
     onLogin({ ...profile, email: data.user.email });
     setBusy(false);
   };
@@ -2407,7 +2407,7 @@ export default function App() {
       supabase.auth.getSession().then(async ({ data: { session } }) => {
         if (session) {
           const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
-          if (profile && profile.is_active) {
+          if (profile && (profile.is_active || profile.is_admin)) {
             setUser({ ...profile, email: session.user.email });
             setTab(profile.is_admin ? "admin" : "calc");
             setScreen("app");
