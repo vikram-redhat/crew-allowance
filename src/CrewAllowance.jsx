@@ -411,6 +411,168 @@ function PcsrDropZone({ file, onParsed, onFail }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   PCSR → RESULTS — animated before/after toggle
+═══════════════════════════════════════════════════════════════════ */
+function PcsrBeforeAfter() {
+  const [showResult, setShowResult] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => setShowResult(v => !v), 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const fade = "all 0.5s ease";
+  const mono = "'Courier New', Consolas, monospace";
+
+  return (
+    <div style={{ maxWidth:480, margin:"0 auto 32px" }}>
+      {/* Toggle */}
+      <div style={{ display:"flex", justifyContent:"center", gap:0, marginBottom:16 }}>
+        <button onClick={() => setShowResult(false)} style={{
+          background: !showResult ? C.blue : C.blueXLight,
+          border:"1.5px solid " + (!showResult ? C.blue : C.border),
+          borderRadius:"10px 0 0 10px", padding:"10px 20px", cursor:"pointer",
+          fontSize:13, fontWeight:700, color: !showResult ? C.white : C.textMid,
+          fontFamily:"inherit", transition:fade,
+        }}>📄 Your PCSR</button>
+        <button onClick={() => setShowResult(true)} style={{
+          background: showResult ? C.blue : C.blueXLight,
+          border:"1.5px solid " + (showResult ? C.blue : C.border),
+          borderRadius:"0 10px 10px 0", padding:"10px 20px", cursor:"pointer",
+          fontSize:13, fontWeight:700, color: showResult ? C.white : C.textMid,
+          fontFamily:"inherit", transition:fade,
+        }}>📊 Your breakdown</button>
+      </div>
+
+      <div style={{ background:C.white, borderRadius:14, border:"1.5px solid "+C.border,
+        boxShadow:C.shadowMd, overflow:"hidden", position:"relative", minHeight:320 }}>
+
+        {/* ── PCSR view ── */}
+        <div style={{ opacity: showResult ? 0 : 1, transform: showResult ? "translateX(-20px)" : "translateX(0)",
+          transition:fade, position: showResult ? "absolute" : "relative", top:0, left:0, right:0 }}>
+          <div style={{ background:C.navy, padding:"10px 16px", display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ fontSize:18 }}>📄</span>
+            <div>
+              <div style={{ fontSize:12, fontWeight:800, color:C.white }}>PCSR — Personal Crew Schedule Report</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)" }}>Sample with dummy data</div>
+            </div>
+          </div>
+          <div style={{ padding:"14px 16px", fontFamily:mono, fontSize:11, color:C.textMid, lineHeight:1.7 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+              <span style={{ color:C.navy, fontWeight:700 }}>Name: A. SHARMA</span>
+              <span>Emp: 28XXX</span>
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
+              <span>Rank: CPT</span><span>Base: DEL</span><span>Fleet: A320</span>
+            </div>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:10 }}>
+              <thead>
+                <tr style={{ borderBottom:"1.5px solid "+C.border, textAlign:"left" }}>
+                  {["Dt","Flt","Fr","To","STD","ATD","STA","ATA","Reg"].map(h => (
+                    <th key={h} style={{ padding:"3px 2px", color:C.navy, fontWeight:700 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["01","6E204","DEL","BOM","06:00","06:12","08:10","08:05","VT-IXX"],
+                  ["01","6E521","BOM","DEL","10:35","10:42","12:50","12:44","VT-IYY"],
+                  ["03","6E892","DEL","CCU","14:20","14:28","16:45","16:50","VT-IZZ"],
+                  ["04","6E117","CCU","DEL","08:10","08:15","10:30","10:22","VT-IZZ"],
+                  ["07","6E304","DEL","BLR","05:15","05:20","08:00","07:55","VT-IAA"],
+                  ["07","6E819","BLR","DEL","11:40","11:48","14:10","14:02","VT-IBB"],
+                  ["10","6E031","DEL","MAA","04:50","04:55","07:30","07:25","VT-ICC"],
+                ].map((r, i) => (
+                  <tr key={i} style={{ borderBottom:"1px solid "+C.border, color:C.textMid }}>
+                    {r.map((c, j) => <td key={j} style={{ padding:"2px" }}>{c}</td>)}
+                  </tr>
+                ))}
+                <tr><td colSpan={9} style={{ padding:"3px 2px", color:C.textLo, fontStyle:"italic" }}>... 16 more sectors</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ── Results view ── */}
+        <div style={{ opacity: showResult ? 1 : 0, transform: showResult ? "translateX(0)" : "translateX(20px)",
+          transition:fade, position: showResult ? "relative" : "absolute", top:0, left:0, right:0 }}>
+          <div style={{ background:"linear-gradient(135deg,"+C.blue+","+C.navy+")", padding:"10px 16px",
+            display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:18 }}>📊</span>
+              <div>
+                <div style={{ fontSize:12, fontWeight:800, color:C.white }}>Allowance Breakdown</div>
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)" }}>A. Sharma · March 2026</div>
+              </div>
+            </div>
+            <div style={{ fontSize:18, fontWeight:900, color:C.white }}>₹24,350</div>
+          </div>
+          <div style={{ padding:"14px 16px" }}>
+            {/* Deadhead */}
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ fontSize:14 }}>🛫</span>
+                  <span style={{ fontSize:14, fontWeight:800, color:C.navy }}>Deadhead</span>
+                </div>
+                <span style={{ fontSize:14, fontWeight:900, color:C.navy }}>₹8,000</span>
+              </div>
+              {[["6E204","DEL → BOM","DHF","2h 10m","₹4,000"],["6E892","DEL → CCU","DHF","2h 05m","₹4,000"]].map(([flt,route,typ,dur,amt]) => (
+                <div key={flt} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:C.textMid,
+                  background:C.blueXLight, borderRadius:6, padding:"4px 8px", marginBottom:3 }}>
+                  <span style={{ fontWeight:700, color:C.navy }}>{flt}</span>
+                  <span>{route}</span>
+                  <span style={{ color:C.blue, fontWeight:600 }}>{typ}</span>
+                  <span>{dur}</span>
+                  <span style={{ fontWeight:700 }}>{amt}</span>
+                </div>
+              ))}
+            </div>
+            {/* Layover */}
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ fontSize:14 }}>🏨</span>
+                  <span style={{ fontSize:14, fontWeight:800, color:C.navy }}>Layover</span>
+                </div>
+                <span style={{ fontSize:14, fontWeight:900, color:C.navy }}>₹6,600</span>
+              </div>
+              {[["CCU","3–4 Mar","18h 42m","₹3,000"],["BLR","7–8 Mar","22h 15m","₹3,600"]].map(([loc,dates,dur,amt]) => (
+                <div key={loc} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:C.textMid,
+                  background:C.blueXLight, borderRadius:6, padding:"4px 8px", marginBottom:3 }}>
+                  <span style={{ fontWeight:700, color:C.navy }}>{loc}</span>
+                  <span>{dates}</span>
+                  <span>{dur}</span>
+                  <span style={{ fontWeight:700 }}>{amt}</span>
+                </div>
+              ))}
+            </div>
+            {/* Remaining allowances compact */}
+            <div style={{ display:"grid", gap:6 }}>
+              {[["🌙","Night Flying","3 sectors","₹6,000"],["✈️","Tail-Swap","2 swaps","₹3,000"],["⏱","Transit","1 halt","₹750"]].map(([icon,name,detail,amt]) => (
+                <div key={name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+                  background:C.sky, borderRadius:8, padding:"6px 10px" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <span style={{ fontSize:13 }}>{icon}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:C.navy }}>{name}</span>
+                  </div>
+                  <span style={{ fontSize:10, color:C.textLo }}>{detail}</span>
+                  <span style={{ fontSize:12, fontWeight:800, color:C.navy }}>{amt}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ textAlign:"center", marginTop:10, fontSize:11, color:C.textLo }}>
+        Tap to switch · Auto-toggles every 5s
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    PAYSLIP vs CREW ALLOWANCE — animated before/after toggle
 ═══════════════════════════════════════════════════════════════════ */
 function PayslipCompare() {
@@ -619,51 +781,8 @@ function LandingPage({ goLogin, goSignup }) {
           </p>
         </div>
 
-        {/* PCSR mini-preview — shows what the document looks like */}
-        <div style={{ maxWidth:420, margin:"0 auto 32px", background:C.white, borderRadius:14, border:"1.5px solid "+C.border,
-          boxShadow:C.shadowMd, overflow:"hidden" }}>
-          <div style={{ background:C.navy, padding:"10px 16px", display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:18 }}>📄</span>
-            <div>
-              <div style={{ fontSize:12, fontWeight:800, color:C.white, letterSpacing:"0.04em" }}>PCSR — Personal Crew Schedule Report</div>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)" }}>Sample preview · Your actual data will differ</div>
-            </div>
-          </div>
-          <div style={{ padding:"14px 16px", fontSize:11, fontFamily:"'Courier New', monospace", color:C.textMid, lineHeight:1.8 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-              <span style={{ color:C.navy, fontWeight:700 }}>Name: A. SHARMA</span>
-              <span>Emp: 28XXX</span>
-            </div>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
-              <span>Rank: CAPTAIN</span>
-              <span>Base: DEL</span>
-              <span>Fleet: A320</span>
-            </div>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:10 }}>
-              <thead>
-                <tr style={{ borderBottom:"1.5px solid "+C.border, textAlign:"left" }}>
-                  {["Date","Flt","From","To","STD","ATD","STA","ATA","Reg"].map(h => (
-                    <th key={h} style={{ padding:"4px 3px", color:C.navy, fontWeight:700 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ["01","6E204","DEL","BOM","06:00","06:12","08:10","08:05","VT-IXX"],
-                  ["01","6E521","BOM","DEL","10:35","10:42","12:50","12:44","VT-IYY"],
-                  ["03","6E892","DEL","CCU","14:20","14:28","16:45","16:50","VT-IZZ"],
-                  ["04","6E117","CCU","DEL","08:10","08:15","10:30","10:22","VT-IZZ"],
-                  ["07","6E304","DEL","BLR","05:15","05:20","08:00","07:55","VT-IAA"],
-                ].map((r, i) => (
-                  <tr key={i} style={{ borderBottom:"1px solid "+C.border, color:C.textMid }}>
-                    {r.map((c, j) => <td key={j} style={{ padding:"3px" }}>{c}</td>)}
-                  </tr>
-                ))}
-                <tr><td colSpan={9} style={{ padding:"4px 3px", color:C.textLo, fontStyle:"italic" }}>... 18 more sectors</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        {/* PCSR → Results animated before/after */}
+        <PcsrBeforeAfter />
         <div style={{ display:"grid", gap:16 }}>
           {steps.map((s, i) => (
             <div key={i} style={{ display:"flex", gap:16, alignItems:"flex-start", background:C.white,
