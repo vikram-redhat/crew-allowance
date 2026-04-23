@@ -258,7 +258,7 @@ const BtnS = {
 function Btn({ children, onClick, variant="primary", small, disabled, full=true, icon }) {
   const s = disabled ? BtnS.disabled : (BtnS[variant] || BtnS.primary);
   return (
-    <button onClick={disabled ? undefined : onClick}
+    <button type="button" onClick={disabled ? undefined : onClick}
       style={{ ...s, width:full?"100%":"auto", padding:small?"8px 14px":"13px 20px",
         borderRadius:10, fontFamily:"inherit", fontSize:small?12:14, fontWeight:700,
         letterSpacing:"0.02em", cursor:disabled?"not-allowed":"pointer",
@@ -328,7 +328,8 @@ function TC({ children, i, right, gold }) {
   );
 }
 
-function AuthShell({ children, title, sub, wide }) {
+function AuthShell({ children, title, sub, wide, onSubmit }) {
+  const handleSubmit = onSubmit ? (e => { e.preventDefault(); onSubmit(); }) : undefined;
   return (
     <div style={{ minHeight:"100vh",
       background:"linear-gradient(160deg,"+C.skyMid+" 0%,"+C.sky+" 50%,"+C.white+" 100%)",
@@ -341,12 +342,12 @@ function AuthShell({ children, title, sub, wide }) {
         <div style={{ fontSize:22, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
         <div style={{ fontSize:11, color:C.blue, letterSpacing:"0.12em", textTransform:"uppercase", marginTop:2, opacity:0.75 }}>{CONFIG.airline} · {CONFIG.tagline}</div>
       </div>
-      <div style={{ width:"100%", maxWidth:wide ? 520 : 420, background:C.white, borderRadius:22,
+      <form onSubmit={handleSubmit} style={{ width:"100%", maxWidth:wide ? 520 : 420, background:C.white, borderRadius:22,
         boxShadow:"0 12px 48px rgba(26,111,212,0.14)", padding:"28px 24px", border:"1px solid "+C.border }}>
         <h2 style={{ margin:"0 0 4px", fontSize:20, color:C.navy, fontWeight:900, letterSpacing:"-0.01em" }}>{title}</h2>
         {sub && <p style={{ margin:"0 0 20px", fontSize:13, color:C.textMid }}>{sub}</p>}
         {children}
-      </div>
+      </form>
       <div style={{ marginTop:24, display:"flex", gap:6, alignItems:"center", opacity:0.3 }}>
         {Array.from({ length:9 }).map((_, i) => (
           <div key={i} style={{ width:i%3===1?28:16, height:4, borderRadius:2, background:C.blue }} />
@@ -397,7 +398,7 @@ function PcsrDropZone({ file, onParsed, onFail }) {
         {file ? "PCSR loaded ✓" : "Upload your PCSR PDF"}
       </div>
       <div style={{ fontSize:12, color:C.textMid, marginBottom:8 }}>
-        Personal Crew Schedule Report — both EOM and grid formats supported
+        Personal Crew Schedule Report — download your final PCSR for the month
       </div>
       {parsing
         ? <div style={{ fontSize:12, color:C.blue, fontWeight:700 }}>Reading PDF...</div>
@@ -449,27 +450,27 @@ function PcsrBeforeAfter() {
   const gridFont = "'Arial Narrow', Arial, sans-serif";
 
   return (
-    <div style={{ maxWidth:520, margin:"0 auto 32px" }}>
+    <div style={{ maxWidth:520, margin:"0 auto" }}>
       {/* Toggle */}
       <div style={{ display:"flex", justifyContent:"center", gap:0, marginBottom:16 }}>
         <button onClick={() => setShowResult(false)} style={{
-          background: !showResult ? C.blue : C.blueXLight,
-          border:"1.5px solid " + (!showResult ? C.blue : C.border),
+          background: !showResult ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
+          border:"1.5px solid " + (!showResult ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"),
           borderRadius:"10px 0 0 10px", padding:"10px 20px", cursor:"pointer",
-          fontSize:13, fontWeight:700, color: !showResult ? C.white : C.textMid,
+          fontSize:13, fontWeight:700, color: C.white,
           fontFamily:"inherit", transition:fade,
         }}>📄 Your PCSR</button>
         <button onClick={() => setShowResult(true)} style={{
-          background: showResult ? C.blue : C.blueXLight,
-          border:"1.5px solid " + (showResult ? C.blue : C.border),
+          background: showResult ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
+          border:"1.5px solid " + (showResult ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"),
           borderRadius:"0 10px 10px 0", padding:"10px 20px", cursor:"pointer",
-          fontSize:13, fontWeight:700, color: showResult ? C.white : C.textMid,
+          fontSize:13, fontWeight:700, color: showResult ? "#b87000" : C.white,
           fontFamily:"inherit", transition:fade,
         }}>📊 Your breakdown</button>
       </div>
 
-      <div style={{ background:C.white, borderRadius:14, border:"1.5px solid "+C.border,
-        boxShadow:C.shadowMd, overflow:"hidden", position:"relative", minHeight:340 }}>
+      <div style={{ background:C.white, borderRadius:14, border:"1.5px solid rgba(255,255,255,0.2)",
+        boxShadow:"0 8px 40px rgba(0,0,0,0.3)", overflow:"hidden", position:"relative", minHeight:340 }}>
 
         {/* ── PCSR view — calendar grid format ── */}
         <div style={{ opacity: showResult ? 0 : 1, transform: showResult ? "translateX(-20px)" : "translateX(0)",
@@ -615,7 +616,7 @@ function PcsrBeforeAfter() {
         </div>
       </div>
 
-      <div style={{ textAlign:"center", marginTop:10, fontSize:11, color:C.textLo }}>
+      <div style={{ textAlign:"center", marginTop:12, fontSize:11, color:"rgba(255,255,255,0.35)" }}>
         Tap to switch · Auto-toggles every 5s
       </div>
     </div>
@@ -752,7 +753,7 @@ function PayslipCompare() {
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
   const steps = [
-    { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your Personal Crew Schedule Report (PCSR) as a PDF from eCrew. Both end-of-month (EOM) tabular format and monthly grid format are supported." },
+    { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your final Personal Crew Schedule Report (PCSR) for the month as a PDF from eCrew." },
     { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
     { icon:"⚡", title:"Instant enrichment & calculation", body:"The app fetches scheduled times and aircraft registrations automatically from AeroDataBox, then applies all IndiGo allowance rules instantly." },
     { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown of every allowance for the month — ready to verify against your payslip." },
@@ -820,19 +821,28 @@ function LandingPage({ goLogin, goSignup }) {
           </div>
         ))}
       </div>
+      {/* ── PCSR → Results showcase — prominent, right after hero ── */}
+      <div style={{ background:"linear-gradient(180deg,"+C.navy+" 0%,#1a3a6a 100%)", padding:"50px 20px 40px" }}>
+        <div style={{ maxWidth:520, margin:"0 auto", textAlign:"center" }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:"0.12em",
+            textTransform:"uppercase", marginBottom:10 }}>From your PCSR</div>
+          <h2 style={{ fontSize:"clamp(22px,4.5vw,32px)", fontWeight:900, color:C.white, margin:"0 0 6px", letterSpacing:"-0.01em" }}>
+            One PDF. Every allowance. Broken down.
+          </h2>
+          <p style={{ fontSize:13, color:"rgba(255,255,255,0.55)", lineHeight:1.6, margin:"0 auto 24px", maxWidth:420 }}>
+            Upload your final PCSR from eCrew and instantly see which sectors and layovers make up each number on your payslip.
+          </p>
+          <PcsrBeforeAfter />
+        </div>
+      </div>
+
       <div style={{ maxWidth:700, margin:"0 auto", padding:"60px 20px" }}>
         <div style={{ textAlign:"center", marginBottom:40 }}>
           <div style={{ fontSize:12, fontWeight:700, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>How it works</div>
           <h2 style={{ fontSize:"clamp(22px,4vw,32px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>
-            One file. Instant breakdown.
+            Four steps. That's it.
           </h2>
-          <p style={{ fontSize:13, color:C.textMid, marginTop:10, lineHeight:1.6, maxWidth:500, margin:"10px auto 0" }}>
-            Your Personal Crew Schedule Report (PCSR) from eCrew contains all your monthly flight data. Upload it and we do the rest.
-          </p>
         </div>
-
-        {/* PCSR → Results animated before/after */}
-        <PcsrBeforeAfter />
         <div style={{ display:"grid", gap:16 }}>
           {steps.map((s, i) => (
             <div key={i} style={{ display:"flex", gap:16, alignItems:"flex-start", background:C.white,
@@ -955,7 +965,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
   };
 
   return (
-    <AuthShell title="Welcome back" sub="Sign in to your Crew Allowance account">
+    <AuthShell title="Welcome back" sub="Sign in to your Crew Allowance account" onSubmit={submit}>
       <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your registered email address" autoComplete="email" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Your password" autoComplete="current-password" />
       {err && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -1016,7 +1026,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
   };
 
   return (
-    <AuthShell title="Create account" sub="IndiGo crew only · Takes 60 seconds">
+    <AuthShell title="Create account" sub="IndiGo crew only · Takes 60 seconds" onSubmit={submit}>
       <FInput label="Full name" value={name} onChange={setName} placeholder="Your full name as it appears on your ID" />
       <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your email address" />
       <FInput label="Employee ID (optional)" value={empId} onChange={setEmpId} placeholder="Helps match your PCSR data more accurately" />
@@ -1290,7 +1300,7 @@ function ForgotScreen({ goLogin }) {
   };
 
   return (
-    <AuthShell title="Reset password" sub="We'll send a link to your inbox">
+    <AuthShell title="Reset password" sub="We'll send a link to your inbox" onSubmit={send}>
       {!sent ? (
         <>
           <FInput label="Your registered email address" type="email" value={email} onChange={setEmail} placeholder="The email address on your account" />
@@ -1348,7 +1358,7 @@ function ResetPasswordScreen({ goLogin }) {
   );
 
   return (
-    <AuthShell title="Set new password" sub="Choose a strong password for your account">
+    <AuthShell title="Set new password" sub="Choose a strong password for your account" onSubmit={submit}>
       <FInput label="New password" type="password" value={pass} onChange={setPass} placeholder="Minimum 8 characters" />
       <FInput label="Confirm new password" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat your new password" />
       {err && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -1399,14 +1409,66 @@ function ProfileScreen({ user, onSave }) {
         </div>
       )}
       <Card>
-        <FInput label="Full Name" value={name}  onChange={setName}  placeholder="Your name as on IndiGo ID" />
-        <FInput label="Employee ID (optional)" value={empId} onChange={setEmpId} placeholder="Helps match your PCSR data more accurately" />
-        <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
-        <FInput label="Home Base (IATA)" value={base} onChange={v => setBase(v.toUpperCase().slice(0,3))} placeholder="e.g. DEL" hint="3-letter IATA code of your home base airport" />
-        {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
-        <Btn onClick={save} disabled={busy}>{busy?"Saving...":"Save profile →"}</Btn>
+        <div onKeyDown={e => { if (e.key === "Enter") save(); }}>
+          <FInput label="Full Name" value={name}  onChange={setName}  placeholder="Your name as on IndiGo ID" />
+          <FInput label="Employee ID (optional)" value={empId} onChange={setEmpId} placeholder="Helps match your PCSR data more accurately" />
+          <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
+          <FInput label="Home Base (IATA)" value={base} onChange={v => setBase(v.toUpperCase().slice(0,3))} placeholder="e.g. DEL" hint="3-letter IATA code of your home base airport" />
+          {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
+          <Btn onClick={save} disabled={busy}>{busy?"Saving...":"Save profile →"}</Btn>
+        </div>
       </Card>
+
+      {/* Subscription management */}
+      {user.stripe_customer_id && (
+        <Card style={{ marginTop:16 }}>
+          <div style={{ fontSize:14, fontWeight:800, color:C.navy, marginBottom:10 }}>Subscription</div>
+          <div style={{ display:"grid", gap:6, fontSize:13, color:C.textMid, marginBottom:14 }}>
+            <div style={{ display:"flex", justifyContent:"space-between" }}>
+              <span>Plan</span>
+              <span style={{ fontWeight:700, color:C.navy }}>{user.subscription_plan === "12mo" ? "Annual" : user.subscription_plan === "1mo" ? "Monthly" : user.subscription_plan || "—"}</span>
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between" }}>
+              <span>Status</span>
+              <span style={{ fontWeight:700, color: user.subscription_status === "active" ? C.green : C.gold }}>
+                {user.subscription_status || "—"}
+              </span>
+            </div>
+            {user.subscription_current_period_end && (
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span>{user.subscription_cancel_at_period_end ? "Access until" : "Renews on"}</span>
+                <span style={{ fontWeight:700, color:C.navy }}>
+                  {new Date(user.subscription_current_period_end).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" })}
+                </span>
+              </div>
+            )}
+          </div>
+          <ManageSubscriptionBtn userId={user.id} />
+        </Card>
+      )}
     </div>
+  );
+}
+
+function ManageSubscriptionBtn({ userId }) {
+  const [busy, setBusy] = useState(false);
+  const open = async () => {
+    setBusy(true);
+    try {
+      const resp = await fetch("/api/customer-portal", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ userId }),
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      window.location.href = data.url;
+    } catch (err) { alert(err.message); }
+    setBusy(false);
+  };
+  return (
+    <Btn onClick={open} disabled={busy} variant="ghost" small>
+      {busy ? "Opening..." : "Manage subscription →"}
+    </Btn>
   );
 }
 
