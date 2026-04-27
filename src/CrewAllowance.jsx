@@ -1783,6 +1783,22 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
         return;
       }
     }
+
+    // Completeness check: PCSRs for the current calendar month or any future
+    // month are still subject to change (delays, swaps, sectors yet to fly).
+    // Calculating against an incomplete PCSR produces misleading numbers, so
+    // we reject upfront. Admins bypass for testing/reproduction purposes.
+    if (!user.is_admin && parsed?.month) {
+      const now = new Date();
+      const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      if (parsed.month >= currentYm) {
+        setPcsrFile(null); setPcsrData(null); setResult(null);
+        const monthName = new Date(parsed.month + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+        setErr(`This PCSR is for ${monthName}, which hasn't finished yet. Allowance calculations need a complete month — please upload your PCSR after the month ends (typically the 1st-3rd of the following month, once eCrew finalises actual times).`);
+        return;
+      }
+    }
+
     setErr(""); setPcsrFile(file); setPcsrData(parsed); setResult(null);
   }, [user.is_admin, user.emp_id]);
 

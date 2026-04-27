@@ -279,18 +279,66 @@ function parseEomItems(pages) {
     return rows;
   };
 
-  // ── helper: pick the RIGHTMOST non-whitespace item inside an x-band.
-  // PDF.js often emits zero-width or whitespace-only text items between real
-  // glyph runs; without the trim() filter those can shadow the actual duty /
-  // route / time glyphs at the same x-range and make the row fail to parse.
-  const pickIn = (row, xLo, xHi) => {
-    let hit = null;
-    for (const it of row.items) {
-      if (it.x < xLo || it.x >= xHi) continue;
-      if (!String(it.str).trim()) continue;
-      if (!hit || it.x > hit.x) hit = it;
+  // ── HEADER-DRIVEN COLUMN DETECTION ───────────────────────────────────────
+  // Find the header row ("Date | Duties | Details | Report times | Actual
+  // times/Delays | Debrief times | Indicators | Crew") on each page and
+  // record each column's x-position. Then assign every data cell to the
+  // nearest column by x-distance. This makes the parser tolerant of any
+  // eCrew layout variation (column widths auto-size based on content).
+  //
+  // Returns { Date: x, Duties: x, Details: x, Report: x, Actual: x,
+  //           Debrief: x, Indicators: x, Crew: x } for the page,
+  // or null if no header row was found.
+  const HEADER_LABELS = [
+    { key: "Date",       re: /^Date$/i },
+    { key: "Duties",     re: /^Duties$/i },
+    { key: "Details",    re: /^Details$/i },
+    { key: "Report",     re: /^Report\s+times$/i },
+    { key: "Actual",     re: /^Actual\s+times(?:\/Delays)?$/i },
+    { key: "Debrief",    re: /^Debrief\s+times$/i },
+    { key: "Indicators", re: /^Indicators?$/i },
+    { key: "Crew",       re: /^Crew$/i },
+  ];
+  const findColumns = (rows) => {
+    for (const row of rows) {
+      const found = {};
+      for (const it of row.items) {
+        const txt = String(it.str).trim();
+        if (!txt) continue;
+        for (const lbl of HEADER_LABELS) {
+          if (!found[lbl.key] && lbl.re.test(txt)) {
+            found[lbl.key] = it.x;
+          }
+        }
+      }
+      // A real header row has at least Date + Duties + Details + Actual.
+      // (Crew column is optional in the header — some PDFs omit the label.)
+      if (found.Date != null && found.Duties != null && found.Details != null && found.Actual != null) {
+        return { ...found, _y: row.y };
+      }
     }
-    return hit;
+    return null;
+  };
+
+  // Pick the rightmost non-whitespace item whose x is closest to a target
+  // column's x — but only if it's closer to THIS column than to any other.
+  // Returns null if no item lands clearly in this column.
+  const pickByColumn = (row, columns, key) => {
+    const targetX = columns[key];
+    if (targetX == null) return null;
+    // Build sorted list of all known column x-positions for proximity test.
+    const xs = Object.values(columns).filter(x => typeof x === "number").sort((a,b)=>a-b);
+    let best = null, bestDist = Infinity;
+    for (const it of row.items) {
+      if (!String(it.str).trim()) continue;
+      const dist = Math.abs(it.x - targetX);
+      // Item must be closer to this column than to any other column.
+      const nearestCol = xs.reduce((acc, x) =>
+        Math.abs(it.x - x) < Math.abs(it.x - acc) ? x : acc, xs[0]);
+      if (nearestCol !== targetX) continue;
+      if (dist < bestDist) { best = it; bestDist = dist; }
+    }
+    return best;
   };
 
   // ── per-page sector extraction ────────────────────────────────────────────
@@ -300,10 +348,13 @@ function parseEomItems(pages) {
 
     const rows = rowsOf(items);
 
-    // Schedule Details band: between the "Schedule Details" label (top) and
-    // "Total Hours / Hotel Information / Transfer Information / …" (bottom).
-    const schedLbl = items.find(it => /Schedule\s+Details/i.test(it.str));
-    const schedTopY = schedLbl ? schedLbl.y : Infinity;
+    // Detect column positions from this page's header row.
+    const columns = findColumns(rows);
+    if (!columns) continue;   // no header found on this page → skip
+
+    // Schedule Details band: between the header row (top) and any of the
+    // bottom-of-table labels (Total Hours / Hotel Information / etc.).
+    const schedTopY = columns._y;
     const endLabels = /^(Total\s+Hours|Hotel\s+Information|Transfer\s+Information|Pax\s+Transfer|Memos\b|Descriptions\b)/i;
     let schedBotY = 0;
     for (const it of items) {
@@ -312,10 +363,8 @@ function parseEomItems(pages) {
     }
 
     // Collect date-label rows (report/debrief extracted from the same row).
-    // A row is a "flying day" label if it has both Report (x≈384) AND Debrief
-    // (x≈638) times. Non-flying days (OFG, SBY, VAC, NAP standalone) don't
-    // have these columns populated — we still record them so they're not
-    // selected as flight candidates.
+    // A row is a "flying day" label if it has both Report AND Debrief times.
+    // Non-flying days (OFG, SBY, VAC, NAP standalone) don't have these.
     const labelRows = [];
     for (const row of rows) {
       if (row.y > schedTopY || row.y < schedBotY) continue;
@@ -327,23 +376,14 @@ function parseEomItems(pages) {
       const date = parseDate(m[1]);
       if (!date) continue;
 
-      // Report / Debrief x-bands. IndiGo PCSR layout varies between PDFs:
-      // wide layout has Report ≈ 383 / Debrief ≈ 638; narrow layout (some
-      // bases / fonts) has Report ≈ 305 / Debrief ≈ 506. Bands widened to
-      // accept either, with no overlap with adjacent columns.
-      const reportIt  = pickIn(row, 280, 370);   // narrow ≈305, wide ≈383
-      const debriefIt = pickIn(row, 480, 590);   // narrow ≈506, wide ≈638
-      // Fallback for the wide layout if bands don't catch.
-      const reportItW  = !reportIt  ? pickIn(row, 370, 460) : null;
-      const debriefItW = !debriefIt ? pickIn(row, 620, 720) : null;
-      const finalReport  = reportIt  || reportItW;
-      const finalDebrief = debriefIt || debriefItW;
-      const reportM   = finalReport && /^\d{1,2}:\d{2}$/.test(finalReport.str.trim())
-        ? t2m_local(hhmm(finalReport.str)) : null;
+      const reportIt  = pickByColumn(row, columns, "Report");
+      const debriefIt = pickByColumn(row, columns, "Debrief");
+      const reportM   = reportIt && /^\d{1,2}:\d{2}$/.test(reportIt.str.trim())
+        ? t2m_local(hhmm(reportIt.str)) : null;
       // Debrief may carry "⁺¹" or "+1" meaning next calendar day.
       let debriefM = null, debriefPlus1 = false;
-      if (finalDebrief) {
-        const dm = finalDebrief.str.trim().match(/^(\d{1,2}:\d{2})([^\d]?\S*)?/);
+      if (debriefIt) {
+        const dm = debriefIt.str.trim().match(/^(\d{1,2}:\d{2})([^\d]?\S*)?/);
         if (dm) {
           debriefM = t2m_local(hhmm(dm[1]));
           if (dm[2] && /[⁺+]/.test(dm[2])) debriefPlus1 = true;
@@ -373,20 +413,12 @@ function parseEomItems(pages) {
     const flyingDays = allDays.filter(d => d.reportM !== null && d.debriefM !== null);
 
     // ── flight rows ───────────────────────────────────────────────────────
-    // x-band layouts vary between PDFs:
-    //   wide:  Duty≈113, Route≈225, Actual≈478
-    //   narrow:Duty≈ 92, Route≈181, Actual≈380
-    // Bands widened to span both layouts (no overlap with date-col x<80).
     for (const row of rows) {
       if (row.y > schedTopY || row.y < schedBotY) continue;
 
-      const dutyIt   = pickIn(row,  80, 175);   // narrow ≈92,  wide ≈113
-      const routeIt  = pickIn(row, 175, 290);   // narrow ≈181, wide ≈225
-      const actualIt = pickIn(row, 360, 480);   // narrow ≈380, wide ≈478
-      // Wide-layout fallback for actuals (some rows put actuals ≈478 even
-      // when other columns are narrow — we accept either).
-      const actualItW = !actualIt ? pickIn(row, 460, 590) : null;
-      const finalActual = actualIt || actualItW;
+      const dutyIt     = pickByColumn(row, columns, "Duties");
+      const routeIt    = pickByColumn(row, columns, "Details");
+      const finalActual = pickByColumn(row, columns, "Actual");
       if (!dutyIt || !routeIt) continue;
 
       // Duty must be a pure flight number, optionally suffixed with the
