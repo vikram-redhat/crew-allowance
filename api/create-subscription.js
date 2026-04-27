@@ -59,7 +59,11 @@ export default async function handler(req, res) {
   // admin Users tab.
   if (freeCode) {
     const expected = process.env.FREE_ACCESS_CODE;
-    if (!expected || freeCode !== expected) {
+    // Case-insensitive + whitespace-tolerant compare. WhatsApp / autocorrect /
+    // copy-paste tends to mangle codes; normalising both sides eliminates the
+    // most common "I typed it wrong" errors without weakening the secret.
+    const norm = (s) => String(s || "").trim().toUpperCase();
+    if (!expected || norm(freeCode) !== norm(expected)) {
       return res.status(400).json({ error: "Invalid access code." });
     }
     const supa = serviceSupabase();

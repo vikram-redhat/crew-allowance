@@ -1291,6 +1291,26 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       {/* Payment form (card, UPI, etc.) OR free-access code input */}
       {!showFree ? (
         <div style={{ marginBottom:16 }}>
+          {/* Prominent comp-code prompt — moved up from the bottom because users
+              were missing the small underlined link and bailing without entering
+              their code. */}
+          <button type="button" onClick={() => { setShowFree(true); setPayErr(""); }}
+            style={{
+              width:"100%", textAlign:"left", cursor:"pointer", fontFamily:"inherit",
+              background:C.goldBg, border:"1.5px solid "+C.goldBorder, borderRadius:10,
+              padding:"12px 14px", marginBottom:14,
+              display:"flex", alignItems:"center", justifyContent:"space-between", gap:10,
+            }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:18 }}>🎟️</span>
+              <div>
+                <div style={{ fontSize:13, fontWeight:800, color:C.goldText }}>Have a free-access code?</div>
+                <div style={{ fontSize:11, color:C.goldText, opacity:0.8, marginTop:1 }}>Tap here to skip payment</div>
+              </div>
+            </div>
+            <span style={{ fontSize:13, color:C.goldText, fontWeight:700 }}>→</span>
+          </button>
+
           <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:11, color:C.textMid }}>
             🔒 Payment handled securely by <strong>Stripe</strong>. We never see or store your payment details.
           </div>
@@ -1301,10 +1321,11 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       ) : (
         <div style={{ marginBottom:16 }}>
           <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:6 }}>Free-access code</label>
-          <input value={freeCode} onChange={e => setFreeCode(e.target.value)} placeholder="Enter code"
+          <input value={freeCode} onChange={e => setFreeCode(e.target.value)} placeholder="e.g. CREW2026"
+            autoCapitalize="characters" autoCorrect="off" spellCheck="false"
             style={{ width:"100%", boxSizing:"border-box", background:C.white, border:"1.5px solid "+C.border,
-              borderRadius:10, padding:"11px 14px", color:C.text, fontFamily:"inherit", fontSize:14, outline:"none", letterSpacing:"0.08em" }} />
-          <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Activates {plan.label.toLowerCase()} of access without payment.</div>
+              borderRadius:10, padding:"11px 14px", color:C.text, fontFamily:"inherit", fontSize:14, outline:"none", letterSpacing:"0.08em", textTransform:"uppercase" }} />
+          <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Code is not case-sensitive. Activates free access if valid.</div>
         </div>
       )}
 
@@ -1319,9 +1340,11 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       </Btn>
 
       <div style={{ marginTop:14, textAlign:"center", display:"flex", flexDirection:"column", gap:6 }}>
-        <button type="button" onClick={() => { setShowFree(s => !s); setPayErr(""); }} style={{ background:"none", border:"none", color:C.textMid, fontSize:12, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>
-          {showFree ? "← Back to card payment" : "Have a free-access code?"}
-        </button>
+        {showFree && (
+          <button type="button" onClick={() => { setShowFree(false); setPayErr(""); }} style={{ background:"none", border:"none", color:C.textMid, fontSize:12, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>
+            ← Back to card payment
+          </button>
+        )}
         <button type="button" onClick={goLogin} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Already have an account? Sign in</button>
       </div>
     </AuthShell>
@@ -2256,12 +2279,22 @@ function AdminScreen({ rates }) {
           {users.length === 0 && <div style={{ textAlign:"center", padding:40, color:C.textLo }}>No users yet, or database not connected.</div>}
           {users.map(u => {
             const effectivelyActive = u.is_active || u.is_admin;
+            // Plan label + badge colour
+            let planLabel, planColor;
+            if (u.is_admin) { planLabel = null; planColor = null; }
+            else if (u.subscription_plan === "free") { planLabel = "Comp · Free"; planColor = "gold"; }
+            else if (u.subscription_plan === "12mo") { planLabel = "Annual · ₹1000/yr"; planColor = "green"; }
+            else if (u.subscription_plan === "1mo")  { planLabel = "Monthly · ₹100/mo"; planColor = "green"; }
+            else if (u.trial_paid_at && !u.trial_used) { planLabel = "Trial · unused"; planColor = "blue"; }
+            else if (u.trial_paid_at && u.trial_used)  { planLabel = "Trial · used"; planColor = "red"; }
+            else { planLabel = "No plan"; planColor = "red"; }
             return (
             <Card key={u.id} style={{ marginBottom:10, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:14, fontWeight:700, color:C.navy, marginBottom:2 }}>{u.name}</div>
                 <div style={{ fontSize:12, color:C.textMid }}>{u.email || "—"}</div>
                 <div style={{ fontSize:11, color:C.textLo, marginTop:2 }}>ID: {u.emp_id} · {u.rank} · Base: {u.home_base}</div>
+                {planLabel && <div style={{ marginTop:6 }}><Badge color={planColor}>{planLabel}</Badge></div>}
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
                 {u.subscription_status === "pending_approval" && !u.is_active
