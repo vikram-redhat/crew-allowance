@@ -327,15 +327,23 @@ function parseEomItems(pages) {
       const date = parseDate(m[1]);
       if (!date) continue;
 
-      // Report time: x ∈ [370, 460), plain HH:MM.
-      const reportIt  = pickIn(row, 370, 460);
-      const debriefIt = pickIn(row, 620, 720);
-      const reportM   = reportIt  && /^\d{1,2}:\d{2}$/.test(reportIt.str.trim())
-        ? t2m_local(hhmm(reportIt.str)) : null;
+      // Report / Debrief x-bands. IndiGo PCSR layout varies between PDFs:
+      // wide layout has Report ≈ 383 / Debrief ≈ 638; narrow layout (some
+      // bases / fonts) has Report ≈ 305 / Debrief ≈ 506. Bands widened to
+      // accept either, with no overlap with adjacent columns.
+      const reportIt  = pickIn(row, 280, 370);   // narrow ≈305, wide ≈383
+      const debriefIt = pickIn(row, 480, 590);   // narrow ≈506, wide ≈638
+      // Fallback for the wide layout if bands don't catch.
+      const reportItW  = !reportIt  ? pickIn(row, 370, 460) : null;
+      const debriefItW = !debriefIt ? pickIn(row, 620, 720) : null;
+      const finalReport  = reportIt  || reportItW;
+      const finalDebrief = debriefIt || debriefItW;
+      const reportM   = finalReport && /^\d{1,2}:\d{2}$/.test(finalReport.str.trim())
+        ? t2m_local(hhmm(finalReport.str)) : null;
       // Debrief may carry "⁺¹" or "+1" meaning next calendar day.
       let debriefM = null, debriefPlus1 = false;
-      if (debriefIt) {
-        const dm = debriefIt.str.trim().match(/^(\d{1,2}:\d{2})([^\d]?\S*)?/);
+      if (finalDebrief) {
+        const dm = finalDebrief.str.trim().match(/^(\d{1,2}:\d{2})([^\d]?\S*)?/);
         if (dm) {
           debriefM = t2m_local(hhmm(dm[1]));
           if (dm[2] && /[⁺+]/.test(dm[2])) debriefPlus1 = true;
@@ -365,12 +373,20 @@ function parseEomItems(pages) {
     const flyingDays = allDays.filter(d => d.reportM !== null && d.debriefM !== null);
 
     // ── flight rows ───────────────────────────────────────────────────────
+    // x-band layouts vary between PDFs:
+    //   wide:  Duty≈113, Route≈225, Actual≈478
+    //   narrow:Duty≈ 92, Route≈181, Actual≈380
+    // Bands widened to span both layouts (no overlap with date-col x<80).
     for (const row of rows) {
       if (row.y > schedTopY || row.y < schedBotY) continue;
 
-      const dutyIt   = pickIn(row, 100, 180);
-      const routeIt  = pickIn(row, 180, 380);
-      const actualIt = pickIn(row, 460, 620);
+      const dutyIt   = pickIn(row,  80, 175);   // narrow ≈92,  wide ≈113
+      const routeIt  = pickIn(row, 175, 290);   // narrow ≈181, wide ≈225
+      const actualIt = pickIn(row, 360, 480);   // narrow ≈380, wide ≈478
+      // Wide-layout fallback for actuals (some rows put actuals ≈478 even
+      // when other columns are narrow — we accept either).
+      const actualItW = !actualIt ? pickIn(row, 460, 590) : null;
+      const finalActual = actualIt || actualItW;
       if (!dutyIt || !routeIt) continue;
 
       // Duty must be a pure flight number, optionally suffixed with the
@@ -392,8 +408,8 @@ function parseEomItems(pages) {
       // We capture BOTH times (sched or actual) for date-window matching.
       let atd_local = null, ata_local = null;
       let atdMin = null, ataMin = null;
-      if (actualIt) {
-        const am = String(actualIt.str).trim().match(
+      if (finalActual) {
+        const am = String(finalActual.str).trim().match(
           /^(A)?\s*(\d{1,2}:\d{2})\s*[-–]\s*(A)?\s*(\d{1,2}:\d{2})(?:\s*\/\s*\d{1,2}:\d{2})?\s*$/
         );
         if (am) {
