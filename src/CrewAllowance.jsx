@@ -1098,7 +1098,6 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
   const [done,       setDone]       = useState(false);
   const [payErr,     setPayErr]     = useState("");
   const [stripeReady, setStripeReady] = useState(false);
-  const [clientSecret, setClientSecret] = useState(null);
 
   const stripeRef          = useRef(null);
   const elementsRef        = useRef(null);
@@ -1107,7 +1106,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
 
   const plan = PLANS[planKey];
 
-  // Load Stripe.js once
+  // ── Load Stripe.js ─────────────────────────────────────────────────────
   useEffect(() => {
     const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
     if (!STRIPE_PK) return;
@@ -1121,46 +1120,23 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
     }
   }, []);
 
-  // Fetch a clientSecret whenever the plan changes (for the Payment Element).
-  // Trial → /api/create-trial-payment (one-off PaymentIntent).
-  // 1mo / 12mo → /api/create-subscription (recurring).
+  // ── Mount Payment Element in DEFERRED mode ─────────────────────────────
+  // No clientSecret upfront. We supply mode/amount/currency so the Element
+  // can render and validate input, but no PaymentIntent or Subscription is
+  // created on the server until the user clicks Pay. This keeps the Stripe
+  // Dashboard clean of abandoned-checkout intents.
+  //
+  // Mounted ONCE per session and re-used across plan changes — we just call
+  // elements.update({ amount }) when the user picks a different plan.
   useEffect(() => {
-    if (showFree || !pendingUser?.id) return;
-    let cancelled = false;
-    setStripeReady(false);
-    setClientSecret(null);
-
-    const isTrial = plan?.kind === "trial";
-    const endpoint = isTrial ? "/api/create-trial-payment" : "/api/create-subscription";
-    const body = isTrial
-      ? { userId: pendingUser?.id || "", email: pendingUser?.email || "" }
-      : { plan: planKey, userId: pendingUser?.id || "", email: pendingUser?.email || "" };
-
-    (async () => {
-      try {
-        const resp = await fetch(endpoint, {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify(body),
-        });
-        const data = await resp.json();
-        if (cancelled) return;
-        if (data.error) { setPayErr(data.error); return; }
-        setClientSecret(data.clientSecret);
-      } catch (err) { if (!cancelled) setPayErr(err.message); }
-    })();
-
-    return () => { cancelled = true; };
-  }, [planKey, showFree, pendingUser?.id, pendingUser?.email, plan?.kind]);
-
-  // Mount the Payment Element once we have both Stripe.js and a clientSecret.
-  useEffect(() => {
-    if (!clientSecret || !stripeRef.current || !paymentDivRef.current || showFree) return;
-
-    // Clean up any previous Payment Element
-    if (paymentElementRef.current) { paymentElementRef.current.unmount(); paymentElementRef.current = null; }
+    if (showFree || !stripeRef.current || !paymentDivRef.current) return;
+    if (paymentElementRef.current) return;   // already mounted
 
     const elements = stripeRef.current.elements({
-      clientSecret,
+      mode: "payment",
+      amount: plan.total * 100,    // paise
+      currency: "inr",
+      paymentMethodCreation: "manual",
       appearance: {
         theme: "stripe",
         variables: { fontFamily:"'Nunito','Segoe UI',sans-serif", colorPrimary:"#1a6fd4", borderRadius:"10px" },
@@ -1172,11 +1148,28 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
     elementsRef.current = elements;
     paymentElementRef.current = paymentEl;
 
-    return () => { if (paymentElementRef.current) { paymentElementRef.current.unmount(); paymentElementRef.current = null; } };
-  }, [clientSecret, showFree]);
+    return () => {
+      if (paymentElementRef.current) {
+        paymentElementRef.current.unmount();
+        paymentElementRef.current = null;
+        elementsRef.current = null;
+      }
+    };
+    // Only depend on stripeRef/showFree — plan changes are handled separately
+    // by elements.update() below to avoid remount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showFree, stripeReady]);
+
+  // When the plan changes, just tell the existing Element about the new amount.
+  useEffect(() => {
+    if (elementsRef.current && !showFree) {
+      elementsRef.current.update({ amount: plan.total * 100 });
+    }
+  }, [plan.total, showFree]);
 
   const finishActivation = () => { onActivate(pendingUser); setDone(true); };
 
+  // ── Pay handler — creates the PaymentIntent / Subscription on click ────
   const handlePay = async () => {
     setPayErr(""); setLoading(true);
 
@@ -1195,14 +1188,30 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       return;
     }
 
-    // Paid path — confirm with the Payment Element (supports card, UPI, etc.)
+    // Paid path
     if (!stripeRef.current || !elementsRef.current) {
       setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return;
     }
     try {
+      // Step 1: validate the user's input client-side.
       const { error: submitErr } = await elementsRef.current.submit();
       if (submitErr) throw new Error(submitErr.message);
 
+      // Step 2: NOW create the PaymentIntent (trial) or Subscription (1mo/12mo).
+      const isTrial  = plan?.kind === "trial";
+      const endpoint = isTrial ? "/api/create-trial-payment" : "/api/create-subscription";
+      const body     = isTrial
+        ? { userId: pendingUser?.id || "", email: pendingUser?.email || "" }
+        : { plan: planKey, userId: pendingUser?.id || "", email: pendingUser?.email || "" };
+      const resp = await fetch(endpoint, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(body),
+      });
+      const { clientSecret, error: serverErr } = await resp.json();
+      if (serverErr) throw new Error(serverErr);
+      if (!clientSecret) throw new Error("Payment session could not be created.");
+
+      // Step 3: confirm payment with the freshly created clientSecret.
       const { error: confirmErr, paymentIntent } = await stripeRef.current.confirmPayment({
         elements: elementsRef.current,
         clientSecret,
@@ -1213,13 +1222,11 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       });
       if (confirmErr) throw new Error(confirmErr.message);
       if (paymentIntent && paymentIntent.status === "succeeded") {
-        // Webhook will flip is_active server-side; we optimistically advance the UI.
         finishActivation();
       } else if (paymentIntent && paymentIntent.status === "requires_action") {
-        // UPI / 3DS redirect happened and came back — still need to check
         setPayErr("Payment requires additional action. Please complete the authentication.");
       } else {
-        finishActivation(); // processing or other terminal state — webhook will reconcile
+        finishActivation(); // processing — webhook will reconcile
       }
     } catch (err) { setPayErr(err.message); }
     setLoading(false);
@@ -1570,7 +1577,6 @@ function UpgradeScreen({ user, onActivated, goBack }) {
   const [loading,    setLoading]    = useState(false);
   const [payErr,     setPayErr]     = useState("");
   const [stripeReady,setStripeReady]= useState(false);
-  const [clientSecret,setClientSecret] = useState(null);
 
   const stripeRef         = useRef(null);
   const elementsRef       = useRef(null);
@@ -1591,32 +1597,15 @@ function UpgradeScreen({ user, onActivated, goBack }) {
     } else { stripeRef.current = window.Stripe(STRIPE_PK); }
   }, []);
 
-  // Fetch clientSecret when plan changes
+  // Mount Payment Element in deferred mode — no Subscription created until Pay.
   useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-    setStripeReady(false); setClientSecret(null);
-    (async () => {
-      try {
-        const resp = await fetch("/api/create-subscription", {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ plan:planKey, userId:user.id, email:user.email }),
-        });
-        const data = await resp.json();
-        if (cancelled) return;
-        if (data.error) { setPayErr(data.error); return; }
-        setClientSecret(data.clientSecret);
-      } catch (err) { if (!cancelled) setPayErr(err.message); }
-    })();
-    return () => { cancelled = true; };
-  }, [planKey, user?.id, user?.email]);
-
-  // Mount Payment Element
-  useEffect(() => {
-    if (!clientSecret || !stripeRef.current || !paymentDivRef.current) return;
-    if (paymentElementRef.current) { paymentElementRef.current.unmount(); paymentElementRef.current = null; }
+    if (!stripeRef.current || !paymentDivRef.current) return;
+    if (paymentElementRef.current) return;
     const elements = stripeRef.current.elements({
-      clientSecret,
+      mode: "payment",
+      amount: plan.total * 100,
+      currency: "inr",
+      paymentMethodCreation: "manual",
       appearance: { theme:"stripe", variables: { fontFamily:"'Nunito','Segoe UI',sans-serif", colorPrimary:"#1a6fd4", borderRadius:"10px" } },
     });
     const paymentEl = elements.create("payment", { layout: "tabs" });
@@ -1624,8 +1613,20 @@ function UpgradeScreen({ user, onActivated, goBack }) {
     paymentEl.on("ready", () => setStripeReady(true));
     elementsRef.current = elements;
     paymentElementRef.current = paymentEl;
-    return () => { if (paymentElementRef.current) { paymentElementRef.current.unmount(); paymentElementRef.current = null; } };
-  }, [clientSecret]);
+    return () => {
+      if (paymentElementRef.current) {
+        paymentElementRef.current.unmount();
+        paymentElementRef.current = null;
+        elementsRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stripeReady]);
+
+  // Update Element's amount when plan changes (no remount).
+  useEffect(() => {
+    if (elementsRef.current) elementsRef.current.update({ amount: plan.total * 100 });
+  }, [plan.total]);
 
   const handlePay = async () => {
     setPayErr(""); setLoading(true);
@@ -1633,8 +1634,20 @@ function UpgradeScreen({ user, onActivated, goBack }) {
       setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return;
     }
     try {
+      // Step 1: validate input.
       const { error: submitErr } = await elementsRef.current.submit();
       if (submitErr) throw new Error(submitErr.message);
+
+      // Step 2: create the Subscription only now.
+      const resp = await fetch("/api/create-subscription", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ plan:planKey, userId:user.id, email:user.email }),
+      });
+      const { clientSecret, error: serverErr } = await resp.json();
+      if (serverErr) throw new Error(serverErr);
+      if (!clientSecret) throw new Error("Payment session could not be created.");
+
+      // Step 3: confirm.
       const { error: confirmErr, paymentIntent } = await stripeRef.current.confirmPayment({
         elements: elementsRef.current,
         clientSecret,
