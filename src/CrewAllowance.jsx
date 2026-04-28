@@ -86,7 +86,14 @@ async function fetchScheduleSource() {
   }
 }
 
-// Returns { data, fromCache } or null
+// Per-source throttle between live API calls.
+//   ADB:  600ms  (~1.6 req/sec, well under their limits)
+//   FR24: 2100ms (~28 req/min, just under FR24's typical 30/min ceiling)
+const SOURCE_THROTTLE_MS = { adb: 600, fr24: 2100 };
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Returns { data, fromCache } or { rateLimited: true } or null.
 async function fetchWithCache(flight, dep, arr, date, source = "adb") {
   if (supabase) {
     const { data, error: cacheReadErr } = await supabase.from("flight_schedule_cache")
@@ -106,6 +113,12 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
   } catch (fetchErr) {
     console.warn(`${providerName} fetch error for ${flight} ${dep}→${arr} ${date}:`, fetchErr.message);
     return null;
+  }
+  // Surface rate-limit hits to the caller so it can back off + retry.
+  if (resp.status === 429) {
+    const retryAfter = parseInt(resp.headers.get("retry-after") || "0", 10);
+    console.warn(`${providerName} 429 rate-limited; retry-after=${retryAfter}s`);
+    return { rateLimited: true, retryAfter };
   }
   if (!resp.ok) {
     let body = "";
@@ -137,6 +150,7 @@ async function buildSchedMap(sectors, onProgress, source = "adb") {
     const key = `${flight}|${s.dep}|${s.arr}|${s.date}`;
     if (!seen.has(key)) { seen.add(key); unique.push({ ...s, _flight: flight }); }
   }
+  const baseThrottle = SOURCE_THROTTLE_MS[source] ?? 600;
   let fetched = 0, cached = 0, failed = 0;
   let lastWasLive = false;
   for (let i = 0; i < unique.length; i++) {
@@ -147,12 +161,20 @@ async function buildSchedMap(sectors, onProgress, source = "adb") {
       failed++;
       continue;
     }
-    if (lastWasLive) await new Promise(r => setTimeout(r, 600));
+    if (lastWasLive) await sleep(baseThrottle);
     lastWasLive = false;
     const key = `${s._flight}|${s.dep}|${s.arr}|${s.date}`;
     try {
-      const result = await fetchWithCache(s._flight, s.dep, s.arr, s.date, source);
-      if (result) {
+      // Up to 3 attempts on rate-limit, with exponential backoff.
+      let result = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        result = await fetchWithCache(s._flight, s.dep, s.arr, s.date, source);
+        if (!result?.rateLimited) break;
+        const waitMs = (result.retryAfter > 0 ? result.retryAfter * 1000 : (10000 * (attempt + 1)));
+        console.warn(`Rate-limited; backing off ${waitMs}ms before retry ${attempt + 1}/3`);
+        await sleep(waitMs);
+      }
+      if (result && !result.rateLimited) {
         map[key] = result.data;
         if (result.fromCache) { cached++; } else { fetched++; lastWasLive = true; }
       } else {
