@@ -2043,7 +2043,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
                 background:"linear-gradient(90deg,"+C.blue+","+C.blueMid+")", transition:"width 0.4s" }} />
             </div>
           )}
-          <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>AeroDataBox API · results cached to avoid repeat calls</div>
+          <div style={{ marginTop:14, fontSize:11, color:C.textLo }}>Schedule data API · results cached to avoid repeat calls</div>
         </div>
       )}
 

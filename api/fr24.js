@@ -27,24 +27,20 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "FR24_API_TOKEN not configured on server" });
   }
 
-  // ── 30-day window guard ────────────────────────────────────────────────────
-  // The target tier only exposes the previous 30 days. We reject dates outside
-  // a ±1-day grace (to absorb tz ambiguity) around that window and tell the
-  // client to try the alternate provider.
+  // ── Future-date guard ──────────────────────────────────────────────────────
+  // FR24 Flight Summary covers past flights only. Future dates are rejected
+  // up front (with a 1-day grace for timezone ambiguity).
+  // Note: the 30-day historical limit applied to the Explorer tier; on
+  // Essential ($90/mo) we have 2 years of history, so no upper-bound guard.
   const target = new Date(date + "T00:00:00Z");
   if (isNaN(target)) {
     return res.status(400).json({ error: `Invalid date: ${date}` });
   }
   const now = new Date();
   const daysAgo = (now - target) / 86400000;
-  if (daysAgo > 31) {
-    return res.status(404).json({
-      error: `FR24 tier only exposes the last 30 days; ${date} is ${Math.floor(daysAgo)} days old. Use AeroDataBox for this sector.`,
-    });
-  }
   if (daysAgo < -1) {
     return res.status(404).json({
-      error: `FR24 Flight Summary does not cover future flights; ${date} has not yet operated. Use AeroDataBox for forward rosters.`,
+      error: `FR24 Flight Summary does not cover future flights; ${date} has not yet operated.`,
     });
   }
 
