@@ -397,11 +397,8 @@ function PcsrDropZone({ file, onParsed, onFail }) {
         borderRadius:16, padding:"28px 20px", cursor:parsing?"wait":"pointer",
         transition:"all 0.2s", textAlign:"center", opacity:parsing?0.75:1 }}>
       <div style={{ fontSize:40, marginBottom:10 }}>📄</div>
-      <div style={{ fontSize:15, fontWeight:800, color:C.navy, marginBottom:4 }}>
-        {file ? "PCSR loaded ✓" : "Upload your PCSR PDF"}
-      </div>
-      <div style={{ fontSize:12, color:C.textMid, marginBottom:8 }}>
-        Personal Crew Schedule Report — download your final PCSR for the month
+      <div style={{ fontSize:15, fontWeight:800, color:C.navy, marginBottom:8 }}>
+        {file ? "PCSR loaded ✓" : "Upload your performed roster (PILOT CREW SCHEDULE REPORT) for any previous month here"}
       </div>
       {parsing
         ? <div style={{ fontSize:12, color:C.blue, fontWeight:700 }}>Reading PDF...</div>
