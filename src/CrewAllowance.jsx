@@ -91,18 +91,27 @@ async function fetchScheduleSource() {
 async function fetchMaintenanceMode() {
   if (!supabase) return { enabled: false, message: "" };
   try {
-    const { data } = await supabase.from("app_settings")
+    const { data, error } = await supabase.from("app_settings")
       .select("value").eq("key", "maintenance_mode").maybeSingle();
-    if (!data?.value) return { enabled: false, message: "" };
+    if (error) {
+      console.warn("[maintenance] read error:", error.message);
+      return { enabled: false, message: "" };
+    }
+    if (!data?.value) {
+      console.log("[maintenance] no row yet (returning false)");
+      return { enabled: false, message: "" };
+    }
     // Stored as JSON: {"enabled": true, "message": "..."}
     let parsed;
     try { parsed = JSON.parse(data.value); }
     catch { parsed = { enabled: data.value === "true", message: "" }; }
+    console.log("[maintenance] flag =", parsed);
     return {
       enabled: !!parsed.enabled,
       message: String(parsed.message || ""),
     };
-  } catch {
+  } catch (e) {
+    console.warn("[maintenance] fetch threw:", e.message);
     return { enabled: false, message: "" };
   }
 }
