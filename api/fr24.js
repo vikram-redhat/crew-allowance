@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const { flight, dep, arr, date } = req.query;
+  const { flight, dep, arr, date, debug } = req.query;
   if (!flight || !dep || !arr || !date) {
     return res.status(400).json({ error: "Missing params: flight, dep, arr, date required" });
   }
@@ -73,6 +73,12 @@ export default async function handler(req, res) {
     raw = await response.json();
   } catch (err) {
     return res.status(500).json({ error: `Fetch failed: ${err.message}` });
+  }
+
+  // Debug: append `&debug=1` to the request to see the raw FR24 response
+  // (admins use this when our field-name guesses don't match the real payload).
+  if (debug) {
+    return res.json({ _debug: true, _request: { flight, dep, arr, date }, raw });
   }
 
   // FR24 returns either an object with `data` array or an array directly,
