@@ -14,6 +14,12 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "RAPIDAPI_KEY not configured on server" });
   }
 
+  // NOTE: ADB interprets `date` as a calendar day in the airport's local time
+  // (which for IndiGo's DEL/BOM/etc. is also IST). For early-IST-morning
+  // flights this happens to align with the IST date in our PCSR, so this
+  // works in practice — but the alignment is implicit, not explicit. If we
+  // ever need ADB for a non-Indian dep airport, this would need an IST→UTC
+  // shift like the FR24 and AeroAPI proxies do.
   const url = `https://aerodatabox.p.rapidapi.com/flights/number/${encodeURIComponent(flight)}/${date}`;
 
   let raw;

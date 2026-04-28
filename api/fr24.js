@@ -45,10 +45,18 @@ export default async function handler(req, res) {
   }
 
   // ── Call FR24 ──────────────────────────────────────────────────────────────
-  // Bracket the query to the full local date (in UTC — the response carries
-  // its own local times so day-boundary fuzziness is OK).
-  const fromIso = `${date}T00:00:00`;
-  const toIso   = `${date}T23:59:59`;
+  // The `date` param is the IST calendar date from the user's PCSR. FR24
+  // wants UTC datetimes. IST = UTC+5:30, so e.g. "2026-02-25 IST" maps to
+  // "2026-02-24T18:30:00Z" → "2026-02-25T18:30:00Z" UTC. Without this shift
+  // an early-morning IST flight (e.g. 04:31 IST = 23:01 UTC the day before)
+  // falls outside the window and we get back the next day's operation
+  // instead — wrong aircraft reg, wrong tail-swap detection.
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+  const istMidnight   = new Date(date + "T00:00:00Z").getTime();
+  const startMs       = istMidnight - IST_OFFSET_MS;
+  const endMs         = startMs + 86400000;
+  const fromIso       = new Date(startMs).toISOString().replace(/\.\d{3}Z$/, "");
+  const toIso         = new Date(endMs - 1000).toISOString().replace(/\.\d{3}Z$/, "");
   const url = `https://fr24api.flightradar24.com/api/flight-summary/full`
             + `?flights=${encodeURIComponent(flight)}`
             + `&flight_datetime_from=${encodeURIComponent(fromIso)}`

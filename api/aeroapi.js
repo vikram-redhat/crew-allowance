@@ -34,11 +34,23 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: `AeroAPI /history covers past flights only; ${date} has not yet operated.` });
   }
 
-  // Date range: bracket the flight day in UTC. AeroAPI's `start` is inclusive,
-  // `end` is exclusive — so we ask for date 00:00:00Z through next day 00:00:00Z.
-  const startISO = `${date}T00:00:00Z`;
-  const endDate  = new Date(target.getTime() + 86400000);
-  const endISO   = endDate.toISOString().slice(0, 10) + "T00:00:00Z";
+  // Date range — IST → UTC translation.
+  //
+  // The `date` param is the IST calendar date (from the user's PCSR). All
+  // our pilots fly on Indian rosters, so dates are read in IST regardless
+  // of where the flight actually operated. AeroAPI expects UTC.
+  //
+  // IST = UTC+5:30, so e.g. "2026-02-25 IST" = "2026-02-24T18:30:00Z" to
+  // "2026-02-25T18:30:00Z" in UTC. A flight that departs 04:31 IST on Feb 25
+  // is 23:01 UTC on Feb 24 — falls inside this window. Without the IST
+  // shift we'd miss early-morning IST flights and pick up the NEXT day's
+  // operation of the same flight number instead.
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+  const istMidnight   = new Date(date + "T00:00:00Z").getTime();   // UTC ms of "midnight on `date`"
+  const startMs       = istMidnight - IST_OFFSET_MS;               // shift back 5h30m → that's IST 00:00
+  const endMs         = startMs + 86400000;                        // 24h later → IST 24:00
+  const startISO      = new Date(startMs).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const endISO        = new Date(endMs).toISOString().replace(/\.\d{3}Z$/, "Z");
 
   // Strip any "6E" prefix — FA expects the bare number with operator code.
   // For IndiGo: ident "IGO2448" works (ICAO operator code).
