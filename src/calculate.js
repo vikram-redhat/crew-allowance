@@ -1,6 +1,37 @@
 // Deterministic client-side allowance calculator.
 // Receives sectors from api/parse.js; all monetary logic lives here.
 
+// ─── Domestic (Indian) airports ──────────────────────────────────────────────
+// Sourced from IndiGo's network as observed in the Sector Values xlsx
+// (Jan/Feb 2026, ~99 codes). PAH §2.0 and §7.0 are explicit that domestic
+// rates apply only to Indian airports — international layovers and transits
+// have separate rules (PAH §8.2, USD-denominated) which are NOT yet
+// implemented. For now, non-domestic stations are SKIPPED with a flag in
+// the breakdown so users see they were intentionally excluded.
+//
+// To add a new airport: append the 3-letter IATA code below. Most additions
+// will be new IndiGo destinations within India.
+const INDIAN_AIRPORTS = new Set([
+  "AGR", "AGX", "AIP", "AJL", "AMD", "ATQ", "AYJ", "BBI", "BDQ", "BEK",
+  "BHO", "BKB", "BLR", "BOM", "BPM", "CCJ", "CCU", "CDP", "CJB", "CNN",
+  "COK", "DBR", "DED", "DEL", "DGH", "DHM", "DIB", "DIU", "DMU", "GAU",
+  "GAY", "GDB", "GOI", "GOP", "GOX", "GWL", "HBX", "HDO", "HGI", "HJR",
+  "HSR", "HSX", "HYD", "IDR", "IMF", "ISK", "IXA", "IXB", "IXC", "IXD",
+  "IXE", "IXG", "IXJ", "IXL", "IXM", "IXR", "IXS", "IXU", "IXZ", "JAI",
+  "JDH", "JGB", "JLR", "JRG", "JRH", "JSA", "KJB", "KLH", "KNU", "KQH",
+  "LKO", "MAA", "MYQ", "NAG", "NMI", "PAT", "PGH", "PNQ", "PNY", "PXN",
+  "RDP", "REW", "RJA", "RPR", "RQY", "SAG", "SAI", "SHL", "STV", "SXR",
+  "SXV", "TCR", "TIR", "TRV", "TRZ", "UDR", "VGA", "VNS", "VTZ",
+]);
+
+// Returns true if the given IATA code is an Indian (domestic) airport.
+// Defaults to false (treat as international) for unknown codes — safer to
+// skip and force a future code update than to wrongly pay domestic rates.
+export function isDomestic(iata) {
+  if (!iata) return false;
+  return INDIAN_AIRPORTS.has(String(iata).trim().toUpperCase());
+}
+
 function toMins(hhmm) {
   if (!hhmm) return null;
   const [h, m] = hhmm.split(":").map(Number);
@@ -173,6 +204,23 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
     const duration_hrs = (chocksOffMs - chocksOnMs) / 3600000;
     if (duration_hrs <= 10 + 1 / 60) return; // must be STRICTLY MORE than 10h01m
     if (!hotelMatches(station, date_in, date_out)) return;  // gate on hotel section
+
+    // PAH §2.0 (domestic) vs §8.2 (international): different rate tables and
+    // different currencies. International layover allowance is NOT yet
+    // implemented. We still RECORD non-domestic stays in the breakdown so
+    // the pilot can see they were noticed (and reconcile manually), but we
+    // pay nothing and flag them.
+    if (!isDomestic(station)) {
+      events.push({ station, date_in, date_out,
+        check_in_ist: chocksOnStr, check_out_ist: chocksOffStr,
+        duration_hrs: Math.round(duration_hrs * 100) / 100,
+        base_amount: 0, extra_amount: 0, total: 0,
+        international: true,
+        note: "International layover — calculated separately (not in this report).",
+      });
+      return;
+    }
+
     const base  = r.layoverBase;
     const extra = duration_hrs > 24 ? Math.ceil(duration_hrs - 24) * r.layoverExtra : 0;
     const eventTotal = base + extra;
@@ -274,7 +322,11 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
       const cur  = events[i];
       // Only merge if same station AND pilot didn't return to home base
       // in between (i.e. it was one continuous out-of-base hotel stay).
-      if (prev.station === cur.station && !dutyVisitsHomeBetween(prev, cur)) {
+      // Skip merging international events — they're recorded as zero-pay
+      // placeholders and shouldn't be combined with domestic-rate logic.
+      if (prev.station === cur.station &&
+          !prev.international && !cur.international &&
+          !dutyVisitsHomeBetween(prev, cur)) {
         // Merge: extend prev's window to cover cur. Use prev's chocks-on
         // (start) and cur's chocks-off (end). Recompute base + extra.
         const startMs = new Date(prev.date_in + "T00:00:00Z").getTime() +
@@ -391,6 +443,10 @@ export function calculateTransit(sectors, duties, scheduledTimes, pilot) {
       const sB = duty[i + 1];
       if (sA.arr.trim() !== sB.dep.trim()) continue;
       if (sA.is_dht || sB.is_dht) continue;
+      // PAH §7.0: transit allowance is for DOMESTIC HALTS only.
+      // International halts have separate rules (lounge / hotel / no transit
+      // allowance per se). Skip non-domestic stations entirely for now.
+      if (!isDomestic(sA.arr)) continue;
 
       const schedA   = getScheduled(sA, scheduledTimes);
       const schedB   = getScheduled(sB, scheduledTimes);

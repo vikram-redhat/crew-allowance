@@ -250,8 +250,12 @@ function dlCSV(res, pilot) {
   add("NIGHT FLYING (00:00–06:00 IST, PAH §9.0)"); add("Date","Flight","From","To","STD IST","STA IST","Night Mins","SV","Amount (INR)");
   res.night.sectors.forEach(s => add(s.date, s.flight, s.from, s.to, s.std_ist, s.sta_ist, s.night_mins, s.sv_used ?? "—", Math.round(s.amount)));
   add("TOTAL","","","","","","", Math.round(res.night.amount)); add();
-  add("LAYOVER"); add("Station","Date In","Date Out","Check-In","Check-Out","Hrs","Base","Extra","Total (INR)");
-  res.layover.events.forEach(e => add(e.station, e.date_in, e.date_out, e.check_in_ist, e.check_out_ist, e.duration_hrs, Math.round(e.base_amount), Math.round(e.extra_amount), Math.round(e.total)));
+  add("LAYOVER"); add("Station","Date In","Date Out","Check-In","Check-Out","Hrs","Base","Extra","Total (INR)","Note");
+  res.layover.events.forEach(e => add(
+    e.station, e.date_in, e.date_out, e.check_in_ist, e.check_out_ist, e.duration_hrs,
+    Math.round(e.base_amount), Math.round(e.extra_amount), Math.round(e.total),
+    e.international ? "International — calculated separately" : ""
+  ));
   add("TOTAL","","","","","","","", Math.round(res.layover.amount)); add();
   add("TAIL-SWAP"); add("Date","Sectors","Station","Reg Out","Reg In","Amount (INR)");
   res.tailSwap.swaps.forEach(s => add(s.date, s.sector_pair, s.station, s.reg_out, s.reg_in, s.unverifiable ? "unverifiable" : Math.round(s.amount)));
@@ -2249,12 +2253,24 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
           )}
           {result.layover.events.length > 0 && (
             <CollapsibleTable title="Domestic Layover Allowance" total={result.layover.amount}
-              note="Qualifying: >10h 01m away from home base. Extra rate beyond 24h (rounded up to next hour)."
+              note="Qualifying: >10h 01m away from home base. Extra rate beyond 24h (rounded up to next hour). International layovers are listed but not paid in this calculation."
               headers={["Station","Date In","Date Out","Duration","Base","Extra","Total"]} rows={result.layover.events}
               renderRow={(e,i) => (
-                <tr key={i}><TC i={i}><strong>{e.station}</strong></TC><TC i={i}>{e.date_in}</TC><TC i={i}>{e.date_out}</TC>
-                  <TC i={i}>{e.duration_hrs}h</TC><TC i={i}>{fmtINR(e.base_amount)}</TC>
-                  <TC i={i}>{e.extra_amount>0?fmtINR(e.extra_amount):"—"}</TC><TC i={i} right gold>{fmtINR(e.total)}</TC></tr>
+                <tr key={i}><TC i={i}>
+                  <strong>{e.station}</strong>
+                  {e.international && <span style={{ marginLeft:6 }}><Badge color="gold">Int'l</Badge></span>}
+                </TC><TC i={i}>{e.date_in}</TC><TC i={i}>{e.date_out}</TC>
+                  <TC i={i}>{e.duration_hrs}h</TC>
+                  {e.international ? (
+                    <TC i={i} colSpan={3}><span style={{ color:C.textLo, fontStyle:"italic", fontSize:11 }}>International — calculated separately</span></TC>
+                  ) : (
+                    <>
+                      <TC i={i}>{fmtINR(e.base_amount)}</TC>
+                      <TC i={i}>{e.extra_amount>0?fmtINR(e.extra_amount):"—"}</TC>
+                      <TC i={i} right gold>{fmtINR(e.total)}</TC>
+                    </>
+                  )}
+                </tr>
               )} />
           )}
           {result.tailSwap.swaps.length > 0 && (
