@@ -233,6 +233,84 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
       chocksOnMs, chocksOffMs, lastSector.ata || "", firstSector.atd || "");
   }
 
+  // ── COALESCE same-station layovers separated by a brief return trip ────
+  // Example: pilot lands PNQ 21:37 Feb 10, stays at hotel, flies PNQ-NAG-PNQ
+  // 00:15-03:58 Feb 12, returns to PNQ hotel, departs PNQ 21:47 Feb 12.
+  // Two `events` rows (PNQ→PNQ, PNQ→PNQ) but it's ONE continuous hotel stay
+  // for the pilot. Merge into a single event spanning chocks_on of the first
+  // to chocks_off of the second.
+  //
+  // ONLY merge if the pilot didn't go home between the two layovers — i.e.
+  // the intervening duty stays "out of base". If they flew back to home_base
+  // and out again, those are genuinely two separate layovers.
+  const homeBase = pilot.home_base.trim().toUpperCase();
+  const dutyVisitsHome = (duty) =>
+    duty.some(s => (s.dep || "").trim().toUpperCase() === homeBase
+                || (s.arr || "").trim().toUpperCase() === homeBase);
+  // Build a quick lookup: for each event, find the duty index that ENDS at
+  // the layover-in (lastSector.arr === station, .ata matches check_in_ist).
+  // We rely on duties being chronological and matching the events order.
+  //
+  // Simpler: walk events, and for each pair of consecutive same-station
+  // events, check if any duty between event_i's end and event_{i+1}'s start
+  // visits the home base.
+  const dutyVisitsHomeBetween = (cur, nxt) => {
+    // Find duties that start AFTER cur.date_out and end BEFORE nxt.date_in
+    for (const d of duties) {
+      if (!d.length) continue;
+      const dStart = d[0].date;
+      const dEnd   = d[d.length - 1].date;
+      if (dStart < cur.date_out) continue;
+      if (dEnd   > nxt.date_in)  continue;
+      // This duty falls inside the gap between the two layovers.
+      if (dutyVisitsHome(d)) return true;
+    }
+    return false;
+  };
+  if (events.length > 1) {
+    const merged = [events[0]];
+    for (let i = 1; i < events.length; i++) {
+      const prev = merged[merged.length - 1];
+      const cur  = events[i];
+      // Only merge if same station AND pilot didn't return to home base
+      // in between (i.e. it was one continuous out-of-base hotel stay).
+      if (prev.station === cur.station && !dutyVisitsHomeBetween(prev, cur)) {
+        // Merge: extend prev's window to cover cur. Use prev's chocks-on
+        // (start) and cur's chocks-off (end). Recompute base + extra.
+        const startMs = new Date(prev.date_in + "T00:00:00Z").getTime() +
+                        toMins(prev.check_in_ist) * 60000;
+        const endMs   = new Date(cur.date_out + "T00:00:00Z").getTime() +
+                        toMins(cur.check_out_ist) * 60000;
+        // Fall back to the duration sum if we can't compute from strings
+        let duration_hrs;
+        if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+          duration_hrs = (endMs - startMs) / 3600000;
+        } else {
+          duration_hrs = prev.duration_hrs + cur.duration_hrs;
+        }
+        const base  = r.layoverBase;
+        const extra = duration_hrs > 24 ? Math.ceil(duration_hrs - 24) * r.layoverExtra : 0;
+        const newTotal = base + extra;
+        // Adjust running total: subtract prev's amount, add merged amount.
+        total = total - prev.total - cur.total + newTotal;
+        merged[merged.length - 1] = {
+          station:        prev.station,
+          date_in:        prev.date_in,
+          date_out:       cur.date_out,
+          check_in_ist:   prev.check_in_ist,
+          check_out_ist:  cur.check_out_ist,
+          duration_hrs:   Math.round(duration_hrs * 100) / 100,
+          base_amount:    base,
+          extra_amount:   extra,
+          total:          newTotal,
+        };
+      } else {
+        merged.push(cur);
+      }
+    }
+    return { events: merged, total };
+  }
+
   return { events, total };
 }
 
