@@ -72,15 +72,18 @@ const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
    SCHEDULE DATA API  (AeroDataBox or FR24, via serverless proxy + Supabase cache)
 ═══════════════════════════════════════════════════════════════════ */
 // Read the global schedule_source admin setting from app_settings.
-// Returns "adb" (default) or "fr24". Fails open to "adb" on any error so a
-// missing settings table or permissions hiccup never breaks the calculator.
+// Returns "adb" (default), "fr24", or "aeroapi". Fails open to "adb" on any
+// error so a missing settings table or permissions hiccup never breaks the
+// calculator.
 async function fetchScheduleSource() {
   if (!supabase) return "adb";
   try {
     const { data } = await supabase.from("app_settings")
       .select("value").eq("key", "schedule_source").maybeSingle();
     const v = (data?.value || "").toLowerCase();
-    return v === "fr24" ? "fr24" : "adb";
+    if (v === "fr24")    return "fr24";
+    if (v === "aeroapi") return "aeroapi";
+    return "adb";
   } catch {
     return "adb";
   }
@@ -117,11 +120,21 @@ async function fetchMaintenanceMode() {
 }
 
 // Per-source throttle between live API calls.
-//   ADB:  600ms  (~1.6 req/sec, well under their limits)
-//   FR24: 2100ms (~28 req/min, just under FR24's typical 30/min ceiling)
-const SOURCE_THROTTLE_MS = { adb: 600, fr24: 2100 };
+//   ADB:     600ms  (~1.6 req/sec)
+//   FR24:    2100ms (~28 req/min — just under FR24's typical 30/min ceiling)
+//   AeroAPI: 600ms  (FA Standard handles bursts well)
+const SOURCE_THROTTLE_MS = { adb: 600, fr24: 2100, aeroapi: 600 };
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Bump the api_usage counter for a source. Fire-and-forget — never throws.
+async function bumpApiUsage(source) {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.rpc("bump_api_usage", { p_source: source });
+    if (error) console.warn("[usage] bump error:", error.message);
+  } catch (e) { console.warn("[usage] bump threw:", e.message); }
+}
 
 // Returns { data, fromCache } or { rateLimited: true } or null.
 async function fetchWithCache(flight, dep, arr, date, source = "adb") {
@@ -134,8 +147,12 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
       return { data, fromCache: true };
     }
   }
-  const endpoint = source === "fr24" ? "/api/fr24" : "/api/aerodatabox";
-  const providerName = source === "fr24" ? "FR24" : "AeroDataBox";
+  const endpoint = source === "fr24"    ? "/api/fr24"
+                 : source === "aeroapi" ? "/api/aeroapi"
+                 :                        "/api/aerodatabox";
+  const providerName = source === "fr24"    ? "FR24"
+                     : source === "aeroapi" ? "AeroAPI"
+                     :                        "AeroDataBox";
   const url = `${endpoint}?flight=${encodeURIComponent(flight)}&dep=${encodeURIComponent(dep)}&arr=${encodeURIComponent(arr)}&date=${encodeURIComponent(date)}`;
   let resp;
   try {
@@ -157,6 +174,8 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
     return null;
   }
   const json = await resp.json();
+  // Live call succeeded — count it for the usage dashboard.
+  bumpApiUsage(source);
   if (supabase) {
     const { error: cacheErr } = await supabase.from("flight_schedule_cache").upsert({
       flight_no: flight, dep, arr, date,
@@ -2173,8 +2192,8 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
               background: apiStats.failed === apiStats.fetched + apiStats.cached + apiStats.failed ? C.redBg : apiStats.failed > 0 ? C.goldBg : C.greenBg,
               border:"1px solid "+(apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 ? "#fca5a5" : apiStats.failed > 0 ? C.goldBorder : C.green),
               color: apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 ? C.red : apiStats.failed > 0 ? C.goldText : C.green }}>
-              Schedule data: {apiStats.fetched} fetched from {apiStats.source === "fr24" ? "FR24" : "AeroDataBox"} · {apiStats.cached} from cache · {apiStats.failed} failed
-              {apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 && ` — tail-swap requires schedule data. Check ${apiStats.source === "fr24" ? "FR24_API_TOKEN" : "RAPIDAPI_KEY"} or try again.`}
+              Schedule data: {apiStats.fetched} fetched from {apiStats.source === "fr24" ? "FR24" : apiStats.source === "aeroapi" ? "FlightAware" : "AeroDataBox"} · {apiStats.cached} from cache · {apiStats.failed} failed
+              {apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 && ` — tail-swap requires schedule data. Check ${apiStats.source === "fr24" ? "FR24_API_TOKEN" : apiStats.source === "aeroapi" ? "AEROAPI_KEY" : "RAPIDAPI_KEY"} or try again.`}
               {apiStats.failed > 0 && apiStats.fetched + apiStats.cached > 0 && " — deadhead/night calculated from actual times for failed sectors."}
             </div>
           )}
@@ -2267,6 +2286,124 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   API USAGE PANEL  (admin → Data Source tab)
+═══════════════════════════════════════════════════════════════════ */
+function ApiUsagePanel() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  // Per-call cost estimates in USD. Used only to compute estimated $ — you can
+  // adjust these as plans change. FR24 is flat-rate, so we display "—".
+  const COST_PER_CALL_USD = {
+    adb:     0.001,    // RapidAPI varies; ~$0.001 typical for AeroDataBox basic
+    fr24:    null,     // flat $90/mo, no per-call cost
+    aeroapi: 0.002,    // AeroAPI Standard
+  };
+  const PROVIDER_LABEL = {
+    adb:     "AeroDataBox",
+    fr24:    "Flightradar24",
+    aeroapi: "FlightAware AeroAPI",
+  };
+
+  const load = async () => {
+    if (!supabase) { setErr("Supabase not configured."); setLoading(false); return; }
+    setLoading(true); setErr("");
+    try {
+      // First day of the current calendar month (UTC).
+      const now = new Date();
+      const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,"0")}-01`;
+      const { data, error } = await supabase.from("api_usage")
+        .select("source, date, call_count")
+        .gte("date", monthStart)
+        .order("date", { ascending: false });
+      if (error) throw error;
+      setRows(data || []);
+    } catch (e) { setErr(e?.message || String(e)); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  // Aggregate by source for the current month.
+  const totals = {};
+  for (const r of rows) {
+    if (!totals[r.source]) totals[r.source] = 0;
+    totals[r.source] += r.call_count || 0;
+  }
+  // Always show all three so you see "0 calls" for the inactive providers too.
+  for (const s of ["aeroapi", "fr24", "adb"]) {
+    if (totals[s] == null) totals[s] = 0;
+  }
+
+  const monthName = new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+
+  return (
+    <Card>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:C.navy }}>API usage — {monthName}</div>
+        <button type="button" onClick={load} disabled={loading}
+          style={{ background:"none", border:"1px solid "+C.border, borderRadius:8,
+            padding:"4px 10px", fontSize:11, color:C.textMid, cursor:"pointer", fontFamily:"inherit" }}>
+          {loading ? "..." : "↻ Refresh"}
+        </button>
+      </div>
+
+      <div style={{ fontSize:12, color:C.textMid, marginBottom:14, lineHeight:1.6 }}>
+        Counts every live call to a schedule API (cache hits don't count). Resets at the start of each calendar month.
+      </div>
+
+      {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:10 }}>{err}</div>}
+
+      <div style={{ border:"1px solid "+C.border, borderRadius:10, overflow:"hidden" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 80px 100px", gap:10,
+          padding:"10px 12px", background:C.blueXLight, fontSize:11, fontWeight:700, color:C.navy, letterSpacing:"0.04em", textTransform:"uppercase" }}>
+          <div>Provider</div>
+          <div style={{ textAlign:"right" }}>Calls</div>
+          <div style={{ textAlign:"right" }}>Est. cost</div>
+        </div>
+        {["aeroapi", "fr24", "adb"].map((s, i) => {
+          const cnt = totals[s] || 0;
+          const cpc = COST_PER_CALL_USD[s];
+          const cost = cpc != null ? `$${(cnt * cpc).toFixed(2)}` : "—";
+          return (
+            <div key={s} style={{ display:"grid", gridTemplateColumns:"1fr 80px 100px", gap:10,
+              padding:"10px 12px", fontSize:13, color:C.text,
+              borderTop: i > 0 ? "1px solid "+C.border : "none" }}>
+              <div>{PROVIDER_LABEL[s]}</div>
+              <div style={{ textAlign:"right", fontWeight:700, color: cnt > 0 ? C.navy : C.textLo }}>
+                {cnt.toLocaleString("en-IN")}
+              </div>
+              <div style={{ textAlign:"right", fontWeight:700, color: cnt > 0 ? C.gold : C.textLo }}>
+                {cost}
+              </div>
+            </div>
+          );
+        })}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 80px 100px", gap:10,
+          padding:"10px 12px", fontSize:13, color:C.navy, fontWeight:800,
+          background:C.sky, borderTop:"1px solid "+C.border }}>
+          <div>Total</div>
+          <div style={{ textAlign:"right" }}>{Object.values(totals).reduce((a,b) => a+b, 0).toLocaleString("en-IN")}</div>
+          <div style={{ textAlign:"right", color:C.gold }}>
+            ${
+              Object.entries(totals).reduce((sum, [s, cnt]) => {
+                const cpc = COST_PER_CALL_USD[s];
+                return cpc != null ? sum + cnt * cpc : sum;
+              }, 0).toFixed(2)
+            }
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontSize:11, color:C.textLo, marginTop:10, lineHeight:1.6 }}>
+        FR24 cost is flat $90/month (Essential) so per-call cost is shown as "—".
+        AeroAPI cost based on Standard tier ($0.002/query) — adjust in code if your tier differs.
+      </div>
+    </Card>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    ADMIN SCREEN
 ═══════════════════════════════════════════════════════════════════ */
 function AdminScreen({ rates }) {
@@ -2309,7 +2446,7 @@ function AdminScreen({ rates }) {
       supabase.from("app_settings").select("value").eq("key", "schedule_source").maybeSingle()
         .then(({ data }) => {
           const v = (data?.value || "adb").toLowerCase();
-          setSource(v === "fr24" ? "fr24" : "adb");
+          setSource(["fr24","aeroapi","adb"].includes(v) ? v : "adb");
         });
     }
     if (tab === "maint") {
@@ -2337,7 +2474,7 @@ function AdminScreen({ rates }) {
       }, { onConflict: "key" });
       if (error) throw error;
       setSource(next);
-      setSourceMsg(`✓ Saved — new calculations will use ${next === "fr24" ? "FR24" : "AeroDataBox"}. Existing cached rows are unchanged.`);
+      setSourceMsg(`✓ Saved — new calculations will use ${next === "fr24" ? "FR24" : next === "aeroapi" ? "FlightAware" : "AeroDataBox"}. Existing cached rows are unchanged.`);
     } catch (e) {
       setSourceMsg("Error: " + (e?.message || String(e)));
     }
@@ -2584,8 +2721,9 @@ function AdminScreen({ rates }) {
             </div>
 
             {[
-              { id:"adb",  title:"AeroDataBox",    note:"Forward-looking schedule data. Best for calculating allowances on upcoming rosters. Via RapidAPI." },
-              { id:"fr24", title:"Flightradar24",  note:"Historical actuals (last 30 days). Best for reconciling a completed month against payslips. Does NOT cover future rosters." },
+              { id:"adb",     title:"AeroDataBox",     note:"Cheapest. Quality has been inconsistent for IndiGo (wrong STA on some sectors); kept as a fallback." },
+              { id:"fr24",    title:"Flightradar24",   note:"Excellent actuals + aircraft regs. NO scheduled times — derived from actuals. Best for tail-swap detection." },
+              { id:"aeroapi", title:"FlightAware",     note:"Best of both: scheduled AND actual gate times AND aircraft reg. History to 2011. Pay-per-query (~$0.002/call)." },
             ].map(opt => (
               <label key={opt.id}
                 style={{ display:"block", cursor:"pointer", marginBottom:10,
@@ -2607,7 +2745,7 @@ function AdminScreen({ rates }) {
               <Btn onClick={() => saveSource(source)} disabled={sourceSaving} icon="💾" full={false}>
                 {sourceSaving ? "Saving..." : "Save selection"}
               </Btn>
-              <div style={{ fontSize:11, color:C.textLo }}>Current: <strong>{source === "fr24" ? "FR24" : "AeroDataBox"}</strong></div>
+              <div style={{ fontSize:11, color:C.textLo }}>Current: <strong>{source === "fr24" ? "FR24" : source === "aeroapi" ? "FlightAware" : "AeroDataBox"}</strong></div>
             </div>
 
             {sourceMsg && (
@@ -2620,11 +2758,18 @@ function AdminScreen({ rates }) {
             )}
           </Card>
 
-          <Card style={{ background:C.goldBg, border:"1.5px solid "+C.goldBorder }}>
+          <Card style={{ background:C.goldBg, border:"1.5px solid "+C.goldBorder, marginBottom:16 }}>
             <div style={{ fontSize:12, color:C.goldText, lineHeight:1.7 }}>
-              <strong>FR24 requires</strong> the <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>FR24_API_TOKEN</code> environment variable to be set in Vercel. The 30-day tier covers only the last month of flights; anything older returns an error and is not cached. AeroDataBox remains the default for forward rosters.
+              <strong>Required env vars in Vercel</strong>:{" "}
+              <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>RAPIDAPI_KEY</code> for AeroDataBox,{" "}
+              <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>FR24_API_TOKEN</code> for FR24,{" "}
+              <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>AEROAPI_KEY</code> for FlightAware.
+              <br /><br />
+              Existing cached rows are never overwritten when you switch sources — only NEW lookups use the selected provider.
             </div>
           </Card>
+
+          <ApiUsagePanel />
         </div>
       )}
 
