@@ -2556,30 +2556,51 @@ function ApiProbePanel() {
                   ? `${summary.count} matching leg${summary.count === 1 ? "" : "s"} returned`
                   : "Normalised response"}
               </div>
-              {summary.first && (
-                <div style={{ display:"grid", gridTemplateColumns:"140px 1fr", rowGap:4, fontSize:12, color:C.text, fontFamily:"'Courier New', monospace" }}>
-                  {/* Try to render whatever fields are present */}
-                  {[
-                    ["Flight",         summary.first.flight ?? summary.first.ident],
-                    ["Operator",       summary.first.operator ?? summary.first.operating_as],
-                    ["Registration",   summary.first.registration ?? summary.first.reg],
-                    ["Aircraft type",  summary.first.aircraft_type ?? summary.first.type],
-                    ["Origin",         (summary.first.origin?.code_iata) ?? summary.first.orig_iata],
-                    ["Destination",    (summary.first.destination?.code_iata) ?? summary.first.dest_iata],
-                    ["Scheduled out",  summary.first.scheduled_out],
-                    ["Estimated out",  summary.first.estimated_out],
-                    ["Actual out",     summary.first.actual_out ?? summary.first.datetime_takeoff],
-                    ["Scheduled in",   summary.first.scheduled_in],
-                    ["Estimated in",   summary.first.estimated_in],
-                    ["Actual in",      summary.first.actual_in ?? summary.first.datetime_landed],
-                    ["Cancelled",      summary.first.cancelled],
-                    ["Diverted",       summary.first.diverted],
-                  ].filter(([,v]) => v !== undefined && v !== null && v !== "").flatMap(([k,v]) => [
-                    <div key={k+"-l"} style={{ color:C.textLo }}>{k}</div>,
-                    <div key={k+"-v"} style={{ color:C.navy }}>{fmt(v)}</div>
-                  ])}
-                </div>
-              )}
+              {summary.first && (() => {
+                // Render an ISO datetime as both UTC and IST (UTC+5:30).
+                // Returns the original value for non-datetime fields.
+                const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+                const renderTime = (v) => {
+                  if (!v || typeof v !== "string" || !ISO_RE.test(v)) return fmt(v);
+                  const d = new Date(v);
+                  if (isNaN(d)) return fmt(v);
+                  const fmtUtc = (d) => d.toISOString().replace("T", " ").slice(0, 16) + "Z";
+                  const fmtIst = (d) => {
+                    const ist = new Date(d.getTime() + (5 * 60 + 30) * 60 * 1000);
+                    return ist.toISOString().replace("T", " ").slice(0, 16) + " IST";
+                  };
+                  return (
+                    <span>
+                      <span>{fmtUtc(d)}</span>
+                      <span style={{ color:C.textLo, marginLeft:10 }}>·</span>
+                      <span style={{ color:C.blue, marginLeft:10 }}>{fmtIst(d)}</span>
+                    </span>
+                  );
+                };
+                return (
+                  <div style={{ display:"grid", gridTemplateColumns:"140px 1fr", rowGap:4, fontSize:12, color:C.text, fontFamily:"'Courier New', monospace" }}>
+                    {[
+                      ["Flight",         summary.first.flight ?? summary.first.ident],
+                      ["Operator",       summary.first.operator ?? summary.first.operating_as],
+                      ["Registration",   summary.first.registration ?? summary.first.reg],
+                      ["Aircraft type",  summary.first.aircraft_type ?? summary.first.type],
+                      ["Origin",         (summary.first.origin?.code_iata) ?? summary.first.orig_iata],
+                      ["Destination",    (summary.first.destination?.code_iata) ?? summary.first.dest_iata],
+                      ["Scheduled out",  summary.first.scheduled_out],
+                      ["Estimated out",  summary.first.estimated_out],
+                      ["Actual out",     summary.first.actual_out ?? summary.first.datetime_takeoff],
+                      ["Scheduled in",   summary.first.scheduled_in],
+                      ["Estimated in",   summary.first.estimated_in],
+                      ["Actual in",      summary.first.actual_in ?? summary.first.datetime_landed],
+                      ["Cancelled",      summary.first.cancelled],
+                      ["Diverted",       summary.first.diverted],
+                    ].filter(([,v]) => v !== undefined && v !== null && v !== "").flatMap(([k,v]) => [
+                      <div key={k+"-l"} style={{ color:C.textLo }}>{k}</div>,
+                      <div key={k+"-v"} style={{ color:C.navy }}>{renderTime(v)}</div>
+                    ])}
+                  </div>
+                );
+              })()}
               {summary.normalised && (
                 <pre style={{ fontSize:11, color:C.text, fontFamily:"'Courier New', monospace", margin:0, whiteSpace:"pre-wrap" }}>
                   {JSON.stringify(summary.normalised, null, 2)}
