@@ -2185,6 +2185,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
 function AdminScreen({ rates }) {
   const [tab,   setTab]   = useState("users");
   const [users, setUsers] = useState([]);
+  const [userQuery, setUserQuery] = useState("");
   const [svMonth,    setSvMonth]    = useState("");
   const [svFile,     setSvFile]     = useState(null);
   const [svUploading,setSvUploading]= useState(false);
@@ -2299,14 +2300,69 @@ function AdminScreen({ rates }) {
         ))}
       </div>
 
-      {tab === "users" && (
+      {tab === "users" && (() => {
+        // ── Stats summary (always over the full user set, not filtered) ──
+        const total      = users.length;
+        const active     = users.filter(u => u.is_active || u.is_admin).length;
+        const adminCount = users.filter(u => u.is_admin).length;
+        const compCount  = users.filter(u => !u.is_admin && u.subscription_plan === "free").length;
+        const paying     = users.filter(u => !u.is_admin && (u.subscription_plan === "1mo" || u.subscription_plan === "12mo")).length;
+        const trialUsed  = users.filter(u => !u.is_admin && u.trial_paid_at && u.trial_used).length;
+        const trialOpen  = users.filter(u => !u.is_admin && u.trial_paid_at && !u.trial_used).length;
+
+        // ── Filter by search query (name / email / emp_id, case-insensitive) ──
+        const q = userQuery.trim().toLowerCase();
+        const filtered = q
+          ? users.filter(u =>
+              (u.name || "").toLowerCase().includes(q) ||
+              (u.email || "").toLowerCase().includes(q) ||
+              String(u.emp_id || "").toLowerCase().includes(q)
+            )
+          : users;
+
+        return (
         <div>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
             <div style={{ fontSize:15, fontWeight:700, color:C.navy }}>Registered Users</div>
-            <Badge color="green">{users.filter(u => u.is_active || u.is_admin).length} active</Badge>
+            <Badge color="green">{active} active</Badge>
           </div>
+
+          {/* Stats summary */}
+          <div style={{ background:C.blueXLight, border:"1px solid "+C.border, borderRadius:10, padding:"10px 12px", marginBottom:12, fontSize:12, color:C.textMid, display:"flex", flexWrap:"wrap", gap:"4px 14px" }}>
+            <span><strong style={{ color:C.navy }}>{total}</strong> total</span>
+            <span style={{ color:C.borderMid }}>·</span>
+            <span><strong style={{ color:C.green }}>{paying}</strong> paying</span>
+            <span style={{ color:C.borderMid }}>·</span>
+            <span><strong style={{ color:C.gold }}>{compCount}</strong> comp</span>
+            <span style={{ color:C.borderMid }}>·</span>
+            <span><strong style={{ color:C.blue }}>{trialOpen}</strong> trial open</span>
+            <span style={{ color:C.borderMid }}>·</span>
+            <span><strong style={{ color:C.red }}>{trialUsed}</strong> trial used</span>
+            <span style={{ color:C.borderMid }}>·</span>
+            <span><strong style={{ color:C.navy }}>{adminCount}</strong> admin</span>
+          </div>
+
+          {/* Search box */}
+          <div style={{ marginBottom:14, position:"relative" }}>
+            <input value={userQuery} onChange={e => setUserQuery(e.target.value)}
+              placeholder="Search by name, email, or employee ID..."
+              style={{ width:"100%", boxSizing:"border-box", background:C.white, border:"1.5px solid "+C.border,
+                borderRadius:10, padding:"10px 14px 10px 36px", color:C.text, fontFamily:"inherit", fontSize:13, outline:"none" }} />
+            <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", fontSize:14, color:C.textLo, pointerEvents:"none" }}>🔍</span>
+            {userQuery && (
+              <button type="button" onClick={() => setUserQuery("")}
+                style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:C.textLo, fontSize:16, cursor:"pointer", padding:"4px 8px" }}>×</button>
+            )}
+          </div>
+          {q && (
+            <div style={{ fontSize:11, color:C.textLo, marginBottom:10 }}>
+              Showing {filtered.length} of {total} {filtered.length === 1 ? "match" : "matches"}
+            </div>
+          )}
+
           {users.length === 0 && <div style={{ textAlign:"center", padding:40, color:C.textLo }}>No users yet, or database not connected.</div>}
-          {users.map(u => {
+          {users.length > 0 && filtered.length === 0 && <div style={{ textAlign:"center", padding:30, color:C.textLo, fontSize:13 }}>No users match "{q}"</div>}
+          {(filtered).map(u => {
             const effectivelyActive = u.is_active || u.is_admin;
             // Plan label + badge colour
             let planLabel, planColor;
@@ -2341,7 +2397,8 @@ function AdminScreen({ rates }) {
             );
           })}
         </div>
-      )}
+        );
+      })()}
 
       {tab === "sv" && (
         <div>
