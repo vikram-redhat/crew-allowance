@@ -2420,6 +2420,195 @@ function ApiUsagePanel() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   API PROBE PANEL  (admin → API Probe tab)
+   Lets admins type in a flight + date and see the raw API response.
+   Useful for debugging "why is this sector wrong?" questions from users.
+═══════════════════════════════════════════════════════════════════ */
+function ApiProbePanel() {
+  const [provider, setProvider] = useState("aeroapi");
+  const [flight,   setFlight]   = useState("6E");
+  const [dep,      setDep]      = useState("");
+  const [arr,      setArr]      = useState("");
+  // Default date = yesterday (most useful for "what happened on this flight?")
+  const yesterday = (() => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const [date,     setDate]     = useState(yesterday);
+  const [loading,  setLoading]  = useState(false);
+  const [err,      setErr]      = useState("");
+  const [result,   setResult]   = useState(null);
+  const [showRaw,  setShowRaw]  = useState(false);
+
+  const PROVIDER_LABEL = {
+    aeroapi: "FlightAware AeroAPI",
+    fr24:    "Flightradar24",
+    adb:     "AeroDataBox",
+  };
+  const PROVIDER_ENDPOINT = {
+    aeroapi: "/api/aeroapi",
+    fr24:    "/api/fr24",
+    adb:     "/api/aerodatabox",
+  };
+
+  const run = async () => {
+    setErr(""); setResult(null);
+    if (!flight || !dep || !arr || !date) {
+      setErr("All fields are required."); return;
+    }
+    setLoading(true);
+    try {
+      const url = `${PROVIDER_ENDPOINT[provider]}?flight=${encodeURIComponent(flight.trim())}`
+                + `&dep=${encodeURIComponent(dep.trim().toUpperCase())}`
+                + `&arr=${encodeURIComponent(arr.trim().toUpperCase())}`
+                + `&date=${encodeURIComponent(date)}&debug=1`;
+      const resp = await fetch(url);
+      const text = await resp.text();
+      let json;
+      try { json = JSON.parse(text); } catch { json = { _rawText: text }; }
+      setResult({ status: resp.status, ok: resp.ok, json });
+    } catch (e) { setErr(e?.message || String(e)); }
+    setLoading(false);
+  };
+
+  // Pull a parsed summary from the proxy's normalised response when present.
+  // (When debug=1, the proxy returns BOTH the raw upstream payload and the
+  // parsed fields in some cases — but FA/FR24 only return raw, so we re-parse
+  // by reading the `flights[]` / `data[]` array.)
+  const summary = (() => {
+    if (!result?.json || result.json.error) return null;
+    if (result.json._debug) {
+      // FA shape: raw.flights[]   FR24 shape: raw.data[]
+      const raw = result.json.raw;
+      const arr = Array.isArray(raw?.flights) ? raw.flights
+                : Array.isArray(raw?.data)    ? raw.data
+                : [];
+      return { count: arr.length, first: arr[0] || null };
+    }
+    // Direct (non-debug) response — already normalised
+    return { normalised: result.json };
+  })();
+
+  const fmt = (v) => v == null ? "—" : String(v);
+
+  return (
+    <Card>
+      <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:8 }}>API Probe</div>
+      <div style={{ fontSize:12, color:C.textMid, marginBottom:14, lineHeight:1.6 }}>
+        Pull the raw response for a single flight from any provider. Useful for debugging
+        user reports (&quot;why was my Deadhead off?&quot;) or sanity-checking a sector before
+        switching providers. Counts toward your API usage budget.
+      </div>
+
+      {/* Provider selector */}
+      <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+        {Object.entries(PROVIDER_LABEL).map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setProvider(id)}
+            style={{
+              flex:1, padding:"8px 10px", borderRadius:8, fontFamily:"inherit", fontSize:12, fontWeight:700,
+              cursor:"pointer", transition:"all 0.15s",
+              background: provider === id ? C.blue : C.white,
+              color:      provider === id ? C.white : C.textMid,
+              border: "1.5px solid " + (provider === id ? C.blue : C.border),
+            }}>{label}</button>
+        ))}
+      </div>
+
+      {/* Form */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+        <FInput label="Flight" value={flight} onChange={setFlight} placeholder="e.g. 6E2448" />
+        <FInput label="Date" type="date" value={date} onChange={setDate} />
+        <FInput label="From (IATA)" value={dep} onChange={v => setDep(v.toUpperCase().slice(0,3))} placeholder="DEL" />
+        <FInput label="To (IATA)"   value={arr} onChange={v => setArr(v.toUpperCase().slice(0,3))} placeholder="BOM" />
+      </div>
+
+      <Btn onClick={run} disabled={loading} icon={loading?"⟳":"🔍"} full={false}>
+        {loading ? "Querying..." : "Run probe"}
+      </Btn>
+
+      {err && (
+        <div style={{ marginTop:14, padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12 }}>
+          {err}
+        </div>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div style={{ marginTop:18 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            <Badge color={result.ok ? "green" : "red"}>HTTP {result.status}</Badge>
+            <span style={{ fontSize:12, color:C.textMid }}>{PROVIDER_LABEL[provider]}</span>
+          </div>
+
+          {/* Error case */}
+          {!result.ok && (
+            <div style={{ padding:"12px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:10, color:C.red, fontSize:12, lineHeight:1.6, marginBottom:14 }}>
+              <div style={{ fontWeight:700, marginBottom:4 }}>{result.json?.error || "Request failed"}</div>
+              {result.json?.detail && <div style={{ fontSize:11, opacity:0.85 }}>{result.json.detail}</div>}
+            </div>
+          )}
+
+          {/* Parsed summary */}
+          {summary && (
+            <Card color="blue" style={{ marginBottom:14 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:C.navy, marginBottom:8 }}>
+                {summary.count != null
+                  ? `${summary.count} matching leg${summary.count === 1 ? "" : "s"} returned`
+                  : "Normalised response"}
+              </div>
+              {summary.first && (
+                <div style={{ display:"grid", gridTemplateColumns:"140px 1fr", rowGap:4, fontSize:12, color:C.text, fontFamily:"'Courier New', monospace" }}>
+                  {/* Try to render whatever fields are present */}
+                  {[
+                    ["Flight",         summary.first.flight ?? summary.first.ident],
+                    ["Operator",       summary.first.operator ?? summary.first.operating_as],
+                    ["Registration",   summary.first.registration ?? summary.first.reg],
+                    ["Aircraft type",  summary.first.aircraft_type ?? summary.first.type],
+                    ["Origin",         (summary.first.origin?.code_iata) ?? summary.first.orig_iata],
+                    ["Destination",    (summary.first.destination?.code_iata) ?? summary.first.dest_iata],
+                    ["Scheduled out",  summary.first.scheduled_out],
+                    ["Estimated out",  summary.first.estimated_out],
+                    ["Actual out",     summary.first.actual_out ?? summary.first.datetime_takeoff],
+                    ["Scheduled in",   summary.first.scheduled_in],
+                    ["Estimated in",   summary.first.estimated_in],
+                    ["Actual in",      summary.first.actual_in ?? summary.first.datetime_landed],
+                    ["Cancelled",      summary.first.cancelled],
+                    ["Diverted",       summary.first.diverted],
+                  ].filter(([,v]) => v !== undefined && v !== null && v !== "").flatMap(([k,v]) => [
+                    <div key={k+"-l"} style={{ color:C.textLo }}>{k}</div>,
+                    <div key={k+"-v"} style={{ color:C.navy }}>{fmt(v)}</div>
+                  ])}
+                </div>
+              )}
+              {summary.normalised && (
+                <pre style={{ fontSize:11, color:C.text, fontFamily:"'Courier New', monospace", margin:0, whiteSpace:"pre-wrap" }}>
+                  {JSON.stringify(summary.normalised, null, 2)}
+                </pre>
+              )}
+            </Card>
+          )}
+
+          {/* Raw JSON toggle */}
+          <button type="button" onClick={() => setShowRaw(!showRaw)}
+            style={{ background:"none", border:"1px solid "+C.border, borderRadius:8,
+              padding:"6px 12px", fontSize:11, color:C.textMid, cursor:"pointer", fontFamily:"inherit" }}>
+            {showRaw ? "Hide" : "Show"} raw JSON
+          </button>
+          {showRaw && (
+            <pre style={{ marginTop:10, padding:"12px 14px", background:C.sky, borderRadius:10,
+              border:"1px solid "+C.border, fontSize:11, color:C.text,
+              fontFamily:"'Courier New', monospace", overflowX:"auto", maxHeight:400, overflowY:"auto",
+              whiteSpace:"pre-wrap", wordBreak:"break-word" }}>
+              {JSON.stringify(result.json, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    ADMIN SCREEN
 ═══════════════════════════════════════════════════════════════════ */
 function AdminScreen({ rates }) {
@@ -2445,6 +2634,7 @@ function AdminScreen({ rates }) {
     { id:"users",  label:"Users" },
     { id:"sv",     label:"Sector Values" },
     { id:"source", label:"Data Source" },
+    { id:"probe",  label:"API Probe" },
     { id:"maint",  label:"Maintenance" },
     { id:"rates",  label:"Current Rates" },
   ];
@@ -2786,6 +2976,12 @@ function AdminScreen({ rates }) {
           </Card>
 
           <ApiUsagePanel />
+        </div>
+      )}
+
+      {tab === "probe" && (
+        <div>
+          <ApiProbePanel />
         </div>
       )}
 
