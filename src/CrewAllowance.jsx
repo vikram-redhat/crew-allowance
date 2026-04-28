@@ -398,7 +398,7 @@ function PcsrDropZone({ file, onParsed, onFail }) {
         transition:"all 0.2s", textAlign:"center", opacity:parsing?0.75:1 }}>
       <div style={{ fontSize:40, marginBottom:10 }}>📄</div>
       <div style={{ fontSize:15, fontWeight:800, color:C.navy, marginBottom:8 }}>
-        {file ? "PCSR loaded ✓" : "Upload your performed roster (PILOT CREW SCHEDULE REPORT) for any previous month here"}
+        {file ? "PCSR loaded ✓" : "Upload your performed roster (PERSONAL CREW SCHEDULE REPORT) for any previous month here"}
       </div>
       {parsing
         ? <div style={{ fontSize:12, color:C.blue, fontWeight:700 }}>Reading PDF...</div>
