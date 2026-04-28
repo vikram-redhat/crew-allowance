@@ -89,6 +89,30 @@ async function fetchScheduleSource() {
   }
 }
 
+// Phase 2 (Apr 2026): when the primary provider is AeroAPI but its response
+// has a null aircraft_reg (a known FA gap for some IndiGo flights — e.g.
+// 6E2230 DEL-KNU 2026-01-01 and 6E2052 DEL-HYD 2026-01-11 returned null),
+// we make a secondary call to FR24 just to fill in the reg. FR24 is on a
+// flat $90/month plan, so the marginal cost is zero — we only pay for the
+// duplicate latency.
+//
+// This is gated by an admin toggle (`fr24_fallback_enabled`) so it can be
+// flipped off the moment FlightAware fixes their data on their side.
+//
+// Defaults to TRUE — the use case is real today and the cost is zero.
+async function fetchFallbackEnabled() {
+  if (!supabase) return true;
+  try {
+    const { data } = await supabase.from("app_settings")
+      .select("value").eq("key", "fr24_fallback_enabled").maybeSingle();
+    if (!data?.value) return true; // default ON
+    const v = String(data.value).toLowerCase();
+    return v !== "false" && v !== "0";
+  } catch {
+    return true;
+  }
+}
+
 // Returns { enabled: boolean, message: string } for the maintenance flag.
 // Fails open (enabled=false) on any error so a misconfig never locks users out.
 async function fetchMaintenanceMode() {
@@ -136,17 +160,10 @@ async function bumpApiUsage(source) {
   } catch (e) { console.warn("[usage] bump threw:", e.message); }
 }
 
-// Returns { data, fromCache } or { rateLimited: true } or null.
-async function fetchWithCache(flight, dep, arr, date, source = "adb") {
-  if (supabase) {
-    const { data, error: cacheReadErr } = await supabase.from("flight_schedule_cache")
-      .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", date).limit(1).maybeSingle();
-    if (cacheReadErr) {
-      console.warn(`[cache] read error for ${flight} ${dep}→${arr} ${date}:`, cacheReadErr.message);
-    } else if (data) {
-      return { data, fromCache: true };
-    }
-  }
+// One-shot call to a single provider proxy. No cache reads, no merging.
+// Used both as the primary lookup and as the FR24 fallback for missing FA reg.
+// Returns { data, status: "ok" } | { rateLimited, retryAfter } | { status: code } | null.
+async function callProxyOnce(flight, dep, arr, date, source) {
   const endpoint = source === "fr24"    ? "/api/fr24"
                  : source === "aeroapi" ? "/api/aeroapi"
                  :                        "/api/aerodatabox";
@@ -161,7 +178,6 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
     console.warn(`${providerName} fetch error for ${flight} ${dep}→${arr} ${date}:`, fetchErr.message);
     return null;
   }
-  // Surface rate-limit hits to the caller so it can back off + retry.
   if (resp.status === 429) {
     const retryAfter = parseInt(resp.headers.get("retry-after") || "0", 10);
     console.warn(`${providerName} 429 rate-limited; retry-after=${retryAfter}s`);
@@ -171,11 +187,58 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
     let body = "";
     try { body = await resp.text(); } catch { /* ignore */ }
     console.warn(`${providerName} ${resp.status} for ${flight} ${dep}→${arr} ${date}:`, body.slice(0, 200));
-    return null;
+    return { status: resp.status };
   }
-  const json = await resp.json();
-  // Live call succeeded — count it for the usage dashboard.
+  const data = await resp.json();
+  return { data, status: "ok" };
+}
+
+// Returns { data, fromCache } or { rateLimited: true } or null.
+async function fetchWithCache(flight, dep, arr, date, source = "adb") {
+  if (supabase) {
+    const { data, error: cacheReadErr } = await supabase.from("flight_schedule_cache")
+      .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", date).limit(1).maybeSingle();
+    if (cacheReadErr) {
+      console.warn(`[cache] read error for ${flight} ${dep}→${arr} ${date}:`, cacheReadErr.message);
+    } else if (data) {
+      return { data, fromCache: true };
+    }
+  }
+
+  // ── Primary call ────────────────────────────────────────────────────────
+  const primary = await callProxyOnce(flight, dep, arr, date, source);
+  if (!primary) return null;
+  if (primary.rateLimited) return primary;
+  if (primary.status !== "ok") return null;
+
+  let json = primary.data;
   bumpApiUsage(source);
+
+  // ── Phase 2: FR24 fallback for missing FA aircraft_reg ───────────────────
+  // Only fires when:
+  //   1. Primary source is AeroAPI (FR24 fallback only makes sense for FA).
+  //   2. Admin toggle `fr24_fallback_enabled` is true (default true).
+  //   3. FA returned a successful response BUT aircraft_reg is null/empty.
+  // Cost: zero — FR24 is flat $90/mo on Essential.
+  // We track these calls under source "fr24_fallback" so the admin can see
+  // the hit rate (= how often FA is letting us down).
+  if (source === "aeroapi" && (!json.aircraft_reg || json.aircraft_reg === "")) {
+    try {
+      const fallbackOn = await fetchFallbackEnabled();
+      if (fallbackOn) {
+        const fb = await callProxyOnce(flight, dep, arr, date, "fr24");
+        if (fb?.status === "ok" && fb.data?.aircraft_reg) {
+          json = { ...json, aircraft_reg: fb.data.aircraft_reg, _reg_source: "fr24_fallback" };
+          bumpApiUsage("fr24_fallback");
+          console.log(`[fr24_fallback] filled reg for ${flight} ${dep}→${arr} ${date}: ${fb.data.aircraft_reg}`);
+        }
+      }
+    } catch (e) {
+      // Fallback is best-effort; never let it break the main call.
+      console.warn("[fr24_fallback] failed (non-fatal):", e.message);
+    }
+  }
+
   if (supabase) {
     const { error: cacheErr } = await supabase.from("flight_schedule_cache").upsert({
       flight_no: flight, dep, arr, date,
@@ -2311,15 +2374,18 @@ function ApiUsagePanel() {
 
   // Per-call cost estimates in USD. Used only to compute estimated $ — you can
   // adjust these as plans change. FR24 is flat-rate, so we display "—".
+  // fr24_fallback shares FR24's flat plan, so cost is also "—".
   const COST_PER_CALL_USD = {
-    adb:     0.001,    // RapidAPI varies; ~$0.001 typical for AeroDataBox basic
-    fr24:    null,     // flat $90/mo, no per-call cost
-    aeroapi: 0.002,    // AeroAPI Standard
+    adb:            0.001,    // RapidAPI varies; ~$0.001 typical for AeroDataBox basic
+    fr24:           null,     // flat $90/mo, no per-call cost
+    aeroapi:        0.002,    // AeroAPI Standard
+    fr24_fallback:  null,     // same flat $90/mo bucket as FR24
   };
   const PROVIDER_LABEL = {
-    adb:     "AeroDataBox",
-    fr24:    "Flightradar24",
-    aeroapi: "FlightAware AeroAPI",
+    adb:            "AeroDataBox",
+    fr24:           "Flightradar24",
+    aeroapi:        "FlightAware AeroAPI",
+    fr24_fallback:  "FR24 fallback (FA reg gap)",
   };
 
   const load = async () => {
@@ -2346,10 +2412,14 @@ function ApiUsagePanel() {
     if (!totals[r.source]) totals[r.source] = 0;
     totals[r.source] += r.call_count || 0;
   }
-  // Always show all three so you see "0 calls" for the inactive providers too.
-  for (const s of ["aeroapi", "fr24", "adb"]) {
+  // Always show all four rows so you see "0 calls" for the inactive ones too.
+  for (const s of ["aeroapi", "fr24_fallback", "fr24", "adb"]) {
     if (totals[s] == null) totals[s] = 0;
   }
+  // Hit rate: how often did fallback fire vs primary AeroAPI calls?
+  const aeroapiCalls  = totals.aeroapi || 0;
+  const fallbackCalls = totals.fr24_fallback || 0;
+  const hitRatePct    = aeroapiCalls > 0 ? (fallbackCalls / aeroapiCalls) * 100 : 0;
 
   const monthName = new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
@@ -2377,7 +2447,7 @@ function ApiUsagePanel() {
           <div style={{ textAlign:"right" }}>Calls</div>
           <div style={{ textAlign:"right" }}>Est. cost</div>
         </div>
-        {["aeroapi", "fr24", "adb"].map((s, i) => {
+        {["aeroapi", "fr24_fallback", "fr24", "adb"].map((s, i) => {
           const cnt = totals[s] || 0;
           const cpc = COST_PER_CALL_USD[s];
           const cost = cpc != null ? `$${(cnt * cpc).toFixed(2)}` : "—";
@@ -2411,9 +2481,26 @@ function ApiUsagePanel() {
         </div>
       </div>
 
+      {aeroapiCalls > 0 && (
+        <div style={{ marginTop:12, padding:"10px 14px", borderRadius:8, fontSize:12,
+          background: hitRatePct > 10 ? C.goldBg : C.blueXLight,
+          color: hitRatePct > 10 ? C.goldText : C.textMid,
+          border: "1px solid " + (hitRatePct > 10 ? C.goldBorder : C.border),
+          lineHeight:1.6 }}>
+          <strong>Fallback hit rate:</strong> {fallbackCalls.toLocaleString("en-IN")} / {aeroapiCalls.toLocaleString("en-IN")}
+          {" "}AeroAPI calls needed FR24 to fill in a missing aircraft reg ({hitRatePct.toFixed(1)}%).
+          {hitRatePct > 10
+            ? " That's a meaningful gap — keep the fallback ON until FlightAware fixes their data."
+            : hitRatePct > 0
+              ? " Low rate — FA is mostly returning regs cleanly."
+              : ""}
+        </div>
+      )}
+
       <div style={{ fontSize:11, color:C.textLo, marginTop:10, lineHeight:1.6 }}>
         FR24 cost is flat $90/month (Essential) so per-call cost is shown as "—".
         AeroAPI cost based on Standard tier ($0.002/query) — adjust in code if your tier differs.
+        Fallback calls share the FR24 quota, so they don't add to the bill.
       </div>
     </Card>
   );
@@ -2644,6 +2731,10 @@ function AdminScreen({ rates }) {
   const [source,        setSource]        = useState("adb");
   const [sourceSaving,  setSourceSaving]  = useState(false);
   const [sourceMsg,     setSourceMsg]     = useState("");
+  // Phase 2: FR24 fallback for missing FA reg (default ON; toggle in Data Source tab).
+  const [fallbackOn,     setFallbackOn]     = useState(true);
+  const [fallbackSaving, setFallbackSaving] = useState(false);
+  const [fallbackMsg,    setFallbackMsg]    = useState("");
   // Maintenance toggle state
   const [maintEnabled, setMaintEnabled] = useState(false);
   const [maintMessage, setMaintMessage] = useState("");
@@ -2674,6 +2765,13 @@ function AdminScreen({ rates }) {
         .then(({ data }) => {
           const v = (data?.value || "adb").toLowerCase();
           setSource(["fr24","aeroapi","adb"].includes(v) ? v : "adb");
+        });
+      // Phase 2 toggle (defaults ON if no row exists yet).
+      supabase.from("app_settings").select("value").eq("key", "fr24_fallback_enabled").maybeSingle()
+        .then(({ data }) => {
+          if (!data?.value) { setFallbackOn(true); return; }
+          const v = String(data.value).toLowerCase();
+          setFallbackOn(v !== "false" && v !== "0");
         });
     }
     if (tab === "maint") {
@@ -2706,6 +2804,26 @@ function AdminScreen({ rates }) {
       setSourceMsg("Error: " + (e?.message || String(e)));
     }
     setSourceSaving(false);
+  };
+
+  const saveFallback = async (next) => {
+    if (!supabase) { setFallbackMsg("Supabase not configured."); return; }
+    setFallbackSaving(true); setFallbackMsg("");
+    try {
+      const { error } = await supabase.from("app_settings").upsert({
+        key: "fr24_fallback_enabled", value: next ? "true" : "false",
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "key" });
+      if (error) throw error;
+      setFallbackOn(next);
+      setFallbackMsg(next
+        ? "✓ Fallback ON — when FlightAware returns no aircraft reg, FR24 will be queried to fill it. (Cost: zero — FR24 is flat $90/mo.)"
+        : "✓ Fallback OFF — only the primary provider will be used. Missing regs will stay null."
+      );
+    } catch (e) {
+      setFallbackMsg("Error: " + (e?.message || String(e)));
+    }
+    setFallbackSaving(false);
   };
 
   const saveMaintenance = async (enabled, message) => {
@@ -2981,6 +3099,56 @@ function AdminScreen({ rates }) {
                 color: sourceMsg.startsWith("✓") ? C.green : C.red,
                 border: "1px solid " + (sourceMsg.startsWith("✓") ? C.green : "#fca5a5") }}>
                 {sourceMsg}
+              </div>
+            )}
+          </Card>
+
+          {/* ── Phase 2: FR24 fallback toggle ───────────────────────────── */}
+          <Card color="blue" style={{ marginBottom:16 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:8 }}>
+              FR24 fallback for missing aircraft reg
+            </div>
+            <div style={{ fontSize:12, color:C.textMid, marginBottom:14, lineHeight:1.6 }}>
+              FlightAware sometimes returns <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>null</code> for aircraft registration on certain IndiGo flights (e.g. 6E2230 DEL-KNU on 1 Jan, 6E2052 DEL-HYD on 11 Jan). When this happens, the calculator can make a secondary call to FR24 — which has carried valid regs for the same flights — and merge the reg into the cached row. Only fires when the primary provider is <strong>FlightAware</strong>.
+              <br /><br />
+              <strong>Cost: zero.</strong> FR24 Essential is flat $90/month, so fallback calls don't add to the bill. Disable this once FlightAware fixes their data so your usage panel goes back to a single provider.
+              <br /><br />
+              <em>Cache caveat:</em> the fallback only fires on fresh primary calls, never on cache hits. Rows already cached with a null reg (from before this feature existed) will stay null-reg unless you delete them from <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>flight_schedule_cache</code>.
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", gap:14, padding:"12px 14px",
+              background: fallbackOn ? C.greenBg : C.blueXLight, borderRadius:10,
+              border: "1.5px solid " + (fallbackOn ? C.green : C.border) }}>
+              <div style={{ fontSize:22 }}>{fallbackOn ? "🛟" : "○"}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, fontWeight:800, color: fallbackOn ? C.green : C.textMid }}>
+                  Fallback is {fallbackOn ? "ON" : "OFF"}
+                </div>
+                <div style={{ fontSize:11, color:C.textMid, marginTop:2 }}>
+                  {fallbackOn
+                    ? "Missing FA regs will be filled from FR24 automatically."
+                    : "Missing FA regs will stay null — tail-swap detection may suffer."}
+                </div>
+              </div>
+              <Btn onClick={() => saveFallback(!fallbackOn)} disabled={fallbackSaving}
+                variant={fallbackOn ? "ghost" : "primary"} small full={false}>
+                {fallbackSaving ? "Saving..." : (fallbackOn ? "Turn OFF" : "Turn ON")}
+              </Btn>
+            </div>
+
+            {fallbackMsg && (
+              <div style={{ marginTop:12, padding:"10px 14px", borderRadius:8, fontSize:12,
+                background: fallbackMsg.startsWith("✓") ? C.greenBg : C.redBg,
+                color: fallbackMsg.startsWith("✓") ? C.green : C.red,
+                border: "1px solid " + (fallbackMsg.startsWith("✓") ? C.green : "#fca5a5") }}>
+                {fallbackMsg}
+              </div>
+            )}
+
+            {source !== "aeroapi" && fallbackOn && (
+              <div style={{ marginTop:12, padding:"10px 14px", borderRadius:8, fontSize:12,
+                background: C.goldBg, color: C.goldText, border:"1px solid "+C.goldBorder }}>
+                Note: fallback only fires when the primary provider is <strong>FlightAware</strong>. Currently selected: <strong>{source === "fr24" ? "FR24" : "AeroDataBox"}</strong>, so the toggle has no effect right now.
               </div>
             )}
           </Card>
