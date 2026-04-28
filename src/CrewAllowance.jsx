@@ -86,6 +86,27 @@ async function fetchScheduleSource() {
   }
 }
 
+// Returns { enabled: boolean, message: string } for the maintenance flag.
+// Fails open (enabled=false) on any error so a misconfig never locks users out.
+async function fetchMaintenanceMode() {
+  if (!supabase) return { enabled: false, message: "" };
+  try {
+    const { data } = await supabase.from("app_settings")
+      .select("value").eq("key", "maintenance_mode").maybeSingle();
+    if (!data?.value) return { enabled: false, message: "" };
+    // Stored as JSON: {"enabled": true, "message": "..."}
+    let parsed;
+    try { parsed = JSON.parse(data.value); }
+    catch { parsed = { enabled: data.value === "true", message: "" }; }
+    return {
+      enabled: !!parsed.enabled,
+      message: String(parsed.message || ""),
+    };
+  } catch {
+    return { enabled: false, message: "" };
+  }
+}
+
 // Per-source throttle between live API calls.
 //   ADB:  600ms  (~1.6 req/sec, well under their limits)
 //   FR24: 2100ms (~28 req/min, just under FR24's typical 30/min ceiling)
@@ -377,6 +398,44 @@ function AuthShell({ children, title, sub, wide, onSubmit }) {
         {Array.from({ length:9 }).map((_, i) => (
           <div key={i} style={{ width:i%3===1?28:16, height:4, borderRadius:2, background:C.blue }} />
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MAINTENANCE SCREEN  (shown to all non-admins when admin flips the flag)
+═══════════════════════════════════════════════════════════════════ */
+function MaintenanceScreen({ message, onAdminLogin }) {
+  return (
+    <div style={{ minHeight:"100vh",
+      background:"linear-gradient(160deg,"+C.skyMid+" 0%,"+C.sky+" 50%,"+C.white+" 100%)",
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px 16px" }}>
+      <div style={{ textAlign:"center", marginBottom:28 }}>
+        <div style={{ width:64, height:64, borderRadius:18,
+          background:"linear-gradient(135deg,"+C.gold+","+C.goldText+")",
+          display:"flex", alignItems:"center", justifyContent:"center",
+          fontSize:32, margin:"0 auto 14px", boxShadow:"0 6px 20px rgba(184,112,0,0.3)" }}>🔧</div>
+        <div style={{ fontSize:24, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
+        <div style={{ fontSize:11, color:C.gold, letterSpacing:"0.12em", textTransform:"uppercase", marginTop:2, fontWeight:700 }}>Down for Maintenance</div>
+      </div>
+      <div style={{ width:"100%", maxWidth:440, background:C.white, borderRadius:22,
+        boxShadow:"0 12px 48px rgba(184,112,0,0.14)", padding:"28px 24px", border:"1px solid "+C.goldBorder, textAlign:"center" }}>
+        <h2 style={{ margin:"0 0 12px", fontSize:18, color:C.navy, fontWeight:900 }}>We'll be back soon</h2>
+        <p style={{ margin:"0 0 18px", fontSize:14, color:C.textMid, lineHeight:1.6 }}>
+          {message
+            ? message
+            : "Crew Allowance is temporarily down while we ship some improvements. Please check back in a little while — we won't be long."}
+        </p>
+        <p style={{ margin:"0 0 20px", fontSize:12, color:C.textLo, lineHeight:1.6 }}>
+          Questions? Email <a href="mailto:help@crewallowance.com" style={{ color:C.blue, textDecoration:"underline" }}>help@crewallowance.com</a>
+        </p>
+        <button type="button" onClick={onAdminLogin}
+          style={{ background:"none", border:"1px solid "+C.border, borderRadius:8,
+            padding:"8px 16px", fontSize:11, color:C.textLo, cursor:"pointer",
+            fontFamily:"inherit", fontWeight:600 }}>
+          Admin sign-in
+        </button>
       </div>
     </div>
   );
@@ -2213,12 +2272,18 @@ function AdminScreen({ rates }) {
   const [source,        setSource]        = useState("adb");
   const [sourceSaving,  setSourceSaving]  = useState(false);
   const [sourceMsg,     setSourceMsg]     = useState("");
+  // Maintenance toggle state
+  const [maintEnabled, setMaintEnabled] = useState(false);
+  const [maintMessage, setMaintMessage] = useState("");
+  const [maintSaving,  setMaintSaving]  = useState(false);
+  const [maintMsg,     setMaintMsg]     = useState("");
   const svFileRef = useRef();
 
   const tabs = [
     { id:"users",  label:"Users" },
     { id:"sv",     label:"Sector Values" },
     { id:"source", label:"Data Source" },
+    { id:"maint",  label:"Maintenance" },
     { id:"rates",  label:"Current Rates" },
   ];
 
@@ -2238,6 +2303,20 @@ function AdminScreen({ rates }) {
           setSource(v === "fr24" ? "fr24" : "adb");
         });
     }
+    if (tab === "maint") {
+      supabase.from("app_settings").select("value").eq("key", "maintenance_mode").maybeSingle()
+        .then(({ data }) => {
+          if (!data?.value) { setMaintEnabled(false); setMaintMessage(""); return; }
+          try {
+            const parsed = JSON.parse(data.value);
+            setMaintEnabled(!!parsed.enabled);
+            setMaintMessage(String(parsed.message || ""));
+          } catch {
+            setMaintEnabled(data.value === "true");
+            setMaintMessage("");
+          }
+        });
+    }
   }, [tab]);
 
   const saveSource = async (next) => {
@@ -2254,6 +2333,24 @@ function AdminScreen({ rates }) {
       setSourceMsg("Error: " + (e?.message || String(e)));
     }
     setSourceSaving(false);
+  };
+
+  const saveMaintenance = async (enabled, message) => {
+    if (!supabase) { setMaintMsg("Supabase not configured."); return; }
+    setMaintSaving(true); setMaintMsg("");
+    try {
+      const value = JSON.stringify({ enabled: !!enabled, message: String(message || "") });
+      const { error } = await supabase.from("app_settings").upsert({
+        key: "maintenance_mode", value, updated_at: new Date().toISOString(),
+      }, { onConflict: "key" });
+      if (error) throw error;
+      setMaintMsg(enabled
+        ? "✓ Maintenance mode is now ON. Non-admin users will see the maintenance screen within 60 seconds."
+        : "✓ Maintenance mode is OFF. The site is back to normal.");
+    } catch (e) {
+      setMaintMsg("Error: " + (e?.message || String(e)));
+    }
+    setMaintSaving(false);
   };
 
   const toggleUser = async (id, currentState) => {
@@ -2522,6 +2619,66 @@ function AdminScreen({ rates }) {
         </div>
       )}
 
+      {tab === "maint" && (
+        <div>
+          <Card color={maintEnabled ? "gold" : "blue"} style={{ marginBottom:16 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:8 }}>Maintenance Mode</div>
+            <div style={{ fontSize:12, color:C.textMid, marginBottom:14, lineHeight:1.6 }}>
+              When enabled, all non-admin users see a "Down for maintenance" screen instead of the app. Admins (you) can still log in and use the site normally.
+              <br /><br />
+              Use this when you're switching data providers, running migrations, or fixing something user-visible — anything where in-flight calculations would produce wrong results.
+              <br /><br />
+              Changes propagate within 60 seconds (the app polls the flag at that interval).
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14, padding:"12px 14px",
+              background: maintEnabled ? C.redBg : C.greenBg, borderRadius:10,
+              border: "1.5px solid " + (maintEnabled ? "#fca5a5" : C.green) }}>
+              <div style={{ fontSize:24 }}>{maintEnabled ? "🔧" : "✓"}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, fontWeight:800, color: maintEnabled ? C.red : C.green }}>
+                  {maintEnabled ? "Maintenance mode is ON" : "Site is live"}
+                </div>
+                <div style={{ fontSize:11, color:C.textMid, marginTop:2 }}>
+                  {maintEnabled ? "Non-admin users are locked out." : "All users have normal access."}
+                </div>
+              </div>
+              <Btn onClick={() => saveMaintenance(!maintEnabled, maintMessage)}
+                disabled={maintSaving}
+                variant={maintEnabled ? "ghost" : "danger"}
+                small full={false}>
+                {maintSaving ? "Saving..." : (maintEnabled ? "Turn OFF" : "Turn ON")}
+              </Btn>
+            </div>
+
+            <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:6 }}>
+              Custom message (optional)
+            </label>
+            <textarea value={maintMessage} onChange={e => setMaintMessage(e.target.value)}
+              placeholder="Defaults to: 'Crew Allowance is temporarily down while we ship some improvements. Please check back in a little while — we won't be long.'"
+              rows={3}
+              style={{ width:"100%", boxSizing:"border-box", background:C.white, border:"1.5px solid "+C.border,
+                borderRadius:10, padding:"10px 14px", color:C.text, fontFamily:"inherit", fontSize:13, outline:"none", resize:"vertical" }} />
+            <div style={{ fontSize:11, color:C.textLo, marginTop:4, marginBottom:14 }}>
+              Shown to non-admin users on the maintenance screen. Leave empty to use the default message.
+            </div>
+
+            <Btn onClick={() => saveMaintenance(maintEnabled, maintMessage)} disabled={maintSaving} icon="💾" full={false}>
+              {maintSaving ? "Saving..." : "Save message"}
+            </Btn>
+
+            {maintMsg && (
+              <div style={{ marginTop:12, padding:"10px 14px", borderRadius:8, fontSize:12,
+                background: maintMsg.startsWith("✓") ? C.greenBg : C.redBg,
+                color: maintMsg.startsWith("✓") ? C.green : C.red,
+                border: "1px solid " + (maintMsg.startsWith("✓") ? C.green : "#fca5a5") }}>
+                {maintMsg}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
       {tab === "rates" && (
         <div>
           <Card color="blue" style={{ marginBottom:14 }}>
@@ -2567,6 +2724,15 @@ export default function App() {
   const [tab,         setTab]         = useState("calc");
   const [rates]                       = useState(DEFAULT_RATES);
   const [pendingUser, setPendingUser] = useState(null);
+  const [maintenance, setMaintenance] = useState({ enabled: false, message: "" });
+
+  // Re-check maintenance flag on every navigation/auth change. Cheap call.
+  useEffect(() => {
+    fetchMaintenanceMode().then(setMaintenance);
+    // Re-check every 60s in case admin flips it while a user is mid-session.
+    const id = setInterval(() => fetchMaintenanceMode().then(setMaintenance), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!supabase) { Promise.resolve().then(() => setScreen("landing")); return; }
@@ -2655,6 +2821,13 @@ export default function App() {
       </div>
     </div>
   );
+
+  // Maintenance mode: lock everyone out except admins. Admins can still log
+  // in (so they can flip the flag back off); the login screen is reachable
+  // to allow that. Already-logged-in admins continue normally.
+  if (maintenance.enabled && !user?.is_admin && screen !== "login" && screen !== "reset-password") {
+    return <MaintenanceScreen message={maintenance.message} onAdminLogin={() => setScreen("login")} />;
+  }
 
   if (screen === "landing")        return <LandingPage goLogin={() => setScreen("login")} goSignup={() => setScreen("signup")} />;
   if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} />;
