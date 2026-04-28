@@ -81,19 +81,21 @@ export default async function handler(req, res) {
     return res.json({ _debug: true, _request: { flight, dep, arr, date }, raw });
   }
 
-  // FR24 returns either an object with `data` array or an array directly,
-  // depending on endpoint variant. Normalise.
+  // FR24 Flight Summary returns { data: [ ... ] } where each leg has:
+  //   datetime_takeoff:  "2026-02-02T13:30:31Z"  (UTC actual departure)
+  //   datetime_landed:   "2026-02-02T14:32:18Z"  (UTC actual arrival)
+  //   orig_iata, dest_iata, reg, callsign, flight, flight_time (seconds)
+  //
+  // Note: FR24 does NOT publish scheduled times on this endpoint — they're a
+  // flight tracker, not a schedule provider. We use actual times as the best
+  // available substitute for both std/sta and atd/ata. This matches what
+  // IndiGo actually pays based on (e.g. Deadhead is paid on airborne time).
   const records = Array.isArray(raw?.data) ? raw.data
                 : Array.isArray(raw)       ? raw
                 : [];
-  // Match on dep/arr IATA. FR24 field names vary slightly between variants;
-  // check common ones.
-  const pickIata = (r, side) =>
-    r?.[`${side}_iata`] ?? r?.[`${side}_airport_iata`] ?? r?.airport?.[side]?.iata ?? null;
   const leg = records.find(r =>
-    pickIata(r, "orig") === dep && pickIata(r, "dest") === arr
-  ) || records.find(r =>
-    pickIata(r, "dep") === dep && pickIata(r, "arr") === arr
+    (r?.orig_iata === dep || r?.dep_iata === dep) &&
+    (r?.dest_iata === arr || r?.arr_iata === arr)
   );
   if (!leg) {
     return res.status(404).json({
@@ -101,21 +103,31 @@ export default async function handler(req, res) {
     });
   }
 
-  // Extract HH:MM (local) from an ISO datetime string. FR24 typically provides
-  // both UTC and local. Prefer local. If only UTC is present, pass it through
-  // — the client expects local times but we can't synthesise a timezone here.
-  const hhmm = str => {
-    if (!str) return null;
-    const m = String(str).match(/(\d{2}:\d{2})(?::\d{2})?/);
-    return m ? m[1] : null;
+  // Convert ISO UTC timestamp → IST HH:MM (UTC+5:30).
+  // All allowance rules are evaluated in IST per IndiGo's PAH.
+  const utcToIstHhmm = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d)) return null;
+    // Add 5h 30m for IST.
+    const ist = new Date(d.getTime() + (5 * 60 + 30) * 60 * 1000);
+    const hh = String(ist.getUTCHours()).padStart(2, "0");
+    const mm = String(ist.getUTCMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
   };
 
+  const atd = utcToIstHhmm(leg.datetime_takeoff);
+  const ata = utcToIstHhmm(leg.datetime_landed);
+
+  // FR24 has actuals only; reuse them for scheduled times so calculations
+  // that depend on STD/STA (Deadhead block hours, Night Flying eligibility)
+  // can still proceed. Documented in calculate.js.
   return res.json({
-    std_local:    hhmm(leg?.datetime_sched_dep_local ?? leg?.datetime_sched_takeoff_local ?? leg?.std_local ?? leg?.scheduled_departure_local),
-    sta_local:    hhmm(leg?.datetime_sched_arr_local ?? leg?.datetime_sched_landed_local ?? leg?.sta_local ?? leg?.scheduled_arrival_local),
-    atd_local:    hhmm(leg?.datetime_takeoff_local   ?? leg?.datetime_actual_dep_local   ?? leg?.atd_local ?? leg?.actual_departure_local),
-    ata_local:    hhmm(leg?.datetime_landed_local    ?? leg?.datetime_actual_arr_local   ?? leg?.ata_local ?? leg?.actual_arrival_local),
-    aircraft_reg: leg?.reg ?? leg?.aircraft_reg ?? leg?.aircraft?.reg ?? null,
-    _source: "fr24",
+    std_local:    atd,
+    sta_local:    ata,
+    atd_local:    atd,
+    ata_local:    ata,
+    aircraft_reg: leg?.reg ?? null,
+    _source:      "fr24",
   });
 }
