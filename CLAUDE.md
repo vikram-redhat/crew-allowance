@@ -19,11 +19,20 @@ No test framework is configured.
 
 ### Structure
 
-- **`/src/CrewAllowance.jsx`** — The entire app (~1,500 lines): all screens, components, business logic, and inline styles live here. There is no component splitting across files.
+- **`/src/CrewAllowance.jsx`** — The entire UI app (~3,000+ lines): all screens, components, business logic, and inline styles live here. There is no component splitting across files.
+- **`/src/calculate.js`** — Pure-function calculation engine. Imported by CrewAllowance.jsx and by the test harnesses in `/tmp`. All five allowance rules live here, plus `INDIAN_AIRPORTS` / `isDomestic()` helpers and `runCalculations()` orchestrator.
+- **`/src/pdf/pcsrParser.js`** — PCSR PDF parser. Two paths: GRID (most pilots) and EOM (header-driven column detection — see Section 12.8 of HANDOFF). Rejects current/future-month PCSRs.
 - **`/src/main.jsx`** — Entry point; mounts `<App />` from CrewAllowance.jsx.
+- **`/api/aeroapi.js`** — FlightAware AeroAPI proxy (primary schedule data source). Returns scheduled + actual gate times + aircraft reg. Supports `?debug=1`.
+- **`/api/fr24.js`** — Flightradar24 proxy (fallback only — used when FA returns null aircraft reg, gated by `fr24_fallback_enabled` admin setting).
+- **`/api/aerodatabox.js`** — AeroDataBox proxy (legacy, kept as toggleable break-glass; not called in normal operation).
 - **`/api/create-subscription.js`** — Vercel serverless function: creates Stripe Customer + Subscription for tiered plans (₹100/mo, ₹1000/yr) or handles free-access code activation.
 - **`/api/stripe-webhook.js`** — Stripe webhook handler: syncs subscription lifecycle events (created, updated, deleted, invoice paid/failed) to the `profiles` table.
 - **`/api/create-payment-intent.js`** — **DEAD CODE** (legacy one-off PaymentIntent). Superseded by create-subscription.js. Safe to delete.
+
+The three schedule proxies share an interchangeable response shape:
+`{ std_local, sta_local, atd_local, ata_local, aircraft_reg, _source?, _meta? }` — so the
+client can swap providers via the admin Data Source toggle without code changes.
 
 ### Screen Navigation
 
@@ -31,7 +40,7 @@ Navigation is state-driven (no React Router). A `screen` state variable in the r
 
 ### Backend Services
 
-- **Supabase** — Auth (email/password), `profiles` table (user records with `is_active`, `is_admin` flags).
+- **Supabase** — Auth (email/password) + tables: `profiles` (users with `is_active`, `is_admin`, subscription state, trial state), `flight_schedule_cache` (per flight/dep/arr/date), `app_settings` (`schedule_source`, `maintenance_mode`, `fr24_fallback_enabled`), `sector_values` (monthly SV uploads), `api_usage` (per-source per-day call counts).
 - **Stripe** — Subscription billing via Stripe.js (client) + `/api/create-subscription` + `/api/stripe-webhook` (server). Two plans: ₹100/month, ₹1,000/year. Free-access code path for comp accounts.
 
 ### Allowance Calculation Engine
@@ -71,9 +80,22 @@ STRIPE_PRICE_12MO         # price_... for ₹1,000/year plan
 FREE_ACCESS_CODE          # Shared secret for comp accounts
 SUPABASE_URL              # Same URL, but without VITE_ prefix for server
 SUPABASE_SERVICE_ROLE_KEY # Service role key (never the anon key)
-RAPIDAPI_KEY              # For AeroDataBox proxy
-FR24_API_TOKEN            # For FR24 proxy
+AEROAPI_KEY               # For FlightAware AeroAPI proxy (PRIMARY)
+FR24_API_TOKEN            # For FR24 proxy (FALLBACK for missing aircraft reg)
+RAPIDAPI_KEY              # For AeroDataBox proxy (LEGACY, not called in normal use)
 ```
+
+### Schedule Data Architecture
+
+Three providers, one response shape, admin-toggleable. See HANDOFF Section 12.1–12.4 for
+the migration history (ADB → FR24 → FlightAware) and the IST/UTC bug fix that affected
+all three. Phase 2 (FR24 fallback for missing FA reg) and Phase 3 (midnight-delay sector
+detection) are documented in HANDOFF 12.2 and 12.3.
+
+The `fetchWithCache` function in CrewAllowance.jsx is the single entry point. It handles:
+cache lookups (PCSR date and day-1 for midnight-delay sectors), primary proxy call, FR24
+fallback for null reg, midnight-delay retry with `date - 1`, cache writes under the *true*
+operation date, and `_date_shifted` flag propagation.
 
 ### Styling
 

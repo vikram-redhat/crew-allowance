@@ -227,8 +227,11 @@ async function callProxyOnce(flight, dep, arr, date, source) {
 // with date-1 and use that operation if its ATD matches. See Phase 3 notes.
 async function fetchWithCache(flight, dep, arr, date, source = "adb", pcsrAtd = null) {
   // Diagnostic log: helps debug why Phase 3 may or may not have triggered
-  // for a given sector. Remove or downgrade once Phase 3 is proven stable.
-  console.log(`[fetchWithCache] ${flight} ${dep}→${arr} ${date} pcsrAtd=${pcsrAtd ?? "null"}`);
+  // for a given sector. Only logs when pcsrAtd is in the early-AM window
+  // (the only case where Phase 3 actually does anything) to avoid noise.
+  if (pcsrAtd && /^0[0-5]:/.test(pcsrAtd)) {
+    console.log(`[fetchWithCache:earlyAM] ${flight} ${dep}→${arr} ${date} pcsrAtd=${pcsrAtd}`);
+  }
   // ── Cache check: try the PCSR date first, then (if pcsrAtd suggests a
   //    midnight-delay shift) try day-1. This means re-runs of an
   //    already-shifted sector hit cache without paying for a primary call.
@@ -392,8 +395,11 @@ async function buildSchedMap(sectors, onProgress, source = "adb") {
       let result = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         // Pass the PCSR's actual takeoff time so fetchWithCache can detect
-        // midnight-delay sectors (Phase 3). Skipped for DHF/DHT (no atd_local).
-        result = await fetchWithCache(s._flight, s.dep, s.arr, s.date, source, s.atd_local || null);
+        // midnight-delay sectors (Phase 3). The remapping in `recompute`
+        // renames `atd_local` to `atd` before sectors get here, so check both.
+        // Skipped (passed as null) for DHF/DHT sectors which have no ATD.
+        const pcsrAtd = s.atd || s.atd_local || null;
+        result = await fetchWithCache(s._flight, s.dep, s.arr, s.date, source, pcsrAtd);
         if (!result?.rateLimited) break;
         const waitMs = (result.retryAfter > 0 ? result.retryAfter * 1000 : (10000 * (attempt + 1)));
         console.warn(`Rate-limited; backing off ${waitMs}ms before retry ${attempt + 1}/3`);
