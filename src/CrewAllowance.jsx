@@ -2179,6 +2179,18 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
       setResult(res);
       setPhase("done");
 
+      // Bump the calculation-runs counter (admin runs are filtered out
+      // server-side by the RPC, so this is safe to call regardless — the
+      // client-side check is just to avoid the wasted round-trip).
+      // Period is the machine-form YYYY-MM (e.g. "2026-01"), not the
+      // display name, so periods aggregate cleanly across locales.
+      if (!isAdmin && supabase) {
+        supabase.rpc("bump_calculation_run", { p_period: pcsrData.month })
+          .then(({ error }) => {
+            if (error) console.warn("[runs] bump error:", error.message);
+          });
+      }
+
       // If this calculation was the trial run, mark it used (server-side + local).
       // We deliberately do this AFTER setResult so failures upstream don't
       // burn the trial — only successful completions count.
@@ -2492,6 +2504,170 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
 /* ═══════════════════════════════════════════════════════════════════
    API USAGE PANEL  (admin → Data Source tab)
 ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   USAGE METRICS PANEL  (admin → Usage tab)
+   Pilot calculation runs over time. Admins are filtered server-side
+   by bump_calculation_run RPC, so they never appear in these counts.
+═══════════════════════════════════════════════════════════════════ */
+function UsageMetricsPanel() {
+  const [rows, setRows] = useState([]);   // raw run rows: { user_id, period, ran_at }
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const load = async () => {
+    if (!supabase) { setErr("Supabase not configured."); setLoading(false); return; }
+    setLoading(true); setErr("");
+    try {
+      // Pull the last 90 days for trends + all-time for totals via two queries.
+      // The 90-day window is overshoot for the 12-week chart so we have headroom.
+      const { data, error } = await supabase.from("calculation_runs")
+        .select("user_id, period, ran_at")
+        .order("ran_at", { ascending: false })
+        .limit(10000);
+      if (error) throw error;
+      setRows(data || []);
+    } catch (e) { setErr(e?.message || String(e)); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  // ── Aggregations ─────────────────────────────────────────────────────────
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const totalAllTime = rows.length;
+  const thisMonth    = rows.filter(r => new Date(r.ran_at) >= monthStart);
+  const monthRuns    = thisMonth.length;
+  const uniquePilotsThisMonth = new Set(thisMonth.map(r => r.user_id)).size;
+  const uniquePilotsAllTime   = new Set(rows.map(r => r.user_id)).size;
+
+  // Top 5 most-rerun periods (signal: pilots re-running suggests they're
+  // not yet trusting a result, or our data updated and they came back).
+  const periodCounts = {};
+  for (const r of rows) periodCounts[r.period] = (periodCounts[r.period] || 0) + 1;
+  const topPeriods = Object.entries(periodCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  // 12-week trend (Mon–Sun buckets, oldest left → newest right).
+  const weekBuckets = [];
+  const oneWeekMs = 7 * 86400000;
+  for (let i = 11; i >= 0; i--) {
+    const start = new Date(now.getTime() - (i + 1) * oneWeekMs);
+    const end   = new Date(now.getTime() - i * oneWeekMs);
+    const count = rows.filter(r => {
+      const t = new Date(r.ran_at).getTime();
+      return t >= start.getTime() && t < end.getTime();
+    }).length;
+    const label = `${end.getUTCDate()}/${end.getUTCMonth() + 1}`;
+    weekBuckets.push({ label, count, start, end });
+  }
+  const maxBucket = Math.max(1, ...weekBuckets.map(b => b.count));
+
+  // Most active pilots this month (UUID-only, no PII fetched).
+  const pilotCountsThisMonth = {};
+  for (const r of thisMonth) pilotCountsThisMonth[r.user_id] = (pilotCountsThisMonth[r.user_id] || 0) + 1;
+  const topPilots = Object.entries(pilotCountsThisMonth)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  const monthName = new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+
+  return (
+    <div>
+      {/* ── Hero stats ─────────────────────────────────────────────── */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+        <Card color="blue">
+          <div style={{ fontSize:11, color:C.textMid, letterSpacing:"0.04em", textTransform:"uppercase", marginBottom:4 }}>All-time runs</div>
+          <div style={{ fontSize:28, fontWeight:900, color:C.navy }}>{totalAllTime.toLocaleString("en-IN")}</div>
+          <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>{uniquePilotsAllTime} unique pilots</div>
+        </Card>
+        <Card color="blue">
+          <div style={{ fontSize:11, color:C.textMid, letterSpacing:"0.04em", textTransform:"uppercase", marginBottom:4 }}>{monthName}</div>
+          <div style={{ fontSize:28, fontWeight:900, color:C.green }}>{monthRuns.toLocaleString("en-IN")}</div>
+          <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>{uniquePilotsThisMonth} unique pilots</div>
+        </Card>
+      </div>
+
+      {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:10 }}>{err}</div>}
+
+      {/* ── 12-week trend ──────────────────────────────────────────── */}
+      <Card style={{ marginBottom:14 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:C.navy }}>Runs per week — last 12 weeks</div>
+          <button type="button" onClick={load} disabled={loading}
+            style={{ background:"none", border:"1px solid "+C.border, borderRadius:8,
+              padding:"4px 10px", fontSize:11, color:C.textMid, cursor:"pointer", fontFamily:"inherit" }}>
+            {loading ? "..." : "↻ Refresh"}
+          </button>
+        </div>
+        <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:120, padding:"4px 0" }}>
+          {weekBuckets.map((b, i) => {
+            const h = Math.round((b.count / maxBucket) * 100);
+            return (
+              <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                <div style={{ fontSize:10, color:C.textMid, fontWeight:700 }}>{b.count || ""}</div>
+                <div title={`Week ending ${b.label}: ${b.count} runs`}
+                  style={{ width:"100%", height:`${h}%`, minHeight: b.count > 0 ? 3 : 0,
+                    background:C.blue, borderRadius:"3px 3px 0 0", transition:"height 0.2s" }} />
+                <div style={{ fontSize:9, color:C.textLo }}>{b.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* ── Most-rerun periods ─────────────────────────────────────── */}
+      <Card style={{ marginBottom:14 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:6 }}>Most-rerun periods</div>
+        <div style={{ fontSize:11, color:C.textMid, marginBottom:10, lineHeight:1.6 }}>
+          Periods that pilots re-run most often. High counts can mean low trust in the result, or that we improved data after their first run and they came back.
+        </div>
+        {topPeriods.length === 0 ? (
+          <div style={{ fontSize:12, color:C.textLo, fontStyle:"italic" }}>No runs yet.</div>
+        ) : (
+          <div style={{ border:"1px solid "+C.border, borderRadius:10, overflow:"hidden" }}>
+            {topPeriods.map(([period, cnt], i) => (
+              <div key={period} style={{ display:"grid", gridTemplateColumns:"1fr 80px", gap:10,
+                padding:"9px 12px", fontSize:13, color:C.text,
+                borderTop: i > 0 ? "1px solid "+C.border : "none",
+                background: i === 0 ? C.blueXLight : "transparent" }}>
+                <div style={{ fontFamily:"'Courier New', monospace" }}>{period}</div>
+                <div style={{ textAlign:"right", fontWeight:700, color:C.navy }}>{cnt.toLocaleString("en-IN")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* ── Top pilots this month ──────────────────────────────────── */}
+      <Card style={{ marginBottom:14 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:6 }}>Most active pilots this month</div>
+        <div style={{ fontSize:11, color:C.textMid, marginBottom:10, lineHeight:1.6 }}>
+          Top 5 by run count. Pilot identity shown as user UUID prefix only — cross-reference with the Users tab if you need to identify someone.
+        </div>
+        {topPilots.length === 0 ? (
+          <div style={{ fontSize:12, color:C.textLo, fontStyle:"italic" }}>No runs this month yet.</div>
+        ) : (
+          <div style={{ border:"1px solid "+C.border, borderRadius:10, overflow:"hidden" }}>
+            {topPilots.map(([uid, cnt], i) => (
+              <div key={uid} style={{ display:"grid", gridTemplateColumns:"1fr 80px", gap:10,
+                padding:"9px 12px", fontSize:13, color:C.text,
+                borderTop: i > 0 ? "1px solid "+C.border : "none" }}>
+                <div style={{ fontFamily:"'Courier New', monospace", fontSize:11, color:C.textMid }}>{uid.slice(0, 8)}…</div>
+                <div style={{ textAlign:"right", fontWeight:700, color:C.navy }}>{cnt.toLocaleString("en-IN")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <div style={{ fontSize:11, color:C.textLo, marginTop:10, lineHeight:1.6 }}>
+        Admin runs (yours) are excluded server-side and never appear in these counts. The chart shows up to the last 10,000 runs (limit will be raised if you ever hit it).
+      </div>
+    </div>
+  );
+}
+
 function ApiUsagePanel() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2869,6 +3045,7 @@ function AdminScreen({ rates }) {
 
   const tabs = [
     { id:"users",  label:"Users" },
+    { id:"usage",  label:"Usage" },
     { id:"sv",     label:"Sector Values" },
     { id:"source", label:"Data Source" },
     { id:"probe",  label:"API Probe" },
@@ -3291,6 +3468,10 @@ function AdminScreen({ rates }) {
 
           <ApiUsagePanel />
         </div>
+      )}
+
+      {tab === "usage" && (
+        <UsageMetricsPanel />
       )}
 
       {tab === "probe" && (
