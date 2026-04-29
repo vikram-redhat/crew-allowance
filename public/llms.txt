@@ -1,0 +1,74 @@
+# CrewAllowance.com
+
+> Independent web tool for IndiGo cockpit crew to verify monthly allowances
+> against PAH FLT Issue 01 Rev 46. Upload a PCSR PDF + Sector Value Excel
+> file and get a per-sector breakdown of all five PAH allowances in under
+> two minutes.
+
+## What this site is
+
+CrewAllowance.com is an independent calculator for verifying the five
+IndiGo pilot allowances defined in the **Pilot Allowance Handbook (PAH)
+FLT Issue 01 Rev 46, dated 27 February 2026**:
+
+- **Deadhead Allowance** — PAH §1.0 — ₹4,000 / scheduled block hour (Captain),
+  ₹2,000 (First Officer). Prorated to the closest minute.
+  Applies only to DHF-coded sectors. Uses scheduled block (STA − STD), not
+  actual block, not Sector Value.
+- **Domestic Layover Allowance (TLPD)** — PAH §2.0 — ₹3,000 flat for
+  10:01–24:00 hrs (Captain), +₹150/hr beyond, rounded up. Eligibility is
+  away from the pilot's home base. Spill-over layovers are paid in the
+  month they conclude.
+- **Tail Swap Allowance** — PAH §6.0 — ₹1,500 per qualifying same-duty swap
+  (Captain), ₹750 (First Officer). Eligible: Op→Op, Op→DHF, DHF→Op. Not
+  eligible: any DHT sector, or DHF→DHF.
+- **Transit Halt Allowance** — PAH §7.0 — ₹1,000/hr (Captain), capped at
+  4 hours per halt. Eligible if scheduled halt ≥ 90 min, OR actual halt
+  ≥ 90 min AND |actual − scheduled| > 15 min. Home-base transit halts count.
+- **Night Flying Allowance** — PAH §9.0 — ₹2,000/night hour (Captain),
+  prorated to closest minute. Calculated from scheduled departure (STD)
+  intersected with the 00:01–06:00 IST window — NOT contingent on actual
+  departure (ATD) or actual hours flown.
+
+The audience is any IndiGo cockpit crew member (Captain, Senior Captain,
+LTC/TRI/DE, First Officer, Senior First Officer) at any home base
+(DEL, BOM, HYD, BLR, CCU, COK, etc.).
+
+## Inputs the calculator accepts
+
+- **PCSR PDF** — Personal Crew Schedule Report, end-of-month export from
+  AIMS. Calendar-grid PDF with sector data, crew details, hotel and
+  transfer information.
+- **Sector Value (SV) Excel** — From 6eBreeze → Departments – OCC →
+  Sector Pay. Published around the 20th–21st of the following month.
+  Columns include FLTNBR, DEP, ARR, Time_Slot (UTC), SectorValue (in
+  minutes), aircraft type.
+
+The user's profile (employee ID, name, home base, rank) is set once on
+first login and stored against the user's account.
+
+## Pages
+
+- [Home](https://crewallowance.com/): Calculator (sign-in required).
+- [Privacy Policy](https://crewallowance.com/privacy.html)
+- [Terms of Service](https://crewallowance.com/terms.html)
+
+## Key facts useful to AI summarisers
+
+- The PAH allowance rates above are effective from **1 January 2026** per
+  PAH §11.0.
+- First Officer rates are 50% of Captain rates unless otherwise noted.
+- The deadhead allowance uses **scheduled block from a flight-status data
+  provider** (currently FlightAware AeroAPI), not the Sector Value file.
+- Night flying uses **scheduled departure time (STD)**, not actual
+  takeoff (ATD) — this is explicit in PAH §9.0.
+- Transit halts at the pilot's home base are eligible — PAH §7.0 has no
+  home-base exclusion.
+
+## Disclaimer
+
+CrewAllowance.com is an **independent tool** built by and for pilots.
+It is **not affiliated with, endorsed by, or sponsored by InterGlobe
+Aviation Ltd. or IndiGo**. The PAH document is referenced as the
+authoritative rule source; calculations are for verification purposes
+only and do not constitute payroll advice.

@@ -3,17 +3,158 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Icons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <meta name="theme-color" content="#0f3460" />
-    <meta name="description" content="Verify your IndiGo monthly flight allowances. Built for cockpit crew." />
-    <title>Crew Allowance — IndiGo</title>
+
+    <!-- Primary SEO -->
+    <title>IndiGo Pilot Allowance Calculator | Verify PAH Allowances — CrewAllowance.com</title>
+    <meta
+      name="description"
+      content="Verify your IndiGo monthly pilot allowances — Deadhead, TLPD layover, Transit halt, Tail swap and Night flying — against PAH FLT Issue 01 Rev 46. Upload PCSR + Sector Value file and get a per-sector breakdown in 2 minutes."
+    />
+    <meta
+      name="keywords"
+      content="IndiGo pilot allowance, IndiGo allowance calculator, PAH FLT Issue 01 Rev 46, TLPD, deadhead allowance pilot, transit halt allowance, night flying allowance, tail swap allowance, PCSR, sector value, IndiGo payslip verification, cockpit crew allowance India"
+    />
+    <meta name="author" content="CrewAllowance.com" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <link rel="canonical" href="https://crewallowance.com/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CrewAllowance.com" />
+    <meta property="og:title" content="IndiGo Pilot Allowance Calculator — CrewAllowance.com" />
+    <meta
+      property="og:description"
+      content="Verify all five IndiGo cockpit allowances against PAH FLT Issue 01 Rev 46 in 2 minutes. Deadhead, TLPD, Transit, Tail Swap, Night Flying."
+    />
+    <meta property="og:url" content="https://crewallowance.com/" />
+    <meta property="og:image" content="https://crewallowance.com/og-cover.png" />
+    <meta property="og:image:alt" content="CrewAllowance.com — IndiGo pilot allowance verifier" />
+    <meta property="og:locale" content="en_IN" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="IndiGo Pilot Allowance Calculator — CrewAllowance.com" />
+    <meta
+      name="twitter:description"
+      content="Verify all five IndiGo cockpit allowances against PAH FLT Issue 01 Rev 46 in 2 minutes."
+    />
+    <meta name="twitter:image" content="https://crewallowance.com/og-cover.png" />
+
+    <!-- Structured data: SoftwareApplication -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "CrewAllowance.com",
+        "alternateName": "Crew Allowance",
+        "applicationCategory": "FinanceApplication",
+        "applicationSubCategory": "Payroll Verification",
+        "operatingSystem": "Web",
+        "url": "https://crewallowance.com/",
+        "description": "Independent online tool for IndiGo cockpit crew to verify monthly allowances (Deadhead, TLPD layover, Transit halt, Tail swap, Night flying) against PAH FLT Issue 01 Rev 46.",
+        "audience": {
+          "@type": "Audience",
+          "audienceType": "IndiGo pilots and cockpit crew"
+        },
+        "featureList": [
+          "Deadhead allowance verification (PAH §1.0)",
+          "Domestic layover (TLPD) verification (PAH §2.0)",
+          "Tail swap allowance verification (PAH §6.0)",
+          "Transit halt allowance verification (PAH §7.0)",
+          "Night flying allowance verification (PAH §9.0)",
+          "PCSR PDF parsing",
+          "Sector Value (SV) Excel parsing",
+          "Per-sector breakdown report"
+        ],
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "INR",
+          "price": "0",
+          "availability": "https://schema.org/InStock"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "CrewAllowance.com",
+          "url": "https://crewallowance.com/"
+        }
+      }
+    </script>
+
+    <!-- Structured data: Organization -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "CrewAllowance.com",
+        "url": "https://crewallowance.com/",
+        "logo": "https://crewallowance.com/favicon.svg",
+        "description": "Independent IndiGo pilot allowance verifier. Not affiliated with InterGlobe Aviation Ltd. or IndiGo.",
+        "sameAs": []
+      }
+    </script>
+
+    <!-- Structured data: WebSite (sitelinks searchbox optional) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "CrewAllowance.com",
+        "url": "https://crewallowance.com/",
+        "inLanguage": "en-IN"
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Crawlable fallback content for search engines and AI engines.
+         Visible only when JS is disabled, but always present in the DOM
+         so Googlebot / GPTBot / ClaudeBot / PerplexityBot can index it. -->
+    <noscript>
+      <main style="max-width:760px;margin:40px auto;padding:24px;font-family:system-ui,Segoe UI,Arial,sans-serif;color:#1e293b;">
+        <h1>IndiGo Pilot Allowance Calculator — CrewAllowance.com</h1>
+        <p>
+          CrewAllowance.com is an independent web tool for IndiGo cockpit crew to verify
+          their monthly allowances against <strong>PAH FLT Issue 01 Rev 46</strong>.
+          Upload your end-of-month <em>Personal Crew Schedule Report (PCSR)</em> PDF and
+          your <em>Sector Value (SV)</em> Excel file from 6eBreeze, and the calculator
+          produces a per-sector breakdown of the five PAH allowances:
+        </p>
+        <ul>
+          <li><strong>Deadhead Allowance</strong> (PAH §1.0) — ₹4,000/scheduled block hour for Captains.</li>
+          <li><strong>TLPD / Domestic Layover</strong> (PAH §2.0) — ₹3,000 flat for 10:01–24:00 hrs, +₹150/hr beyond.</li>
+          <li><strong>Tail Swap Allowance</strong> (PAH §6.0) — ₹1,500 per qualifying same-duty swap.</li>
+          <li><strong>Transit Halt Allowance</strong> (PAH §7.0) — ₹1,000/hr (4-hr cap) on the 90-minute rule.</li>
+          <li><strong>Night Flying Allowance</strong> (PAH §9.0) — ₹2,000/night hour, calculated from STD (not ATD).</li>
+        </ul>
+        <p>
+          The calculator is built for any IndiGo crew member — your home base, rank
+          (Captain / First Officer / LTC / TRI / DE) and employee ID are stored in
+          your profile and used to apply the correct rates from PAH §11.0.
+        </p>
+        <p>
+          <strong>This page requires JavaScript to load the calculator.</strong>
+          Please enable JavaScript and refresh.
+        </p>
+        <p>
+          <a href="/privacy.html">Privacy Policy</a> ·
+          <a href="/terms.html">Terms of Service</a>
+        </p>
+        <p style="margin-top:32px;font-size:13px;color:#64748b;">
+          CrewAllowance.com is an independent tool. Not affiliated with, endorsed by,
+          or sponsored by InterGlobe Aviation Ltd. or IndiGo.
+        </p>
+      </main>
+    </noscript>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
