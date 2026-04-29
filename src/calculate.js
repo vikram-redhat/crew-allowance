@@ -500,8 +500,16 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
       if (sA.is_dht || sB.is_dht) continue;
       if (sA.is_dhf && sB.is_dhf) continue;
 
-      const regA = getScheduled(sA, scheduledTimes)?.aircraft_reg ?? null;
-      const regB = getScheduled(sB, scheduledTimes)?.aircraft_reg ?? null;
+      const schedA = getScheduled(sA, scheduledTimes);
+      const schedB = getScheduled(sB, scheduledTimes);
+      const regA = schedA?.aircraft_reg ?? null;
+      const regB = schedB?.aircraft_reg ?? null;
+
+      // Phase 3: if either side of the pair was day-shifted (a midnight-delay
+      // sector, where the PCSR date got reconciled back to the true scheduled
+      // operation date), surface it on the swap row so the pilot sees that
+      // we did extra work to verify the reg.
+      const dateShifted = !!(schedA?._date_shifted || schedB?._date_shifted);
 
       if (regA === null || regB === null) {
         const missing = [regA === null ? `${sA.flight} ${sA.dep}→${sA.arr} ${sA.date}` : null,
@@ -513,6 +521,7 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
           sector_pair: `${sA.flight} / ${sB.flight}`,
           station: sA.arr, reg_out: regA ?? "—", reg_in: regB ?? "—",
           amount: null, unverifiable: true,
+          date_shifted: dateShifted,
         });
         continue;
       }
@@ -524,6 +533,7 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
         date: sB.date,
         sector_pair: `${sA.flight} / ${sB.flight}`,
         station: sA.arr, reg_out: regA, reg_in: regB, amount,
+        date_shifted: dateShifted,
       });
     }
   }

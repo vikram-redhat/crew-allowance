@@ -160,6 +160,30 @@ async function bumpApiUsage(source) {
   } catch (e) { console.warn("[usage] bump threw:", e.message); }
 }
 
+// Compute the absolute clock-difference in minutes between two HH:MM strings,
+// allowing for midnight wrap-around (so 23:50 vs 00:10 = 20 min, not 23h40m).
+// Returns null if either input is unparseable.
+function hhmmGapMins(a, b) {
+  const parse = (s) => {
+    if (!s || typeof s !== "string") return null;
+    const m = s.match(/^(\d{2}):(\d{2})$/);
+    if (!m) return null;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  };
+  const am = parse(a), bm = parse(b);
+  if (am == null || bm == null) return null;
+  const raw = Math.abs(am - bm);
+  return Math.min(raw, 1440 - raw); // wrap around midnight
+}
+
+// Subtract 1 day from a YYYY-MM-DD string (UTC-safe).
+function shiftDateMinusOne(yyyymmdd) {
+  const d = new Date(yyyymmdd + "T00:00:00Z");
+  if (isNaN(d)) return null;
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 // One-shot call to a single provider proxy. No cache reads, no merging.
 // Used both as the primary lookup and as the FR24 fallback for missing FA reg.
 // Returns { data, status: "ok" } | { rateLimited, retryAfter } | { status: code } | null.
@@ -194,7 +218,17 @@ async function callProxyOnce(flight, dep, arr, date, source) {
 }
 
 // Returns { data, fromCache } or { rateLimited: true } or null.
-async function fetchWithCache(flight, dep, arr, date, source = "adb") {
+//
+// `pcsrAtd` (optional): the actual takeoff time the pilot recorded on the
+// PCSR for this leg (HH:MM IST). Used to detect "midnight-delay" sectors —
+// flights whose scheduled departure was the previous day but actual takeoff
+// slipped past midnight, so the PCSR dates them to the next day. When the
+// schedule API's returned ATD differs from the PCSR ATD by >6h, we retry
+// with date-1 and use that operation if its ATD matches. See Phase 3 notes.
+async function fetchWithCache(flight, dep, arr, date, source = "adb", pcsrAtd = null) {
+  // ── Cache check: try the PCSR date first, then (if pcsrAtd suggests a
+  //    midnight-delay shift) try day-1. This means re-runs of an
+  //    already-shifted sector hit cache without paying for a primary call.
   if (supabase) {
     const { data, error: cacheReadErr } = await supabase.from("flight_schedule_cache")
       .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", date).limit(1).maybeSingle();
@@ -202,6 +236,26 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
       console.warn(`[cache] read error for ${flight} ${dep}→${arr} ${date}:`, cacheReadErr.message);
     } else if (data) {
       return { data, fromCache: true };
+    }
+    // If the PCSR ATD is early-morning (00:00–06:00 IST), this might be a
+    // midnight-delay sector. Check the day-1 cache row too — if its ATD is
+    // close to the PCSR's, that's the operation we want.
+    if (pcsrAtd) {
+      const m = pcsrAtd.match(/^(\d{2}):(\d{2})$/);
+      const mins = m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : -1;
+      if (mins >= 0 && mins <= 360) {
+        const prevDate = shiftDateMinusOne(date);
+        if (prevDate) {
+          const { data: prev } = await supabase.from("flight_schedule_cache")
+            .select("*").eq("flight_no", flight).eq("dep", dep).eq("arr", arr).eq("date", prevDate).limit(1).maybeSingle();
+          if (prev?.atd_local) {
+            const gap = hhmmGapMins(pcsrAtd, prev.atd_local);
+            if (gap != null && gap <= 60) {
+              return { data: { ...prev, _date_shifted: true, _shifted_to: prevDate }, fromCache: true };
+            }
+          }
+        }
+      }
     }
   }
 
@@ -212,7 +266,55 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
   if (primary.status !== "ok") return null;
 
   let json = primary.data;
+  let cacheDate = date;            // where to write the cache row
+  let dateShifted = false;         // tag for the UI
   bumpApiUsage(source);
+
+  // ── Phase 3: midnight-delay detection ───────────────────────────────────
+  // The PCSR dates each sector by its ACTUAL takeoff date. A flight scheduled
+  // for late evening on day N that gets delayed past midnight takes off on
+  // day N+1, so the PCSR records it as N+1. But the schedule API buckets it
+  // under day N (its scheduled date). Querying day N+1 returns the wrong
+  // operation — usually a different aircraft — which then poisons tail-swap
+  // detection.
+  //
+  // The reliable signal: PCSR ATD in the early-morning window (00:00–06:00 IST)
+  // is highly suspicious for a midnight-delay sector. If the API's ATD for
+  // that day is NOT in the same early-morning window, the API gave us the
+  // wrong day's operation. Retry with date-1; if its ATD lands close to the
+  // PCSR's ATD AND the primary's ATD doesn't, use the day-1 result.
+  //
+  // Skipped for sectors with no PCSR ATD (DHF/DHT) since they can't drive
+  // tail-swap detection anyway.
+  const inEarlyMorning = (hhmm) => {
+    const m = hhmm?.match(/^(\d{2}):(\d{2})$/);
+    if (!m) return false;
+    const mins = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    return mins >= 0 && mins <= 360; // 00:00–06:00 IST
+  };
+
+  if (pcsrAtd && json.atd_local && inEarlyMorning(pcsrAtd) && !inEarlyMorning(json.atd_local)) {
+    const prevDate = shiftDateMinusOne(date);
+    if (prevDate) {
+      const primaryGap = hhmmGapMins(pcsrAtd, json.atd_local);
+      console.log(`[date-shift] ${flight} ${dep}→${arr} ${date}: PCSR ATD ${pcsrAtd} (early-AM) vs API ATD ${json.atd_local} (not early-AM) — retrying with ${prevDate}`);
+      const retry = await callProxyOnce(flight, dep, arr, prevDate, source);
+      if (retry?.status === "ok" && retry.data?.atd_local) {
+        const retryGap = hhmmGapMins(pcsrAtd, retry.data.atd_local);
+        // Use the day-1 result if it's much closer (≤60m) to the PCSR ATD
+        // and meaningfully closer than the primary.
+        if (retryGap != null && retryGap <= 60 && (primaryGap == null || retryGap + 60 < primaryGap)) {
+          console.log(`[date-shift] ${flight} ${dep}→${arr}: ${prevDate} ATD ${retry.data.atd_local} matches PCSR (${retryGap}m gap vs ${primaryGap}m) — using day-shifted result.`);
+          json = { ...retry.data, _date_shifted: true, _shifted_to: prevDate };
+          cacheDate = prevDate;
+          dateShifted = true;
+          bumpApiUsage(source);
+        } else {
+          console.log(`[date-shift] ${flight} ${dep}→${arr}: ${prevDate} ATD ${retry.data?.atd_local} not a clear match (${retryGap}m gap) — keeping original.`);
+        }
+      }
+    }
+  }
 
   // ── Phase 2: FR24 fallback for missing FA aircraft_reg ───────────────────
   // Only fires when:
@@ -226,11 +328,12 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
     try {
       const fallbackOn = await fetchFallbackEnabled();
       if (fallbackOn) {
-        const fb = await callProxyOnce(flight, dep, arr, date, "fr24");
+        // Use cacheDate (post-shift) so we look up the same operation FA returned.
+        const fb = await callProxyOnce(flight, dep, arr, cacheDate, "fr24");
         if (fb?.status === "ok" && fb.data?.aircraft_reg) {
           json = { ...json, aircraft_reg: fb.data.aircraft_reg, _reg_source: "fr24_fallback" };
           bumpApiUsage("fr24_fallback");
-          console.log(`[fr24_fallback] filled reg for ${flight} ${dep}→${arr} ${date}: ${fb.data.aircraft_reg}`);
+          console.log(`[fr24_fallback] filled reg for ${flight} ${dep}→${arr} ${cacheDate}: ${fb.data.aircraft_reg}`);
         }
       }
     } catch (e) {
@@ -240,8 +343,11 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
   }
 
   if (supabase) {
+    // Cache key is the *true* operation date — same as `date` for normal
+    // sectors, or date-1 when we day-shifted. Other pilots querying the
+    // same true-date sector will hit cache cleanly.
     const { error: cacheErr } = await supabase.from("flight_schedule_cache").upsert({
-      flight_no: flight, dep, arr, date,
+      flight_no: flight, dep, arr, date: cacheDate,
       std_local: json.std_local ?? null, sta_local: json.sta_local ?? null,
       atd_local: json.atd_local ?? null, ata_local: json.ata_local ?? null,
       aircraft_reg: json.aircraft_reg ?? null,
@@ -249,6 +355,8 @@ async function fetchWithCache(flight, dep, arr, date, source = "adb") {
     }, { onConflict: "flight_no,dep,arr,date" });
     if (cacheErr) console.warn("Cache write failed:", cacheErr.message);
   }
+  // Re-flag the returned data so the calculator/UI can see this was shifted.
+  if (dateShifted) json = { ...json, _date_shifted: true, _shifted_to: cacheDate };
   return { data: json, fromCache: false };
 }
 
@@ -280,7 +388,9 @@ async function buildSchedMap(sectors, onProgress, source = "adb") {
       // Up to 3 attempts on rate-limit, with exponential backoff.
       let result = null;
       for (let attempt = 0; attempt < 3; attempt++) {
-        result = await fetchWithCache(s._flight, s.dep, s.arr, s.date, source);
+        // Pass the PCSR's actual takeoff time so fetchWithCache can detect
+        // midnight-delay sectors (Phase 3). Skipped for DHF/DHT (no atd_local).
+        result = await fetchWithCache(s._flight, s.dep, s.arr, s.date, source, s.atd_local || null);
         if (!result?.rateLimited) break;
         const waitMs = (result.retryAfter > 0 ? result.retryAfter * 1000 : (10000 * (attempt + 1)));
         console.warn(`Rate-limited; backing off ${waitMs}ms before retry ${attempt + 1}/3`);
@@ -320,8 +430,10 @@ function dlCSV(res, pilot) {
     e.international ? "International — calculated separately" : ""
   ));
   add("TOTAL","","","","","","","", Math.round(res.layover.amount)); add();
-  add("TAIL-SWAP"); add("Date","Sectors","Station","Reg Out","Reg In","Amount (INR)");
-  res.tailSwap.swaps.forEach(s => add(s.date, s.sector_pair, s.station, s.reg_out, s.reg_in, s.unverifiable ? "unverifiable" : Math.round(s.amount)));
+  add("TAIL-SWAP"); add("Date","Sectors","Station","Reg Out","Reg In","Amount (INR)","Note");
+  res.tailSwap.swaps.forEach(s => add(s.date, s.sector_pair, s.station, s.reg_out, s.reg_in,
+    s.unverifiable ? "unverifiable" : Math.round(s.amount),
+    s.date_shifted ? "Midnight-delay sector — reg verified against previous day's schedule" : ""));
   add("TOTAL","","","","", Math.round(res.tailSwap.amount)); add();
   add("TRANSIT"); add("Date","Station","Arrived","Departed","Halt (mins)","Billable (mins)","Basis","Amount (INR)");
   res.transit.halts.forEach(h => add(h.date, h.station, h.arrived_ist, h.departed_ist, h.halt_mins, h.billable_mins, h.basis, Math.round(h.amount)));
@@ -2341,7 +2453,11 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
               note="Aircraft registration changes between consecutive sectors in same duty. DHT and DHF+DHF excluded."
               headers={["Date","Sectors","Stn","Reg Out","Reg In","Amount"]} rows={result.tailSwap.swaps}
               renderRow={(s,i) => (
-                <tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.sector_pair}</TC>
+                <tr key={i}><TC i={i}>{s.date}{s.date_shifted && (
+                  <span title="Sector delayed across midnight — verified against the previous day's schedule"
+                    style={{ marginLeft:6, fontSize:10, padding:"1px 5px", borderRadius:4,
+                      background:C.goldBg, color:C.goldText, border:"1px solid "+C.goldBorder, fontWeight:700, letterSpacing:"0.04em" }}>↺ SHIFTED</span>
+                )}</TC><TC i={i}>{s.sector_pair}</TC>
                   <TC i={i}><strong>{s.station}</strong></TC><TC i={i}>{s.reg_out}</TC><TC i={i}>{s.reg_in}</TC>
                   <TC i={i} right gold>{s.unverifiable ? "?" : fmtINR(s.amount)}</TC></tr>
               )} />
