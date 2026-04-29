@@ -76,16 +76,16 @@ const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
 // error so a missing settings table or permissions hiccup never breaks the
 // calculator.
 async function fetchScheduleSource() {
-  if (!supabase) return "adb";
+  if (!supabase) return "aeroapi";
   try {
     const { data } = await supabase.from("app_settings")
       .select("value").eq("key", "schedule_source").maybeSingle();
     const v = (data?.value || "").toLowerCase();
-    if (v === "fr24")    return "fr24";
-    if (v === "aeroapi") return "aeroapi";
-    return "adb";
+    if (v === "fr24") return "fr24";
+    if (v === "adb")  return "adb";
+    return "aeroapi"; // default: AeroAPI (FA) is the trusted primary as of Apr 2026.
   } catch {
-    return "adb";
+    return "aeroapi";
   }
 }
 
@@ -3029,7 +3029,7 @@ function AdminScreen({ rates }) {
   const [svUploading,setSvUploading]= useState(false);
   const [svMsg,      setSvMsg]      = useState("");
   const [svHistory,  setSvHistory]  = useState([]);
-  const [source,        setSource]        = useState("adb");
+  const [source,        setSource]        = useState("aeroapi");
   const [sourceSaving,  setSourceSaving]  = useState(false);
   const [sourceMsg,     setSourceMsg]     = useState("");
   // Phase 2: FR24 fallback for missing FA reg (default ON; toggle in Data Source tab).

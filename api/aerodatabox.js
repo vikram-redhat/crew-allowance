@@ -58,5 +58,6 @@ export default async function handler(req, res) {
     atd_local:    hhmm(leg?.departure?.actualTime?.local),
     ata_local:    hhmm(leg?.arrival?.actualTime?.local),
     aircraft_reg: leg?.aircraft?.reg ?? null,
+    _source:      "adb",
   });
 }
