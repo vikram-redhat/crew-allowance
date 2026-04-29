@@ -226,6 +226,9 @@ async function callProxyOnce(flight, dep, arr, date, source) {
 // schedule API's returned ATD differs from the PCSR ATD by >6h, we retry
 // with date-1 and use that operation if its ATD matches. See Phase 3 notes.
 async function fetchWithCache(flight, dep, arr, date, source = "adb", pcsrAtd = null) {
+  // Diagnostic log: helps debug why Phase 3 may or may not have triggered
+  // for a given sector. Remove or downgrade once Phase 3 is proven stable.
+  console.log(`[fetchWithCache] ${flight} ${dep}→${arr} ${date} pcsrAtd=${pcsrAtd ?? "null"}`);
   // ── Cache check: try the PCSR date first, then (if pcsrAtd suggests a
   //    midnight-delay shift) try day-1. This means re-runs of an
   //    already-shifted sector hit cache without paying for a primary call.
