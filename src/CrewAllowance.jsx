@@ -66,6 +66,45 @@ const DEFAULT_RATES = {
 const fmtHM  = m => { const h = Math.floor(Math.abs(m)/60), mn = Math.round(Math.abs(m)%60); return h+"h "+mn.toString().padStart(2,"0")+"m"; };
 const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
 
+/* ═══════════════════════════════════════════════════════════════════
+   DYNAMIC IMPORT WRAPPER — friendly error on stale browser cache
+═══════════════════════════════════════════════════════════════════
+   When we deploy a new build, Vite reissues chunk filenames with new
+   content hashes. Browsers that still hold the previous index.html in
+   memory will try to load chunks that no longer exist on the server,
+   throwing one of these (varies by browser):
+
+     Chrome / Edge:  "Failed to fetch dynamically imported module"
+     Safari:         "Importing a module script failed"
+     Firefox:        "error loading dynamically imported module"
+
+   We catch those and rewrite the message to something a non-developer
+   can act on. Everything else passes through unchanged. */
+const STALE_CHUNK_PATTERNS = [
+  /failed to fetch dynamically imported module/i,
+  /importing a module script failed/i,
+  /error loading dynamically imported module/i,
+  /dynamically imported module/i,
+  /chunk.+failed/i,
+];
+async function dynamicImport(loader, label) {
+  try {
+    return await loader();
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (STALE_CHUNK_PATTERNS.some(re => re.test(msg))) {
+      const friendly = new Error(
+        `The app has been updated since you opened this page (the "${label}" component couldn't load). ` +
+        `Please reload — Cmd/Ctrl+Shift+R for a hard refresh — and try again. ` +
+        `If the error persists after reload, your network may be blocking JavaScript bundles.`
+      );
+      friendly.staleChunk = true;
+      friendly.original = err;
+      throw friendly;
+    }
+    throw err;
+  }
+}
 
 /* Calculation is server-side via /api/calculate — see api/calculate.js */
 /* ═══════════════════════════════════════════════════════════════════
@@ -672,7 +711,7 @@ function PcsrDropZone({ file, onParsed, onFail }) {
     }
     setParsing(true);
     try {
-      const { parsePcsrPdf } = await import("./pdf/pcsrParser.js");
+      const { parsePcsrPdf } = await dynamicImport(() => import("./pdf/pcsrParser.js"), "PCSR parser");
       const result = await parsePcsrPdf(await f.arrayBuffer());
       console.log("[pcsrParser _rawSample]\n", result._rawSample);
       onParsed(f, result);
@@ -2332,7 +2371,18 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
             </div>
           )}
 
-          {err && <div style={{ marginTop:12, padding:"12px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:10, color:C.red, fontSize:12 }}>{err}</div>}
+          {err && (
+            <div style={{ marginTop:12, padding:"12px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:10, color:C.red, fontSize:12 }}>
+              <div>{err}</div>
+              {/^the app has been updated/i.test(err) && (
+                <button type="button" onClick={() => window.location.reload()}
+                  style={{ marginTop:10, padding:"8px 16px", background:C.red, color:C.white,
+                    border:"none", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                  ↻ Reload page
+                </button>
+              )}
+            </div>
+          )}
 
           <div style={{ marginTop:16 }}>
             <Btn onClick={calculate} disabled={!pcsrData || profileIncomplete} icon="▶">
@@ -2418,7 +2468,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
                 ⚠ Irregular operation{result.irregular_sectors.length === 1 ? "" : "s"} detected
               </div>
               <div style={{ marginBottom:6 }}>
-                {result.irregular_sectors.length === 1 ? "One of your sectors was" : `${result.irregular_sectors.length} of your sectors were`} flagged as an irregular operation (air-return or similar):
+                {result.irregular_sectors.length === 1 ? "One of your sectors was" : `${result.irregular_sectors.length} of your sectors were`} flagged as an irregular operation (air-return/GTB or similar):
               </div>
               <ul style={{ margin:"4px 0 8px 18px", padding:0 }}>
                 {result.irregular_sectors.map((s, i) => (
@@ -3191,7 +3241,7 @@ function AdminScreen({ rates }) {
     if (!svFile || !svMonth) { setSvMsg("Select a file and enter the month (YYYY-MM)."); return; }
     setSvUploading(true); setSvMsg("");
     try {
-      const { read, utils } = await import("xlsx");
+      const { read, utils } = await dynamicImport(() => import("xlsx"), "Excel reader");
       const buf = await svFile.arrayBuffer();
       const wb = read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
