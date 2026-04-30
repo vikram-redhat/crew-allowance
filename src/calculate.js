@@ -272,88 +272,16 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
       chocksOnMs, chocksOffMs, lastSector.ata || "", firstSector.atd || "");
   }
 
-  // ── COALESCE same-station layovers separated by a brief return trip ────
-  // Example: pilot lands PNQ 21:37 Feb 10, stays at hotel, flies PNQ-NAG-PNQ
-  // 00:15-03:58 Feb 12, returns to PNQ hotel, departs PNQ 21:47 Feb 12.
-  // Two `events` rows (PNQ→PNQ, PNQ→PNQ) but it's ONE continuous hotel stay
-  // for the pilot. Merge into a single event spanning chocks_on of the first
-  // to chocks_off of the second.
-  //
-  // ONLY merge if the pilot didn't go home between the two layovers — i.e.
-  // the intervening duty stays "out of base". If they flew back to home_base
-  // and out again, those are genuinely two separate layovers.
-  const homeBase = pilot.home_base.trim().toUpperCase();
-  const dutyVisitsHome = (duty) =>
-    duty.some(s => (s.dep || "").trim().toUpperCase() === homeBase
-                || (s.arr || "").trim().toUpperCase() === homeBase);
-  // Build a quick lookup: for each event, find the duty index that ENDS at
-  // the layover-in (lastSector.arr === station, .ata matches check_in_ist).
-  // We rely on duties being chronological and matching the events order.
-  //
-  // Simpler: walk events, and for each pair of consecutive same-station
-  // events, check if any duty between event_i's end and event_{i+1}'s start
-  // visits the home base.
-  const dutyVisitsHomeBetween = (cur, nxt) => {
-    // Find duties that start AFTER cur.date_out and end BEFORE nxt.date_in
-    for (const d of duties) {
-      if (!d.length) continue;
-      const dStart = d[0].date;
-      const dEnd   = d[d.length - 1].date;
-      if (dStart < cur.date_out) continue;
-      if (dEnd   > nxt.date_in)  continue;
-      // This duty falls inside the gap between the two layovers.
-      if (dutyVisitsHome(d)) return true;
-    }
-    return false;
-  };
-  if (events.length > 1) {
-    const merged = [events[0]];
-    for (let i = 1; i < events.length; i++) {
-      const prev = merged[merged.length - 1];
-      const cur  = events[i];
-      // Only merge if same station AND pilot didn't return to home base
-      // in between (i.e. it was one continuous out-of-base hotel stay).
-      // Skip merging international events — they're recorded as zero-pay
-      // placeholders and shouldn't be combined with domestic-rate logic.
-      if (prev.station === cur.station &&
-          !prev.international && !cur.international &&
-          !dutyVisitsHomeBetween(prev, cur)) {
-        // Merge: extend prev's window to cover cur. Use prev's chocks-on
-        // (start) and cur's chocks-off (end). Recompute base + extra.
-        const startMs = new Date(prev.date_in + "T00:00:00Z").getTime() +
-                        toMins(prev.check_in_ist) * 60000;
-        const endMs   = new Date(cur.date_out + "T00:00:00Z").getTime() +
-                        toMins(cur.check_out_ist) * 60000;
-        // Fall back to the duration sum if we can't compute from strings
-        let duration_hrs;
-        if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
-          duration_hrs = (endMs - startMs) / 3600000;
-        } else {
-          duration_hrs = prev.duration_hrs + cur.duration_hrs;
-        }
-        const base  = r.layoverBase;
-        const extra = duration_hrs > 24 ? Math.ceil(duration_hrs - 24) * r.layoverExtra : 0;
-        const newTotal = base + extra;
-        // Adjust running total: subtract prev's amount, add merged amount.
-        total = total - prev.total - cur.total + newTotal;
-        merged[merged.length - 1] = {
-          station:        prev.station,
-          date_in:        prev.date_in,
-          date_out:       cur.date_out,
-          check_in_ist:   prev.check_in_ist,
-          check_out_ist:  cur.check_out_ist,
-          duration_hrs:   Math.round(duration_hrs * 100) / 100,
-          base_amount:    base,
-          extra_amount:   extra,
-          total:          newTotal,
-        };
-      } else {
-        merged.push(cur);
-      }
-    }
-    return { events: merged, total };
-  }
-
+  // NOTE on layover coalescing (removed 30 Apr 2026):
+  // Earlier versions merged consecutive same-station layovers when the
+  // pilot didn't return to home base between them (the §12.5 fix). That
+  // turned out to be wrong against payslip data:
+  //   - Aravind Feb PNQ → NAG → PNQ → DEL: payslip pays 2 PNQ layovers.
+  //   - Vineet Mar BOM → AMD → BOM → DEL: payslip pays 2 BOM layovers.
+  // PAH §2.0 pays per layover EVENT defined by duty boundaries — any
+  // operating duty between two stays at the same station, even an
+  // out-and-back round trip, makes them two separate layovers.
+  // We now emit one event per duty-boundary pause and never merge.
   return { events, total };
 }
 
@@ -429,9 +357,14 @@ export function calculateTransit(sectors, duties, scheduledTimes, pilot) {
   let total = 0;
 
   for (const duty of duties) {
-    for (let i = 0; i < duty.length - 1; i++) {
-      const sA = duty[i];
-      const sB = duty[i + 1];
+    // Same approach as tail-swap: walk only OPERATIONAL sectors. An
+    // irregular sector (air-return) creates a halt at the station between
+    // the inbound and the eventual successful outbound; treat the abort
+    // as transparent so the transit walk pairs them directly.
+    const seq = duty.filter(s => !s.irregular);
+    for (let i = 0; i < seq.length - 1; i++) {
+      const sA = seq[i];
+      const sB = seq[i + 1];
       if (sA.arr.trim() !== sB.dep.trim()) continue;
       if (sA.is_dht || sB.is_dht) continue;
       // PAH §7.0: transit allowance is for DOMESTIC HALTS only.
@@ -484,9 +417,17 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
   let total = 0;
 
   for (const duty of duties) {
-    for (let i = 0; i < duty.length - 1; i++) {
-      const sA = duty[i];
-      const sB = duty[i + 1];
+    // Build a working sequence that EXCLUDES irregular sectors (e.g. air-
+    // returns like "6805A"). The abort doesn't introduce a tail-swap by
+    // itself — same physical aircraft tried to depart and came back. A
+    // swap (if any) is between the inbound to that station and the
+    // eventual SUCCESSFUL outbound. Keeping the abort in the swap walk
+    // would either (a) flag two unverifiable swaps (no FA reg for the
+    // abort) or (b) mask a real swap behind the irregular pair.
+    const seq = duty.filter(s => !s.irregular);
+    for (let i = 0; i < seq.length - 1; i++) {
+      const sA = seq[i];
+      const sB = seq[i + 1];
       if (sA.arr !== sB.dep) continue;
       if (sA.is_dht || sB.is_dht) continue;
       if (sA.is_dhf && sB.is_dhf) continue;
@@ -543,6 +484,23 @@ export function runCalculations(period, sectors, scheduledTimes, svData, pilot, 
   const tr = calculateTransit(corrected, duties, scheduledTimes, pilot);
   const ts = calculateTailSwap(corrected, duties, scheduledTimes, pilot);
 
+  // Surface any irregular sectors (air-returns etc., flagged by the parser
+  // with `irregular: true`) so the UI can show a warning. The calc treats
+  // these as transparent in tail-swap and transit walks (the abort itself
+  // doesn't introduce a swap or a halt), but IndiGo's payroll typically
+  // pays additional disruption compensation that doesn't cleanly map to
+  // PAH §6.0/§7.0 — see HANDOFF §13.10. We surface them so pilots know
+  // their report may be under by a swap + transit per air-return event.
+  const irregularSectors = corrected
+    .filter(s => s.irregular)
+    .map(s => ({
+      date:   s.date,
+      flight: s.flight,
+      suffix: s.irreg_suffix || "",
+      dep:    s.dep,
+      arr:    s.arr,
+    }));
+
   return {
     period,
     deadhead: { sectors: dh.sectors, total_mins: dh.sectors.reduce((s, x) => s + x.scheduled_block_mins, 0), amount: dh.total },
@@ -550,6 +508,7 @@ export function runCalculations(period, sectors, scheduledTimes, svData, pilot, 
     night:    { sectors: nt.sectors, total_mins: nt.sectors.reduce((s, x) => s + x.night_mins, 0), amount: nt.total },
     transit:  { halts: tr.halts,     amount: tr.total },
     tailSwap: { swaps: ts.swaps,     count: ts.count, amount: ts.total },
+    irregular_sectors: irregularSectors,
     total: dh.total + lv.total + nt.total + tr.total + ts.total,
   };
 }

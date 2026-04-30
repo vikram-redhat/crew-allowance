@@ -662,7 +662,14 @@ function parseGridFromItems(page1Items, pilot, year, mo) {
 
   // 4. Parse each column top-to-bottom as a sequence of sector blocks.
   const sectors = [];
-  const FLIGHT_RE  = /^\d{3,5}$/;
+  // Flight-number regex: optional trailing letter for IndiGo's "irregular
+  // operation" markers — e.g. "6805A" denotes an aborted flight that
+  // recovered to the same departure station (an air-return). Without the
+  // suffix tolerance, these sectors get silently dropped and the calc
+  // misses the resulting tail-swap and transit halt at that station.
+  // See HANDOFF §13.8 / §13.9.
+  const FLIGHT_RE  = /^\d{3,5}[A-Z]?$/;
+  const IRREG_SUFFIX_RE = /^(\d{3,5})([A-Z])$/;  // captures parent number + suffix
   const IATA_RE    = /^(\*?)([A-Z]{3})$/;
   const TIME_RE    = /^(A?)(\d{1,2}):(\d{2})$/;
   const ACTYPE_RE  = /^\[\d{3}\]$/;
@@ -717,6 +724,26 @@ function parseGridFromItems(page1Items, pilot, year, mo) {
       const s  = fi.str.trim();
       if (!FLIGHT_RE.test(s)) continue;
 
+      // ── IRREGULAR OPERATION marker (e.g. "6805A") ─────────────────────
+      // IndiGo encodes irregular flights — air-returns, diverts that
+      // recovered, etc. — by appending a single letter to the flight
+      // number ("6805A"). The cell layout is otherwise the same as a
+      // normal sector (ATD, DEP, ARR, ATA, AC type). We strip the suffix
+      // for the canonical flight_no (so cache lookups still work — IndiGo
+      // schedules them under the parent number) and tag the sector with
+      // `irregular: true` so the calculator can handle it specially:
+      // for tail-swap purposes the abort doesn't introduce a swap (same
+      // physical aircraft attempted to depart and returned), but it DOES
+      // create a transit halt at that station before the pilot's next
+      // operating sector. See HANDOFF §13.9.
+      let irregularSuffix = null;
+      let parentFlightNum = s;
+      const irregMatch = s.match(IRREG_SUFFIX_RE);
+      if (irregMatch) {
+        parentFlightNum  = irregMatch[1];
+        irregularSuffix  = irregMatch[2];
+      }
+
       // Find atd / dep / arr / ata / actype from subsequent items.
       let atd = null, dep = null, arr = null, ata = null, star = false;
       let crossedColumn = false;
@@ -727,9 +754,18 @@ function parseGridFromItems(page1Items, pilot, year, mo) {
         const t  = it.str.trim();
         if (FLIGHT_RE.test(t)) break;  // next sector starts
 
-        if (atd === null && TIME_RE.test(t)) {
+        // ATD only makes sense before DEP. Once DEP is set, any time we see
+        // is on the arrival side (ATA or scheduled-in).
+        if (atd === null && !dep && TIME_RE.test(t)) {
           const [, aFlag, hh, mm2] = t.match(TIME_RE);
-          atd = { time: `${hh.padStart(2, "0")}:${mm2}`, actual: aFlag === "A" };
+          // Only accept ACTUAL departures (A-prefixed). Bare HH:MM times
+          // before the actual ATD are scheduled-out displays — skip them.
+          // This matters most for irregular sectors (e.g. "6805A"), where
+          // a "block-time HH:MM" or "scheduled HH:MM" appears immediately
+          // after the flight number, before the A-prefixed ATD.
+          if (aFlag === "A") {
+            atd = { time: `${hh.padStart(2, "0")}:${mm2}`, actual: true };
+          }
           j++; continue;
         }
         const ia = t.match(IATA_RE);
@@ -774,12 +810,14 @@ function parseGridFromItems(page1Items, pilot, year, mo) {
 
       sectors.push({
         date,
-        flight_no: `6E${parseInt(s, 10)}`,
+        flight_no: `6E${parseInt(parentFlightNum, 10)}`,
         dep, arr,
         atd_local: atd?.actual ? atd.time : null,
         ata_local: ata?.actual ? ata.time : null,
         is_dhf: star,
         is_dht: false,
+        irregular:    !!irregularSuffix,
+        irreg_suffix: irregularSuffix,
         _gridX: fi.x,
         _gridY: fi.y,
         _crossedColumn: crossedColumn,

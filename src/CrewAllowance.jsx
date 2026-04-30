@@ -2131,6 +2131,8 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
         ata:    s.ata_local,
         is_dhf: s.is_dhf,
         is_dht: s.is_dht,
+        irregular:    !!s.irregular,         // air-return / abort marker (HANDOFF §13.9)
+        irreg_suffix: s.irreg_suffix || null, // "A", etc.
       }));
       console.log("[calculate] pcsrParser sectors:", sectors.length, "period:", parsedPeriod);
 
@@ -2401,6 +2403,33 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
               Schedule data: {apiStats.fetched} fetched from {apiStats.source === "fr24" ? "FR24" : apiStats.source === "aeroapi" ? "FlightAware" : "AeroDataBox"} · {apiStats.cached} from cache · {apiStats.failed} failed
               {apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 && ` — tail-swap requires schedule data. Check ${apiStats.source === "fr24" ? "FR24_API_TOKEN" : apiStats.source === "aeroapi" ? "AEROAPI_KEY" : "RAPIDAPI_KEY"} or try again.`}
               {apiStats.failed > 0 && apiStats.fetched + apiStats.cached > 0 && " — deadhead/night calculated from actual times for failed sectors."}
+            </div>
+          )}
+
+          {/* Air-return / irregular-operation warning. IndiGo's payroll
+              typically pays additional disruption compensation that doesn't
+              cleanly map to PAH §6.0/§7.0 (an extra tail-swap + transit per
+              event). We surface them so the pilot knows the report may be
+              under by ~₹3,000 per air-return. See HANDOFF §13.10. */}
+          {result.irregular_sectors && result.irregular_sectors.length > 0 && (
+            <div style={{ marginBottom:14, padding:"12px 16px", borderRadius:10, fontSize:13,
+              background: C.goldBg, border:"1.5px solid "+C.goldBorder, color: C.goldText, lineHeight:1.6 }}>
+              <div style={{ fontWeight:800, marginBottom:6 }}>
+                ⚠ Irregular operation{result.irregular_sectors.length === 1 ? "" : "s"} detected
+              </div>
+              <div style={{ marginBottom:6 }}>
+                {result.irregular_sectors.length === 1 ? "One of your sectors was" : `${result.irregular_sectors.length} of your sectors were`} flagged as an irregular operation (air-return or similar):
+              </div>
+              <ul style={{ margin:"4px 0 8px 18px", padding:0 }}>
+                {result.irregular_sectors.map((s, i) => (
+                  <li key={i} style={{ marginBottom:2 }}>
+                    <strong>{s.flight}{s.suffix}</strong> {s.dep}→{s.arr} on {s.date}
+                  </li>
+                ))}
+              </ul>
+              <div>
+                IndiGo typically pays additional <strong>tail-swap (~₹{(1500).toLocaleString("en-IN")})</strong> and <strong>transit allowance</strong> for each such event under disruption rules that don't cleanly map to PAH §6.0/§7.0. We can't compute these reliably yet, so your total below may be <strong>under by roughly ₹3,000 per air-return</strong>. <strong>Please verify against your payslip.</strong>
+              </div>
             </div>
           )}
 
