@@ -2145,8 +2145,14 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
       sectors.sort((a, b) => {
         if (a.date < b.date) return -1;
         if (a.date > b.date) return  1;
-        const ta = a.atd ?? "23:59";
-        const tb = b.atd ?? "23:59";
+        // Sort within a day by ATD; if ATD is missing (some sectors don't
+        // record an actual takeoff time), fall back to ATA so the sector
+        // still lands roughly in the right position rather than being
+        // pushed to end-of-day. End-of-day was breaking duty grouping
+        // and silently dropping layovers / transits / tail-swaps for
+        // any pilot with an early-day blank-ATD sector.
+        const ta = a.atd ?? a.ata ?? "23:59";
+        const tb = b.atd ?? b.ata ?? "23:59";
         return ta < tb ? -1 : ta > tb ? 1 : 0;
       });
 

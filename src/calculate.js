@@ -173,37 +173,26 @@ export function calculateDeadhead(sectors, scheduledTimes, pilot) {
   return { sectors: result, total };
 }
 
-export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMonthTail, hotels) {
+// eslint-disable-next-line no-unused-vars
+export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMonthTail, _hotels) {
+  // NOTE on `_hotels`: kept in the signature for API compatibility, but no
+  // longer used. We previously gated layovers on the PCSR's Hotel Info
+  // section, but that was unreliable across users — some PCSR variants omit
+  // the section entirely (e.g. mid-month "ScheduleReport" exports), and even
+  // when present it can list only IndiGo-arranged hotels (a pilot using
+  // personal accommodation would silently lose layover allowance).
+  //
+  // The rule per PAH §2.0 is "10h+ stay at a non-home station between two
+  // duties." Where the pilot slept doesn't change eligibility. We now rely
+  // on page-1 schedule alone — duty boundaries from `groupIntoDuties` plus
+  // the >10h01m duration check are the only gates.
   const r = getRates(pilot.rank);
   const events = [];
   let total = 0;
 
-  // Build a hotel lookup: station -> array of date strings (YYYY-MM-DD).
-  // When `hotels` is supplied, a layover is only counted if the destination
-  // station appears in the hotel section for an overlapping date — this is
-  // what distinguishes a paid TLPD from an unpaid long sit (e.g. position
-  // trip the next morning where the pilot doesn't go to a hotel).
-  const hotelByStation = {};
-  if (Array.isArray(hotels)) {
-    for (const h of hotels) {
-      if (!h?.station) continue;
-      const st = String(h.station).trim().toUpperCase();
-      const dates = Array.isArray(h.dates) ? h.dates : (h.date ? [h.date] : []);
-      hotelByStation[st] = (hotelByStation[st] ?? []).concat(dates.filter(Boolean));
-    }
-  }
-  const hasHotelInfo = Object.keys(hotelByStation).length > 0;
-  const hotelMatches = (station, dateA, dateB) => {
-    if (!hasHotelInfo) return true; // no hotel data → don't gate
-    const dates = hotelByStation[String(station).trim().toUpperCase()];
-    if (!dates?.length) return false;
-    return dates.some(d => d === dateA || d === dateB);
-  };
-
   const addEvent = (station, date_in, date_out, chocksOnMs, chocksOffMs, chocksOnStr, chocksOffStr) => {
     const duration_hrs = (chocksOffMs - chocksOnMs) / 3600000;
     if (duration_hrs <= 10 + 1 / 60) return; // must be STRICTLY MORE than 10h01m
-    if (!hotelMatches(station, date_in, date_out)) return;  // gate on hotel section
 
     // PAH §2.0 (domestic) vs §8.2 (international): different rate tables and
     // different currencies. International layover allowance is NOT yet
@@ -242,26 +231,28 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
           chocksOnMs, chocksOffMs, priorMonthTail.chocks_on, firstSector.atd || "");
       }
     }
-  } else if (duties.length > 0 && hasHotelInfo) {
+  } else if (duties.length > 0) {
     // Auto-detect cross-month spill from THIS month's own data:
-    // If the first duty starts at a non-home station AND the hotel section
-    // lists that station on/before the first sector's date, the layover
-    // belongs to THIS month (per IndiGo rule). We synthesise an 11-hour
-    // duration so the >10h01m gate passes and the base ₹3,000 is awarded
-    // (no "extra hours" is computed because we don't know the prior-month
-    // chocks-on time without parsing the prior PCSR).
+    // If the first duty starts at a non-home station, the pilot ended last
+    // month away from base and the spill-over layover belongs to THIS month
+    // (per IndiGo rule). We synthesise an 11-hour duration so the >10h01m
+    // gate passes and the base ₹3,000 is awarded — we don't know the
+    // prior-month chocks-on without parsing the prior PCSR, so no "extra
+    // hours" is computed.
+    //
+    // Previously gated on a matching hotel-section entry; that was dropped
+    // when we stopped relying on the Hotel Info section (see top of
+    // calculateLayover for context).
     const firstSector = duties[0][0];
     const firstStation = firstSector?.dep?.trim();
     if (firstStation && firstStation !== pilot.home_base.trim()) {
-      const stationHotels = hotelByStation[firstStation.toUpperCase()] ?? [];
-      const matchingHotel = stationHotels.find(d => d <= firstSector.date);
-      if (matchingHotel) {
-        const chocksOffMs = absAtdMs(firstSector, scheduledTimes);
-        if (chocksOffMs !== null) {
-          const chocksOnMs = chocksOffMs - 11 * 3600000;  // synthetic 11h
-          addEvent(firstStation, matchingHotel, firstSector.date,
-            chocksOnMs, chocksOffMs, "(prev month)", firstSector.atd || "");
-        }
+      const chocksOffMs = absAtdMs(firstSector, scheduledTimes);
+      if (chocksOffMs !== null) {
+        const chocksOnMs = chocksOffMs - 11 * 3600000;  // synthetic 11h
+        // Use the firstSector's date as the "in" date too — without a
+        // prior-month PCSR we can't pinpoint the actual check-in date.
+        addEvent(firstStation, firstSector.date, firstSector.date,
+          chocksOnMs, chocksOffMs, "(prev month)", firstSector.atd || "");
       }
     }
   }
