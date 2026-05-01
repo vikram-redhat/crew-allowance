@@ -128,6 +128,40 @@ async function fetchScheduleSource() {
   }
 }
 
+// Fetch the IndiGo allowance rates that were in effect at the start of the
+// PCSR's month. The DB function `rates_for_date(date)` returns the most
+// recent rates_history row whose effective_from <= the date. Returns
+// `{ rates, effective_from, source, isHistorical }` or null on error/missing.
+// `isHistorical` is true when the active rates' effective_from is earlier
+// than the latest rates_history row — meaning the calc used older rates
+// than what's currently in force.
+async function fetchRatesForMonth(yyyymm) {
+  if (!supabase || !yyyymm) return null;
+  try {
+    const monthStart = `${yyyymm}-01`;
+    // Get the active rates for this month + the absolute latest rates,
+    // so we can flag the result as historical when the two differ.
+    const [activeRes, latestRes] = await Promise.all([
+      supabase.rpc("rates_for_date", { p_date: monthStart }),
+      supabase.from("rates_history").select("effective_from").order("effective_from", { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    if (activeRes.error) { console.warn("[rates] active fetch:", activeRes.error.message); return null; }
+    const active = Array.isArray(activeRes.data) ? activeRes.data[0] : activeRes.data;
+    if (!active) return null;
+    const latestEffective = latestRes.data?.effective_from || active.effective_from;
+    return {
+      rates:          active.rates,
+      effective_from: active.effective_from,
+      source:         active.source,
+      isHistorical:   String(active.effective_from) !== String(latestEffective),
+      latest_effective_from: latestEffective,
+    };
+  } catch (e) {
+    console.warn("[rates] threw:", e.message);
+    return null;
+  }
+}
+
 // Phase 2 (Apr 2026): when the primary provider is AeroAPI but its response
 // has a null aircraft_reg (a known FA gap for some IndiGo flights — e.g.
 // 6E2230 DEL-KNU 2026-01-01 and 6E2052 DEL-HYD 2026-01-11 returned null),
@@ -2208,14 +2242,34 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
       setApiStats({ fetched, cached, failed, source });
       console.log(`[calculate] ${source.toUpperCase()} done — fetched:`, fetched, "cached:", cached, "failed:", failed);
 
-      // 6. Run deterministic JS calculations
+      // 6. Fetch the IndiGo allowance rates that were in effect at the start
+      //    of the PCSR's month. The DB returns the rates_history row whose
+      //    effective_from is the most recent date <= the PCSR month start.
+      //    Falls back to HARDCODED_RATES inside calculate.js if the DB lookup
+      //    returns nothing (e.g. fresh install with no rates_history row yet).
+      const ratesInfo = await fetchRatesForMonth(pcsrData?.month);
+      const ratesOverride = ratesInfo?.rates || null;
+      console.log("[calculate] rates effective_from:", ratesInfo?.effective_from || "(none — using hardcoded fallback)",
+        ratesInfo?.isHistorical ? "(historical — newer rates exist)" : "");
+
+      // 7. Run deterministic JS calculations
       setPhase("calculating");
       const pilot = { name: user.name, employee_id: user.emp_id, home_base: homeBase, rank };
       // Pass the hotel list from the PCSR — calculateLayover uses it to gate
       // TLPD so long station sits that were not actually hotelled (e.g., early
       // next-day positioning flights) are excluded.
       const hotels = pcsrData?.hotels || [];
-      const res = runCalculations(parsedPeriod, sectors, schedMap, svFiltered, pilot, null, hotels);
+      const res = runCalculations(parsedPeriod, sectors, schedMap, svFiltered, pilot, null, hotels, ratesOverride);
+      // Decorate the result with the rates metadata so the UI can render
+      // a banner showing which rates version was applied.
+      if (ratesInfo) {
+        res.rates_meta = {
+          effective_from:        ratesInfo.effective_from,
+          source:                ratesInfo.source,
+          isHistorical:          ratesInfo.isHistorical,
+          latest_effective_from: ratesInfo.latest_effective_from,
+        };
+      }
 
       console.log("[calculate] Result — total:", res.total,
         "deadhead:", res.deadhead?.sectors?.length,
@@ -2453,6 +2507,25 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
               Schedule data: {apiStats.fetched} fetched from {apiStats.source === "fr24" ? "FR24" : apiStats.source === "aeroapi" ? "FlightAware" : "AeroDataBox"} · {apiStats.cached} from cache · {apiStats.failed} failed
               {apiStats.failed > 0 && apiStats.fetched + apiStats.cached === 0 && ` — tail-swap requires schedule data. Check ${apiStats.source === "fr24" ? "FR24_API_TOKEN" : apiStats.source === "aeroapi" ? "AEROAPI_KEY" : "RAPIDAPI_KEY"} or try again.`}
               {apiStats.failed > 0 && apiStats.fetched + apiStats.cached > 0 && " — deadhead/night calculated from actual times for failed sectors."}
+            </div>
+          )}
+
+          {/* Rates-applied notice. Always visible so the pilot can see which
+              rate version drove their numbers. Styled subtly (blue) when the
+              rates are current, more prominently (gold) when historical
+              rates were applied (newer rates exist that DON'T apply to this
+              PCSR's month — IndiGo doesn't retroactively recalculate). */}
+          {result.rates_meta && (
+            <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:10, fontSize:12,
+              background: result.rates_meta.isHistorical ? C.goldBg : C.blueXLight,
+              border:"1px solid " + (result.rates_meta.isHistorical ? C.goldBorder : C.border),
+              color: result.rates_meta.isHistorical ? C.goldText : C.textMid, lineHeight:1.55 }}>
+              {result.rates_meta.isHistorical ? <strong>Historical rates applied — </strong> : <strong>Rates applied: </strong>}
+              IndiGo allowance rates effective <strong>{new Date(result.rates_meta.effective_from + "T00:00:00Z").toLocaleDateString("en-IN", { day:"numeric", month:"long", year:"numeric", timeZone:"UTC" })}</strong>
+              {result.rates_meta.source ? ` (${result.rates_meta.source})` : ""}.
+              {result.rates_meta.isHistorical && (
+                <> Newer rates effective <strong>{new Date(result.rates_meta.latest_effective_from + "T00:00:00Z").toLocaleDateString("en-IN", { day:"numeric", month:"long", year:"numeric", timeZone:"UTC" })}</strong> exist but do not apply to this PCSR's month.</>
+              )}
             </div>
           )}
 
@@ -3103,9 +3176,381 @@ function ApiProbePanel() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   RATES EDITOR PANEL  (admin → Current Rates tab)
+
+   Shows every rate version stored in `rates_history` (newest first),
+   each editable, with an "Add new rate version" form. The calculator
+   picks the version whose `effective_from` is the most recent date
+   <= the PCSR month start, so a January PCSR run in May still uses
+   January's rates after April rates were added.
+
+   See db_migrations/009_rates_history.sql for the schema, and HANDOFF
+   §13.13 for the design rationale.
+═══════════════════════════════════════════════════════════════════ */
+function RatesEditorPanel({ adminEmail }) {
+  const [versions, setVersions] = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [err,      setErr]      = useState("");
+  const [draft,    setDraft]    = useState(null);   // editable copy of an existing version, keyed by id
+  const [saving,   setSaving]   = useState(false);
+  const [msg,      setMsg]      = useState("");
+
+  // "Add new version" form state
+  const [addingNew,        setAddingNew]        = useState(false);
+  const [newEffectiveFrom, setNewEffectiveFrom] = useState("");
+  const [newSource,        setNewSource]        = useState("");
+  const [newNote,          setNewNote]          = useState("");
+  const [newRates,         setNewRates]         = useState(null);
+
+  const load = async () => {
+    if (!supabase) { setErr("Supabase not configured."); setLoading(false); return; }
+    setLoading(true); setErr("");
+    try {
+      const { data, error } = await supabase.from("rates_history")
+        .select("*").order("effective_from", { ascending: false });
+      if (error) throw error;
+      setVersions(data || []);
+    } catch (e) { setErr(e?.message || String(e)); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  // Empty rates skeleton matching the JSON shape stored in the DB. Used as
+  // the starting point when adding a brand-new version.
+  const emptyRatesShape = () => ({
+    deadhead:  { Captain: 0, "First Officer": 0, "Cabin Crew": null },
+    night:     { Captain: 0, "First Officer": 0, "Cabin Crew": null },
+    layover:   { Captain: { base: 0, beyondRate: 0 }, "First Officer": { base: 0, beyondRate: 0 }, "Cabin Crew": null },
+    tailSwap:  { Captain: 0, "First Officer": 0, "Cabin Crew": null },
+    transit:   { Captain: 0, "First Officer": 0, "Cabin Crew": null },
+  });
+
+  // Begin editing an existing version: deep-clone its rates so edits don't
+  // mutate the loaded copy.
+  const beginEdit = (v) => {
+    setDraft({
+      id:             v.id,
+      effective_from: v.effective_from,
+      source:         v.source || "",
+      note:           v.note || "",
+      rates:          JSON.parse(JSON.stringify(v.rates)),
+    });
+    setMsg("");
+  };
+  const cancelEdit = () => { setDraft(null); setMsg(""); };
+
+  // Save: writes the draft back to the same row id (UPDATE).
+  const saveEdit = async () => {
+    if (!supabase) return;
+    setSaving(true); setMsg("");
+    try {
+      const { error } = await supabase.from("rates_history").update({
+        rates:          draft.rates,
+        source:         draft.source || null,
+        note:           draft.note || null,
+        saved_by_email: adminEmail || null,
+        saved_at:       new Date().toISOString(),
+      }).eq("id", draft.id);
+      if (error) throw error;
+      setMsg(`✓ Saved version effective ${draft.effective_from}.`);
+      setDraft(null);
+      await load();
+    } catch (e) { setMsg("Error: " + (e?.message || String(e))); }
+    setSaving(false);
+  };
+
+  // Add: inserts a new row. Validates effective_from is a real date and
+  // not a duplicate of an existing version.
+  const addNew = async () => {
+    if (!supabase) return;
+    if (!newEffectiveFrom || !/^\d{4}-\d{2}-\d{2}$/.test(newEffectiveFrom)) {
+      setMsg("Effective-from date must be in YYYY-MM-DD format.");
+      return;
+    }
+    if (versions.some(v => String(v.effective_from) === newEffectiveFrom)) {
+      setMsg(`A rate version with effective_from ${newEffectiveFrom} already exists. Edit it instead.`);
+      return;
+    }
+    setSaving(true); setMsg("");
+    try {
+      const { error } = await supabase.from("rates_history").insert({
+        effective_from: newEffectiveFrom,
+        rates:          newRates,
+        source:         newSource || null,
+        note:           newNote || null,
+        saved_by_email: adminEmail || null,
+      });
+      if (error) throw error;
+      setMsg(`✓ Added new rate version effective ${newEffectiveFrom}.`);
+      setAddingNew(false); setNewEffectiveFrom(""); setNewSource(""); setNewNote(""); setNewRates(null);
+      await load();
+    } catch (e) { setMsg("Error: " + (e?.message || String(e))); }
+    setSaving(false);
+  };
+
+  const deleteVersion = async (v) => {
+    if (!supabase) return;
+    if (!window.confirm(`Delete the rate version effective ${v.effective_from}? This is permanent.`)) return;
+    setSaving(true); setMsg("");
+    try {
+      const { error } = await supabase.from("rates_history").delete().eq("id", v.id);
+      if (error) throw error;
+      setMsg(`✓ Deleted version effective ${v.effective_from}.`);
+      await load();
+    } catch (e) { setMsg("Error: " + (e?.message || String(e))); }
+    setSaving(false);
+  };
+
+  // Renders one editable cell for a flat-number rate (Deadhead, Night,
+  // TailSwap, Transit). For Layover, see renderLayoverCell below.
+  const NumCell = ({ value, onChange, disabled, readOnly }) => (
+    <input type="number" min={0} step={1}
+      value={value == null ? "" : value}
+      readOnly={readOnly}
+      onChange={e => {
+        const v = e.target.value;
+        onChange(v === "" ? null : Math.max(0, parseInt(v, 10) || 0));
+      }}
+      disabled={disabled}
+      style={{ width:"100%", boxSizing:"border-box", padding:"6px 8px",
+        background: readOnly ? C.sky : C.white, border:"1.5px solid "+C.border,
+        borderRadius:8, fontSize:14, fontWeight:700, color:C.navy, textAlign:"center", fontFamily:"inherit" }} />
+  );
+
+  // Renders one rate version card. `editing` is true when this card is the
+  // one currently being edited (the rest are read-only).
+  const renderVersion = (v) => {
+    const editing = draft?.id === v.id;
+    const r = editing ? draft.rates : v.rates;
+    const onCellChange = (path, value) => {
+      // Mutate a nested key safely on the draft.
+      const next = JSON.parse(JSON.stringify(draft.rates));
+      let cur = next;
+      for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]];
+      cur[path[path.length - 1]] = value;
+      setDraft({ ...draft, rates: next });
+    };
+    const flatRows = [
+      ["deadhead", "Deadhead (per sched block hr)"],
+      ["night",    "Night Flying (per hr)"],
+      ["tailSwap", "Tail Swap (per swap)"],
+      ["transit",  "Transit (per hr)"],
+    ];
+    const cardBg = editing ? C.blueLight : C.white;
+    return (
+      <Card key={v.id} style={{ marginBottom:14, background:cardBg, borderColor: editing ? C.blue : undefined }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+          <div>
+            <div style={{ fontSize:13, fontWeight:800, color:C.navy }}>
+              Effective from {new Date(v.effective_from + "T00:00:00Z").toLocaleDateString("en-IN", { day:"numeric", month:"long", year:"numeric", timeZone:"UTC" })}
+            </div>
+            <div style={{ fontSize:11, color:C.textMid, marginTop:2 }}>
+              {v.source || "(no source noted)"} · saved by {v.saved_by_email || "—"} · {v.saved_at ? new Date(v.saved_at).toLocaleString("en-IN") : ""}
+            </div>
+            {v.note && (
+              <div style={{ fontSize:11, color:C.textMid, marginTop:4, fontStyle:"italic" }}>“{v.note}”</div>
+            )}
+          </div>
+          <div style={{ display:"flex", gap:6 }}>
+            {!editing ? (
+              <>
+                <button type="button" onClick={() => beginEdit(v)} disabled={!!draft || saving}
+                  style={{ padding:"4px 10px", fontSize:11, fontWeight:700, fontFamily:"inherit",
+                    background: draft ? C.sky : C.white, color: draft ? C.textLo : C.blue,
+                    border:"1px solid "+C.border, borderRadius:8, cursor: draft ? "not-allowed" : "pointer" }}>Edit</button>
+                <button type="button" onClick={() => deleteVersion(v)} disabled={!!draft || saving}
+                  style={{ padding:"4px 10px", fontSize:11, fontWeight:700, fontFamily:"inherit",
+                    background:"none", color: draft ? C.textLo : C.red,
+                    border:"1px solid "+C.border, borderRadius:8, cursor: draft ? "not-allowed" : "pointer" }}>Delete</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={saveEdit} disabled={saving}
+                  style={{ padding:"4px 12px", fontSize:11, fontWeight:800, fontFamily:"inherit",
+                    background:C.blue, color:C.white, border:"none", borderRadius:8, cursor:"pointer" }}>
+                  {saving ? "..." : "Save"}
+                </button>
+                <button type="button" onClick={cancelEdit} disabled={saving}
+                  style={{ padding:"4px 10px", fontSize:11, fontWeight:700, fontFamily:"inherit",
+                    background:"none", color:C.textMid, border:"1px solid "+C.border, borderRadius:8, cursor:"pointer" }}>Cancel</button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {editing && (
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
+            <input type="text" value={draft.source} onChange={e => setDraft({ ...draft, source: e.target.value })}
+              placeholder="Source (e.g. IndiGo Circular YYYY-MM)"
+              style={{ padding:"8px 10px", border:"1.5px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:"inherit" }} />
+            <input type="text" value={draft.note} onChange={e => setDraft({ ...draft, note: e.target.value })}
+              placeholder="Optional note"
+              style={{ padding:"8px 10px", border:"1.5px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:"inherit" }} />
+          </div>
+        )}
+
+        {/* Header row */}
+        <div style={{ display:"grid", gridTemplateColumns:"170px 1fr 1fr 1fr", gap:8, marginBottom:6 }}>
+          <div></div>
+          {["Captain","First Officer","Cabin Crew"].map(rk => (
+            <div key={rk} style={{ fontSize:10, color:C.textMid, fontWeight:700, textAlign:"center", textTransform:"uppercase", letterSpacing:"0.04em" }}>{rk}</div>
+          ))}
+        </div>
+
+        {/* Flat-rate rows */}
+        {flatRows.map(([key, lbl]) => (
+          <div key={key} style={{ display:"grid", gridTemplateColumns:"170px 1fr 1fr 1fr", gap:8, marginBottom:6, alignItems:"center" }}>
+            <div style={{ fontSize:11, color:C.textMid, fontWeight:600 }}>{lbl}</div>
+            {["Captain","First Officer","Cabin Crew"].map(rk => {
+              const value = r[key]?.[rk];
+              if (value == null && !editing) {
+                return <div key={rk} style={{ textAlign:"center", padding:"6px 8px", fontSize:13, color:C.textLo, fontWeight:600 }}>N/A</div>;
+              }
+              return (
+                <NumCell key={rk}
+                  value={value}
+                  onChange={nv => onCellChange([key, rk], nv)}
+                  readOnly={!editing} />
+              );
+            })}
+          </div>
+        ))}
+
+        {/* Layover row (nested base + beyondRate per rank) */}
+        <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed "+C.border }}>
+          <div style={{ fontSize:11, color:C.textMid, fontWeight:600, marginBottom:6 }}>
+            Domestic Layover (TLPD): base ₹ for 10:01–24:00, then per extra hour
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"170px 1fr 1fr 1fr", gap:8, marginBottom:4 }}>
+            <div style={{ fontSize:10, color:C.textMid, paddingLeft:8 }}>Base ₹</div>
+            {["Captain","First Officer","Cabin Crew"].map(rk => {
+              const lay = r.layover?.[rk];
+              if (lay == null && !editing) {
+                return <div key={rk} style={{ textAlign:"center", padding:"6px 8px", fontSize:13, color:C.textLo, fontWeight:600 }}>N/A</div>;
+              }
+              return <NumCell key={rk} value={lay?.base} onChange={nv => onCellChange(["layover", rk, "base"], nv)} readOnly={!editing} />;
+            })}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"170px 1fr 1fr 1fr", gap:8 }}>
+            <div style={{ fontSize:10, color:C.textMid, paddingLeft:8 }}>Per extra hour ₹</div>
+            {["Captain","First Officer","Cabin Crew"].map(rk => {
+              const lay = r.layover?.[rk];
+              if (lay == null && !editing) {
+                return <div key={rk} style={{ textAlign:"center", padding:"6px 8px", fontSize:13, color:C.textLo, fontWeight:600 }}>N/A</div>;
+              }
+              return <NumCell key={rk} value={lay?.beyondRate} onChange={nv => onCellChange(["layover", rk, "beyondRate"], nv)} readOnly={!editing} />;
+            })}
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  return (
+    <div>
+      <Card color="blue" style={{ marginBottom:14 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:6 }}>IndiGo Allowance Rates — versioned history</div>
+        <div style={{ fontSize:12, color:C.textMid, lineHeight:1.6 }}>
+          Each version applies from its <strong>effective-from</strong> date onwards, until a newer version takes over. When a pilot runs a PCSR for a given month, the calculator picks the version whose effective-from is the most recent date on or before the start of that month — so a January PCSR run in May still uses January's rates after April's rates were added. Cabin Crew rates are not currently calculated; leave them blank.
+        </div>
+      </Card>
+
+      {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
+      {msg && (
+        <div style={{ marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:12,
+          background: msg.startsWith("✓") ? C.greenBg : C.redBg,
+          color: msg.startsWith("✓") ? C.green : C.red,
+          border: "1px solid " + (msg.startsWith("✓") ? C.green : "#fca5a5") }}>{msg}</div>
+      )}
+
+      {!addingNew ? (
+        <Btn onClick={() => { setNewRates(emptyRatesShape()); setAddingNew(true); setMsg(""); }} disabled={!!draft || saving} icon="+" full={false}>
+          Add new rate version
+        </Btn>
+      ) : (
+        <Card color="gold" style={{ marginBottom:14 }}>
+          <div style={{ fontSize:13, fontWeight:800, color:C.navy, marginBottom:10 }}>New rate version</div>
+          <div style={{ display:"grid", gridTemplateColumns:"180px 1fr", gap:8, marginBottom:10 }}>
+            <input type="date" value={newEffectiveFrom} onChange={e => setNewEffectiveFrom(e.target.value)}
+              style={{ padding:"8px 10px", border:"1.5px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:"inherit" }} />
+            <input type="text" value={newSource} onChange={e => setNewSource(e.target.value)}
+              placeholder="Source (e.g. IndiGo Circular Apr 2026)"
+              style={{ padding:"8px 10px", border:"1.5px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:"inherit" }} />
+          </div>
+          <input type="text" value={newNote} onChange={e => setNewNote(e.target.value)}
+            placeholder="Optional note explaining the change"
+            style={{ width:"100%", boxSizing:"border-box", padding:"8px 10px", border:"1.5px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:"inherit", marginBottom:10 }} />
+
+          {/* Inline editable rate table for the new version */}
+          {[["deadhead", "Deadhead (per sched block hr)"],
+            ["night",    "Night Flying (per hr)"],
+            ["tailSwap", "Tail Swap (per swap)"],
+            ["transit",  "Transit (per hr)"]
+          ].map(([key, lbl]) => (
+            <div key={key} style={{ display:"grid", gridTemplateColumns:"170px 1fr 1fr 1fr", gap:8, marginBottom:6, alignItems:"center" }}>
+              <div style={{ fontSize:11, color:C.textMid, fontWeight:600 }}>{lbl}</div>
+              {["Captain","First Officer","Cabin Crew"].map(rk => (
+                <NumCell key={rk}
+                  value={newRates[key]?.[rk]}
+                  onChange={nv => {
+                    const next = JSON.parse(JSON.stringify(newRates));
+                    next[key][rk] = nv;
+                    setNewRates(next);
+                  }} />
+              ))}
+            </div>
+          ))}
+          <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed "+C.border }}>
+            <div style={{ fontSize:11, color:C.textMid, fontWeight:600, marginBottom:6 }}>Domestic Layover (TLPD)</div>
+            {[["base", "Base ₹"], ["beyondRate", "Per extra hour ₹"]].map(([sub, sublbl]) => (
+              <div key={sub} style={{ display:"grid", gridTemplateColumns:"170px 1fr 1fr 1fr", gap:8, marginBottom:4 }}>
+                <div style={{ fontSize:10, color:C.textMid, paddingLeft:8 }}>{sublbl}</div>
+                {["Captain","First Officer","Cabin Crew"].map(rk => (
+                  <NumCell key={rk}
+                    value={newRates.layover?.[rk]?.[sub]}
+                    onChange={nv => {
+                      const next = JSON.parse(JSON.stringify(newRates));
+                      if (next.layover[rk] == null) next.layover[rk] = { base: 0, beyondRate: 0 };
+                      next.layover[rk][sub] = nv;
+                      setNewRates(next);
+                    }} />
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop:14, display:"flex", gap:8 }}>
+            <Btn onClick={addNew} disabled={saving} icon="💾" full={false}>{saving ? "Saving..." : "Save new version"}</Btn>
+            <Btn onClick={() => { setAddingNew(false); setNewRates(null); setMsg(""); }} disabled={saving} variant="ghost" small full={false}>Cancel</Btn>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ marginTop:14 }}>
+        {loading ? (
+          <div style={{ padding:"20px", textAlign:"center", color:C.textMid, fontSize:12 }}>Loading rate versions...</div>
+        ) : versions.length === 0 ? (
+          <div style={{ padding:"20px", textAlign:"center", color:C.textLo, fontSize:12 }}>No rate versions yet. Add one above.</div>
+        ) : (
+          versions.map(renderVersion)
+        )}
+      </div>
+
+      <div style={{ marginTop:18, padding:"12px 16px", background:C.blueXLight, border:"1px solid "+C.border, borderRadius:10, fontSize:11, color:C.textMid, lineHeight:1.6 }}>
+        <strong>How this works:</strong> Calculator picks rates by PCSR month, not by today's date. A pilot running their January PCSR after April's rates were added still gets January's rates. The report screen shows which version was applied.
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    ADMIN SCREEN
 ═══════════════════════════════════════════════════════════════════ */
-function AdminScreen({ rates }) {
+// `rates` prop is preserved for backwards compatibility with any caller
+// passing it; the editable RatesEditorPanel reads from rates_history
+// directly, so this prop is no longer used by AdminScreen itself.
+// eslint-disable-next-line no-unused-vars
+function AdminScreen({ rates, adminEmail }) {
   const [tab,   setTab]   = useState("users");
   const [users, setUsers] = useState([]);
   const [userQuery, setUserQuery] = useState("");
@@ -3625,38 +4070,7 @@ function AdminScreen({ rates }) {
         </div>
       )}
 
-      {tab === "rates" && (
-        <div>
-          <Card color="blue" style={{ marginBottom:14 }}>
-            <div style={{ fontSize:11, color:C.blue, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:4 }}>Source</div>
-            <div style={{ fontSize:14, fontWeight:700, color:C.navy }}>{rates.source}</div>
-            <div style={{ fontSize:12, color:C.textMid, marginTop:2 }}>Effective: {rates.lastUpdated}</div>
-          </Card>
-          {[["Deadhead (per sched block hr)", rates.deadhead],
-            ["Night Flying (per hr)", rates.night],
-            ["Tail Swap (per swap)", rates.tailSwap],
-            ["Transit (per hr)", rates.transit]
-          ].map(([lbl, obj]) => (
-            <Card key={lbl} style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:C.blue, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:10 }}>{lbl}</div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-                {["Captain","First Officer","Cabin Crew"].map(r => (
-                  <div key={r} style={{ textAlign:"center", padding:"10px 6px", background:C.sky, borderRadius:10 }}>
-                    <div style={{ fontSize:10, color:C.textMid, marginBottom:5, fontWeight:600 }}>{r}</div>
-                    <div style={{ fontSize:16, fontWeight:900, color:obj[r] ? C.navy : C.textLo }}>
-                      {obj[r] ? fmtINR(obj[r]) : <span style={{ fontSize:12 }}>N/A</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          ))}
-          <div style={{ padding:"12px 16px", background:C.goldBg, border:"1.5px solid "+C.goldBorder,
-            borderRadius:12, fontSize:12, color:C.goldText, lineHeight:1.6, marginTop:8 }}>
-            <strong>To update rates:</strong> edit DEFAULT_RATES in the app source when a new IndiGo circular is issued.
-          </div>
-        </div>
-      )}
+      {tab === "rates" && <RatesEditorPanel adminEmail={adminEmail} />}
     </div>
   );
 }
@@ -3809,7 +4223,7 @@ export default function App() {
         {tab === "calc"    && <CalcScreen    user={user} rates={rates} onNeedProfile={() => setTab("profile")} onTrialUsed={onTrialUsed} onUpgrade={() => setTab("upgrade")} />}
         {tab === "upgrade" && <UpgradeScreen user={user} onActivated={onTrialReset} goBack={() => setTab("calc")} />}
         {tab === "profile" && <ProfileScreen user={user} onSave={onProfileSave} />}
-        {tab === "admin"   && <AdminScreen   rates={rates} />}
+        {tab === "admin"   && <AdminScreen   rates={rates} adminEmail={user?.email} />}
       </div>
 
       <div style={{ position:"fixed", bottom:0, left:0, right:0, background:C.white,

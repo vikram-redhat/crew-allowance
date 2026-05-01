@@ -140,20 +140,51 @@ export function groupIntoDuties(sectors, scheduledTimes) {
   return duties;
 }
 
-function getRates(rank) {
-  const cap = rank === "Captain";
+// Hardcoded fallback (matches Jan 1 2026 IndiGo circular). Used when the
+// admin hasn't set up the rates_history table yet, or when a calc is run
+// without supplying ratesOverride. Schema mirrors db_migrations/009_rates_history.sql.
+const HARDCODED_RATES = {
+  deadhead:  { Captain: 4000, "First Officer": 2000, "Cabin Crew": null },
+  night:     { Captain: 2000, "First Officer": 1000, "Cabin Crew": null },
+  layover:   { Captain: { base: 3000, beyondRate: 150 }, "First Officer": { base: 1500, beyondRate: 75 }, "Cabin Crew": null },
+  tailSwap:  { Captain: 1500, "First Officer": 750, "Cabin Crew": null },
+  transit:   { Captain: 1000, "First Officer": 500, "Cabin Crew": null },
+};
+
+// Map a display rank ("Senior Captain" / "Sr. First Officer" / etc.) to the
+// rate bucket actually present in the rates table. Mirrors `rankBucket` in
+// CrewAllowance.jsx — kept duplicated here so calculate.js stays standalone.
+function rankToBucket(rank) {
+  const v = String(rank || "").toLowerCase();
+  if (v.includes("cabin")) return "Cabin Crew";
+  if (v.includes("first") || v.includes("fo")) return "First Officer";
+  return "Captain";
+}
+
+function getRates(rank, ratesOverride) {
+  const bucket = rankToBucket(rank);
+  const src    = ratesOverride || HARDCODED_RATES;
+  // null bucket (e.g. Cabin Crew on most allowances) → 0 so calc doesn't NaN.
+  // Layover has a nested {base, beyondRate} shape; everything else is a flat number.
+  const dh   = src.deadhead?.[bucket] ?? 0;
+  const nf   = src.night?.[bucket]    ?? 0;
+  const tr   = src.transit?.[bucket]  ?? 0;
+  const ts   = src.tailSwap?.[bucket] ?? 0;
+  const lay  = src.layover?.[bucket];
+  const lvB  = (lay && typeof lay === "object") ? (lay.base ?? 0)        : 0;
+  const lvX  = (lay && typeof lay === "object") ? (lay.beyondRate ?? 0)  : 0;
   return {
-    deadhead:     (cap ? 4000 : 2000) / 60,
-    layoverBase:  cap ? 3000 : 1500,
-    layoverExtra: cap ? 150  : 75,
-    transit:      (cap ? 1000 : 500) / 60,
-    night:        (cap ? 2000 : 1000) / 60,
-    tailSwap:     cap ? 1500 : 750,
+    deadhead:     dh / 60,
+    layoverBase:  lvB,
+    layoverExtra: lvX,
+    transit:      tr / 60,
+    night:        nf / 60,
+    tailSwap:     ts,
   };
 }
 
-export function calculateDeadhead(sectors, scheduledTimes, pilot) {
-  const r = getRates(pilot.rank);
+export function calculateDeadhead(sectors, scheduledTimes, pilot, ratesOverride) {
+  const r = getRates(pilot.rank, ratesOverride);
   let total = 0;
   const result = [];
 
@@ -173,8 +204,7 @@ export function calculateDeadhead(sectors, scheduledTimes, pilot) {
   return { sectors: result, total };
 }
 
-// eslint-disable-next-line no-unused-vars
-export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMonthTail, _hotels) {
+export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMonthTail, _hotels, ratesOverride) {
   // NOTE on `_hotels`: kept in the signature for API compatibility, but no
   // longer used. We previously gated layovers on the PCSR's Hotel Info
   // section, but that was unreliable across users — some PCSR variants omit
@@ -186,7 +216,7 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
   // duties." Where the pilot slept doesn't change eligibility. We now rely
   // on page-1 schedule alone — duty boundaries from `groupIntoDuties` plus
   // the >10h01m duration check are the only gates.
-  const r = getRates(pilot.rank);
+  const r = getRates(pilot.rank, ratesOverride);
   const events = [];
   let total = 0;
 
@@ -285,8 +315,8 @@ export function calculateLayover(sectors, duties, scheduledTimes, pilot, priorMo
   return { events, total };
 }
 
-export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
-  const r = getRates(pilot.rank);
+export function calculateNightFlying(sectors, scheduledTimes, svData, pilot, ratesOverride) {
+  const r = getRates(pilot.rank, ratesOverride);
   const eligible = sectors.filter(s => !s.is_dhf && !s.is_dht);
   const result = [];
   let totalNightMins = 0;
@@ -351,8 +381,8 @@ export function calculateNightFlying(sectors, scheduledTimes, svData, pilot) {
   return { sectors: result, total };
 }
 
-export function calculateTransit(sectors, duties, scheduledTimes, pilot) {
-  const r = getRates(pilot.rank);
+export function calculateTransit(sectors, duties, scheduledTimes, pilot, ratesOverride) {
+  const r = getRates(pilot.rank, ratesOverride);
   const halts = [];
   let total = 0;
 
@@ -411,8 +441,8 @@ export function calculateTransit(sectors, duties, scheduledTimes, pilot) {
   return { halts, total };
 }
 
-export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
-  const r = getRates(pilot.rank);
+export function calculateTailSwap(sectors, duties, scheduledTimes, pilot, ratesOverride) {
+  const r = getRates(pilot.rank, ratesOverride);
   const swaps = [];
   let total = 0;
 
@@ -474,15 +504,15 @@ export function calculateTailSwap(sectors, duties, scheduledTimes, pilot) {
   return { swaps, count: verifiedCount, total };
 }
 
-export function runCalculations(period, sectors, scheduledTimes, svData, pilot, priorMonthTail, hotels) {
+export function runCalculations(period, sectors, scheduledTimes, svData, pilot, priorMonthTail, hotels, ratesOverride) {
   const corrected = applyMidnightCorrection(sectors);
   const duties    = groupIntoDuties(corrected, scheduledTimes);
 
-  const dh = calculateDeadhead(corrected, scheduledTimes, pilot);
-  const lv = calculateLayover(corrected, duties, scheduledTimes, pilot, priorMonthTail, hotels);
-  const nt = calculateNightFlying(corrected, scheduledTimes, svData, pilot);
-  const tr = calculateTransit(corrected, duties, scheduledTimes, pilot);
-  const ts = calculateTailSwap(corrected, duties, scheduledTimes, pilot);
+  const dh = calculateDeadhead(corrected, scheduledTimes, pilot, ratesOverride);
+  const lv = calculateLayover(corrected, duties, scheduledTimes, pilot, priorMonthTail, hotels, ratesOverride);
+  const nt = calculateNightFlying(corrected, scheduledTimes, svData, pilot, ratesOverride);
+  const tr = calculateTransit(corrected, duties, scheduledTimes, pilot, ratesOverride);
+  const ts = calculateTailSwap(corrected, duties, scheduledTimes, pilot, ratesOverride);
 
   // Surface any irregular sectors (air-returns etc., flagged by the parser
   // with `irregular: true`) so the UI can show a warning. The calc treats
@@ -509,6 +539,7 @@ export function runCalculations(period, sectors, scheduledTimes, svData, pilot, 
     transit:  { halts: tr.halts,     amount: tr.total },
     tailSwap: { swaps: ts.swaps,     count: ts.count, amount: ts.total },
     irregular_sectors: irregularSectors,
+    rates_used: ratesOverride || null,  // null ⇒ HARDCODED_RATES fallback was used
     total: dh.total + lv.total + nt.total + tr.total + ts.total,
   };
 }
