@@ -26,9 +26,13 @@ No test framework is configured.
 - **`/api/aeroapi.js`** — FlightAware AeroAPI proxy (primary schedule data source). Returns scheduled + actual gate times + aircraft reg. Supports `?debug=1`.
 - **`/api/fr24.js`** — Flightradar24 proxy (fallback only — used when FA returns null aircraft reg, gated by `fr24_fallback_enabled` admin setting).
 - **`/api/aerodatabox.js`** — AeroDataBox proxy (legacy, kept as toggleable break-glass; not called in normal operation).
-- **`/api/create-subscription.js`** — Vercel serverless function: creates Stripe Customer + Subscription for tiered plans (₹100/mo, ₹1000/yr) or handles free-access code activation.
-- **`/api/stripe-webhook.js`** — Stripe webhook handler: syncs subscription lifecycle events (created, updated, deleted, invoice paid/failed) to the `profiles` table.
-- **`/api/create-payment-intent.js`** — **DEAD CODE** (legacy one-off PaymentIntent). Superseded by create-subscription.js. Safe to delete.
+- **`/api/razorpay-create-order.js`** — Vercel serverless function: creates a one-time Razorpay Order for the ₹100 trial. Browser opens Standard Checkout with the returned `order_id`.
+- **`/api/razorpay-create-subscription.js`** — Creates a Razorpay Subscription against `RAZORPAY_PLAN_1MO` / `RAZORPAY_PLAN_12MO` (₹100/mo, ₹1000/yr) OR handles free-access code activation. Browser opens Checkout with the returned `subscription_id`.
+- **`/api/razorpay-verify-payment.js`** — HMAC-SHA256 verification of the Checkout `handler` callback (both `order_id|payment_id` for trial and `payment_id|subscription_id` for subscriptions). Performs an optimistic `profiles` update so the success UI renders without waiting for the webhook.
+- **`/api/razorpay-webhook.js`** — Source-of-truth for trial + subscription lifecycle. Verifies `X-Razorpay-Signature` against `RAZORPAY_WEBHOOK_SECRET`, then maps `payment.captured` and `subscription.*` events to the same `profiles` columns the legacy Stripe webhook used.
+- **`/api/razorpay-cancel-subscription.js`** — In-app "Cancel at end of period" replacement for the Stripe Customer Portal. Calls `POST /v1/subscriptions/:id/cancel` with `cancel_at_cycle_end=1`.
+- **`/api/create-subscription.js`**, **`/api/stripe-webhook.js`**, **`/api/create-trial-payment.js`**, **`/api/customer-portal.js`**, **`/api/create-payment-intent.js`** — **LEGACY STRIPE** code, kept temporarily for fallback. Will be deleted once Razorpay path is verified live.
+- **`/scripts/razorpay-create-plans.mjs`** — One-off helper: creates the two recurring Plans on Razorpay and prints the `plan_id`s for the env vars.
 
 The three schedule proxies share an interchangeable response shape:
 `{ std_local, sta_local, atd_local, ata_local, aircraft_reg, _source?, _meta? }` — so the
@@ -41,7 +45,7 @@ Navigation is state-driven (no React Router). A `screen` state variable in the r
 ### Backend Services
 
 - **Supabase** — Auth (email/password) + tables: `profiles` (users with `is_active`, `is_admin`, subscription state, trial state), `flight_schedule_cache` (per flight/dep/arr/date), `app_settings` (`schedule_source`, `maintenance_mode`, `fr24_fallback_enabled`), `sector_values` (monthly SV uploads), `api_usage` (per-source per-day call counts).
-- **Stripe** — Subscription billing via Stripe.js (client) + `/api/create-subscription` + `/api/stripe-webhook` (server). Two plans: ₹100/month, ₹1,000/year. Free-access code path for comp accounts.
+- **Razorpay** — Subscription billing via Razorpay Standard Checkout (client) + `/api/razorpay-create-subscription` (recurring) / `/api/razorpay-create-order` (trial) + `/api/razorpay-verify-payment` + `/api/razorpay-webhook` (server). Two plans: ₹100/month, ₹1,000/year, plus a one-time ₹100 trial. Free-access code path for comp accounts is unchanged.
 
 ### Allowance Calculation Engine
 
@@ -68,21 +72,26 @@ A hardcoded `CONFIG` object in CrewAllowance.jsx holds:
 
 ```
 # Client-side (VITE_ prefix — exposed to browser)
-VITE_STRIPE_PK          # Stripe publishable key (pk_live_... or pk_test_...)
+VITE_RAZORPAY_KEY_ID    # Razorpay publishable key (rzp_live_... or rzp_test_...)
 VITE_SUPABASE_URL       # Supabase project URL
 VITE_SUPABASE_ANON_KEY  # Supabase anon key
 
 # Server-side only (Vercel env — never exposed)
-STRIPE_SECRET_KEY         # sk_live_... or sk_test_...
-STRIPE_WEBHOOK_SECRET     # whsec_... from Stripe Webhooks
-STRIPE_PRICE_1MO          # price_... for ₹100/month plan
-STRIPE_PRICE_12MO         # price_... for ₹1,000/year plan
+RAZORPAY_KEY_ID           # rzp_live_... or rzp_test_... (paired with KEY_SECRET)
+RAZORPAY_KEY_SECRET       # Server-only secret
+RAZORPAY_WEBHOOK_SECRET   # Secret configured on the Razorpay webhook endpoint
+RAZORPAY_PLAN_1MO         # plan_... for ₹100/month  (created via scripts/razorpay-create-plans.mjs)
+RAZORPAY_PLAN_12MO        # plan_... for ₹1,000/year
 FREE_ACCESS_CODE          # Shared secret for comp accounts
 SUPABASE_URL              # Same URL, but without VITE_ prefix for server
 SUPABASE_SERVICE_ROLE_KEY # Service role key (never the anon key)
 AEROAPI_KEY               # For FlightAware AeroAPI proxy (PRIMARY)
 FR24_API_TOKEN            # For FR24 proxy (FALLBACK for missing aircraft reg)
 RAPIDAPI_KEY              # For AeroDataBox proxy (LEGACY, not called in normal use)
+
+# Legacy Stripe vars (kept for the cutover; safe to remove after the
+# Razorpay path is verified live and the legacy /api/* files are deleted):
+#   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_1MO, STRIPE_PRICE_12MO, VITE_STRIPE_PK
 ```
 
 ### Schedule Data Architecture
