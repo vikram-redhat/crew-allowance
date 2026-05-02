@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>How IndiGo Deadhead Allowance Is Calculated (PAH §1.0) — CrewAllowance.com</title>
+  <meta name="description" content="IndiGo's deadhead allowance pays Captains ₹4,000 and First Officers ₹2,000 per scheduled block hour for DHF sectors, prorated to the closest minute. Full rule, worked example and edge cases under PAH FLT Issue 01 Rev 46." />
+  <meta name="keywords" content="IndiGo deadhead allowance, deadhead allowance pilot, DHF sector, PAH §1.0, scheduled block hour, IndiGo positioning crew" />
+  <meta name="author" content="CrewAllowance.com" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+  <link rel="canonical" href="https://crewallowance.com/guides/indigo-deadhead-allowance.html" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="CrewAllowance.com" />
+  <meta property="og:title" content="How IndiGo Deadhead Allowance Is Calculated (PAH §1.0)" />
+  <meta property="og:description" content="₹4,000 per scheduled block hour for Captains, ₹2,000 for First Officers, DHF-only. Full rule and worked example." />
+  <meta property="og:url" content="https://crewallowance.com/guides/indigo-deadhead-allowance.html" />
+  <meta property="og:image" content="https://crewallowance.com/og-cover.png" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="How IndiGo Deadhead Allowance Is Calculated (PAH §1.0)" />
+  <meta name="twitter:description" content="₹4,000/sched block hour Captain, ₹2,000 FO, DHF-only. Worked example inside." />
+  <meta name="twitter:image" content="https://crewallowance.com/og-cover.png" />
+
+  <!-- Icons -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <meta name="theme-color" content="#0f3460" />
+
+  <!-- Article schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "How IndiGo Deadhead Allowance Is Calculated (PAH §1.0)",
+    "description": "IndiGo's deadhead allowance pays Captains ₹4,000 and First Officers ₹2,000 per scheduled block hour for DHF sectors, prorated to the closest minute.",
+    "datePublished": "2026-05-02",
+    "dateModified": "2026-05-02",
+    "inLanguage": "en-IN",
+    "author": { "@type": "Organization", "name": "CrewAllowance.com", "url": "https://crewallowance.com/" },
+    "publisher": {
+      "@type": "Organization",
+      "name": "CrewAllowance.com",
+      "logo": { "@type": "ImageObject", "url": "https://crewallowance.com/favicon.svg" }
+    },
+    "mainEntityOfPage": "https://crewallowance.com/guides/indigo-deadhead-allowance.html",
+    "about": [
+      { "@type": "Thing", "name": "IndiGo deadhead allowance" },
+      { "@type": "Thing", "name": "DHF sector" },
+      { "@type": "Thing", "name": "PAH FLT Issue 01 Rev 46" }
+    ],
+    "image": "https://crewallowance.com/og-cover.png"
+  }
+  </script>
+
+  <!-- BreadcrumbList schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://crewallowance.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Guides", "item": "https://crewallowance.com/guides/" },
+      { "@type": "ListItem", "position": 3, "name": "Deadhead Allowance", "item": "https://crewallowance.com/guides/indigo-deadhead-allowance.html" }
+    ]
+  }
+  </script>
+
+  <!-- FAQPage schema (single most important GEO asset on the page) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is the deadhead allowance for IndiGo pilots?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "IndiGo's deadhead allowance pays ₹4,000 per scheduled block hour to Captains and ₹2,000 per scheduled block hour to First Officers, prorated to the closest minute. It is paid only for DHF (deadhead-forward) sectors — those where the pilot travels as non-operating crew to or from a duty assignment."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Which sectors qualify for deadhead allowance?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Only sectors coded DHF in the Personal Crew Schedule Report (PCSR) qualify. DHF is shown either by an asterisk on the departure airport in the PCSR grid, or by the entry 'DHF' against your employee number in the Other Crew section. DHT (deadhead-terminating) sectors do not qualify, and a duty containing only DHF sectors on both legs (DHF→DHF) is also excluded."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is deadhead allowance based on actual or scheduled flight time?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "PAH §1.0 specifies scheduled block time — that is, scheduled arrival (STA) minus scheduled departure (STD). It does not use actual times, and it does not use the Sector Value (SV) figure from the 6eBreeze SV file. Sector Value is a pay metric for operating sectors and does not apply to deadhead pay."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I calculate my deadhead allowance manually?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "For each DHF sector, take the scheduled block in minutes (STA − STD) and multiply by ₹4,000 / 60 (Captain) or ₹2,000 / 60 (First Officer). Sum across all DHF sectors in the month. Example: a 167-minute DHF sector pays a Captain 167 × 4000 / 60 = ₹11,133."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "When is deadhead allowance paid?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Per PAH §1.0, DHF block hours for the previous month are reflected on the payslip released on or before the 3rd of the current month. End-of-month PCSR actuals are the basis."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does my deadhead allowance differ from the SV file total?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Sector Value is not the same as scheduled block. SV reflects the operational pay value of operating sectors and does not apply to DHF pay under PAH §1.0. Deadhead allowance must be computed from STA − STD as published in the airline's schedule, not from SV minutes."
+        }
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue: #1A6FD4;
+      --navy: #0F3460;
+      --blueXLight: #EEF3FA;
+      --sky: #F4F9FF;
+      --text: #1e293b;
+      --textMid: #475569;
+      --textLo: #64748b;
+      --border: #E2EAF4;
+      --gold: #C97900;
+      --green: #00855A;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Nunito', -apple-system, 'Segoe UI', system-ui, sans-serif;
+      background: #fff;
+      color: var(--text);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    nav.top {
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 1px 8px rgba(26,111,212,0.07);
+    }
+    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--navy); }
+    .logo .mark {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--blue), var(--navy));
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 18px; box-shadow: 0 2px 8px rgba(26,111,212,0.28);
+    }
+    .logo .name { font-weight: 900; font-size: 16px; letter-spacing: -0.01em; }
+    .nav-cta {
+      background: linear-gradient(135deg, var(--blue), #2A82E0);
+      color: #fff; border: none; border-radius: 9px;
+      font-size: 13px; padding: 8px 18px; font-weight: 800;
+      text-decoration: none; box-shadow: 0 2px 8px rgba(26,111,212,0.28);
+    }
+    .breadcrumbs { max-width: 760px; margin: 16px auto 0; padding: 0 20px; font-size: 13px; color: var(--textLo); }
+    .breadcrumbs a { color: var(--blue); text-decoration: none; }
+    .breadcrumbs a:hover { text-decoration: underline; }
+
+    article { max-width: 760px; margin: 0 auto; padding: 28px 20px 60px; }
+    article h1 {
+      font-size: clamp(28px, 5vw, 40px);
+      color: var(--navy);
+      font-weight: 900;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+    article h2 {
+      font-size: clamp(22px, 3.5vw, 28px);
+      color: var(--navy);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin: 36px 0 14px;
+    }
+    article h3 {
+      font-size: 18px;
+      color: var(--navy);
+      font-weight: 800;
+      margin: 24px 0 10px;
+    }
+    article p, article li { font-size: 16px; color: var(--text); }
+    article p { margin-bottom: 14px; }
+    article ul, article ol { margin: 0 0 14px 22px; }
+    article li { margin-bottom: 8px; }
+    article strong { color: var(--navy); }
+    article a { color: var(--blue); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 2px; }
+
+    .meta { font-size: 13px; color: var(--textLo); margin-bottom: 28px; }
+    .meta .pah { color: var(--blue); font-weight: 700; }
+
+    .lede {
+      background: var(--blueXLight);
+      border-left: 4px solid var(--blue);
+      padding: 18px 20px;
+      border-radius: 4px;
+      margin: 0 0 28px;
+    }
+    .lede p { font-size: 17px; margin-bottom: 0; color: var(--text); }
+    .lede strong { color: var(--navy); }
+
+    .rates {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 24px;
+      font-size: 15px;
+    }
+    .rates th, .rates td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .rates th { background: var(--navy); color: #fff; font-weight: 800; }
+    .rates tr:nth-child(even) td { background: var(--sky); }
+
+    .example {
+      background: var(--sky);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 22px;
+      margin: 16px 0 24px;
+    }
+    .example h3 { margin-top: 0; }
+    .calc { font-family: 'Consolas', ui-monospace, Menlo, monospace; font-size: 14px;
+      background: #fff; border: 1px solid var(--border); border-radius: 6px;
+      padding: 12px 14px; margin: 12px 0; color: var(--navy); white-space: pre-wrap; }
+
+    .callout {
+      background: #FFF6E5;
+      border-left: 4px solid var(--gold);
+      padding: 14px 18px;
+      border-radius: 4px;
+      margin: 16px 0;
+      font-size: 15px;
+    }
+    .callout strong { color: var(--gold); }
+
+    .cta {
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      border-radius: 16px;
+      padding: 28px 26px;
+      text-align: center;
+      margin: 40px 0;
+      color: #fff;
+    }
+    .cta h2 { color: #fff; margin-top: 0; }
+    .cta p { color: rgba(255,255,255,0.85); font-size: 15px; }
+    .cta a {
+      display: inline-block;
+      background: #fff; color: var(--blue);
+      border-radius: 10px; font-weight: 800; font-size: 15px;
+      padding: 12px 26px; text-decoration: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      margin-top: 14px;
+    }
+
+    .faq details {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+    .faq details[open] { background: var(--sky); }
+    .faq summary {
+      cursor: pointer;
+      font-weight: 800;
+      color: var(--navy);
+      font-size: 16px;
+      list-style: none;
+    }
+    .faq summary::-webkit-details-marker { display: none; }
+    .faq summary::after { content: " +"; color: var(--blue); }
+    .faq details[open] summary::after { content: " −"; }
+    .faq p { margin-top: 10px; font-size: 15px; color: var(--text); }
+
+    .related {
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+      margin-top: 36px;
+    }
+    .related ul { list-style: none; margin: 0; padding: 0; }
+    .related li { margin-bottom: 8px; font-size: 15px; }
+    .related a { color: var(--blue); text-decoration: none; font-weight: 700; }
+    .related a:hover { text-decoration: underline; }
+
+    footer.site {
+      background: var(--navy);
+      color: rgba(255,255,255,0.7);
+      padding: 28px 20px;
+      text-align: center;
+      font-size: 13px;
+      margin-top: 40px;
+    }
+    footer.site a { color: rgba(255,255,255,0.7); text-decoration: none; margin: 0 10px; }
+    footer.site a:hover { color: #fff; text-decoration: underline; }
+    footer.site .disclaimer {
+      max-width: 620px; margin: 12px auto 0; font-size: 12px; color: rgba(255,255,255,0.4);
+    }
+
+    @media (max-width: 520px) {
+      nav.top { padding: 12px 16px; }
+      article { padding: 20px 16px 40px; }
+      .rates { font-size: 14px; }
+      .rates th, .rates td { padding: 8px 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="top">
+  <a href="/" class="logo">
+    <span class="mark">✈</span>
+    <span class="name">CrewAllowance.com</span>
+  </a>
+  <a href="/" class="nav-cta">Open the calculator →</a>
+</nav>
+
+<div class="breadcrumbs">
+  <a href="/">Home</a> ›
+  <a href="/guides/">Guides</a> ›
+  Deadhead Allowance
+</div>
+
+<article>
+
+  <h1>How IndiGo Deadhead Allowance Is Calculated (PAH §1.0)</h1>
+  <div class="meta">
+    <span class="pah">PAH FLT Issue 01 Rev 46</span> · Last verified 2 May 2026 · Reading time ~6 min
+  </div>
+
+  <div class="lede">
+    <p><strong>IndiGo's deadhead allowance pays ₹4,000 per scheduled block hour to Captains and ₹2,000 per scheduled block hour to First Officers.</strong> It is prorated to the closest minute and applies only to DHF (deadhead-forward) sectors — those where the pilot travels as non-operating crew. The calculation uses scheduled block (STA − STD) from the airline's published schedule, not the actual block hours flown and not the Sector Value file.</p>
+  </div>
+
+  <h2>The rule in one sentence</h2>
+  <p>For every DHF sector in your end-of-month PCSR, the deadhead allowance is the scheduled block time in minutes multiplied by ₹4,000/60 (Captain) or ₹2,000/60 (First Officer), rounded to the closest minute and summed across the month.</p>
+
+  <h2>The rate (effective 1 January 2026)</h2>
+  <table class="rates">
+    <thead>
+      <tr><th>Rank</th><th>Rate per scheduled block hour</th><th>Per minute</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Captain</td><td>₹4,000</td><td>₹66.67</td></tr>
+      <tr><td>First Officer</td><td>₹2,000</td><td>₹33.33</td></tr>
+    </tbody>
+  </table>
+  <p>Senior Captain, LTC, TRI and DE roles use the Captain rate. Senior First Officers use the First Officer rate. Rates are taken from PAH §11.0 (the rate schedule) and are unchanged from the previous revision.</p>
+
+  <h2>Which sectors qualify (and which don't)</h2>
+  <p>Deadhead is paid only when you are <strong>positioning</strong> as non-operating crew. PAH §1.0 distinguishes two deadhead codes in the PCSR:</p>
+  <ul>
+    <li><strong>DHF — deadhead forward.</strong> You're being repositioned to operate a flight elsewhere or to return after a duty. <em>This pays.</em></li>
+    <li><strong>DHT — deadhead terminating.</strong> A tail-swap-style exclusion where you're listed as deadhead because of an aircraft swap mid-duty. <em>This does not pay.</em></li>
+  </ul>
+  <p>You can identify DHF sectors in your PCSR in two ways:</p>
+  <ol>
+    <li>An <strong>asterisk on the departure airport</strong> in the calendar grid on page 1 of the PCSR.</li>
+    <li>The <strong>"Other Crew" section</strong> on subsequent pages — your employee number appears against the entry <code>CP - DHF - &lt;empno&gt; - &lt;NAME&gt;</code> for that sector.</li>
+  </ol>
+  <p>The Other Crew section is the authoritative source. The asterisk is a shorthand; the crew details confirm it.</p>
+
+  <div class="callout">
+    <strong>Edge case — DHF→DHF pairing.</strong> A duty made up entirely of two DHF sectors (an out-and-back positioning) is excluded under PAH §1.0. Both sectors must be flagged DHF in your PCSR for the exclusion to apply; a single DHF leg in an otherwise operating duty pays as normal.
+  </div>
+
+  <h2>Worked example</h2>
+  <div class="example">
+    <h3>Captain A. — March, DEL base</h3>
+    <p>Captain A. has three DHF sectors in their March PCSR:</p>
+    <ul>
+      <li><strong>BLR → DEL</strong> on 06 Mar — STD 14:30, STA 17:17 — scheduled block <strong>167 minutes</strong></li>
+      <li><strong>DEL → BOM</strong> on 18 Mar — STD 09:05, STA 11:15 — scheduled block <strong>130 minutes</strong></li>
+      <li><strong>HYD → DEL</strong> on 27 Mar — STD 22:10, STA 00:25 (next day) — scheduled block <strong>135 minutes</strong></li>
+    </ul>
+    <p>Total DHF minutes for the month: 167 + 130 + 135 = <strong>432 minutes</strong>.</p>
+    <div class="calc">432 min × ₹4,000 / 60
+= 432 × 66.667
+= ₹28,800</div>
+    <p>So Captain A. should see <strong>₹28,800</strong> on the "Dead Head Allowance-Pilot" line of their March payslip. A First Officer flying the same three sectors would see ₹14,400.</p>
+  </div>
+
+  <h2>Common reasons the number on your payslip looks wrong</h2>
+
+  <h3>1. The schedule changed and the block time was different on the day</h3>
+  <p>Use scheduled block <em>as published by the airline at the time of operation</em>, not at any later revision. If a flight was rescheduled before departure, the new STD/STA is the basis. If the flight was simply delayed on the day, that is irrelevant for deadhead — actual times don't enter the calculation.</p>
+
+  <h3>2. The sector was reclassified from DHF to operating (or vice versa)</h3>
+  <p>Crew swaps and last-minute changes can flip a sector's code. Always check the Other Crew section of your final end-of-month PCSR — that is the version used for payroll, not any earlier interim PCSR.</p>
+
+  <h3>3. The Sector Value file was used by mistake</h3>
+  <p>Sector Value (SV) is a pay metric for operating sectors. It is structurally not the same as scheduled block — SV minutes can differ from STA−STD by several minutes per sector and tens of minutes across a month. PAH §1.0 is unambiguous: deadhead is computed from scheduled block, not SV.</p>
+
+  <h3>4. A DHF→DHF pairing was paid by mistake</h3>
+  <p>A pure positioning out-and-back doesn't pay deadhead under PAH §1.0. If your DHF total includes a same-day round trip where both legs are DHF, that pair should be excluded.</p>
+
+  <h2>How CrewAllowance.com calculates this for you</h2>
+  <p>The calculator parses your PCSR, identifies every DHF sector by its crew-section flag (the authoritative source), looks up the scheduled block (STA − STD) from FlightAware AeroAPI for the date of operation, and applies the PAH §11.0 rate for your rank from your profile. The output is a per-sector breakdown — date, flight number, route, scheduled block in minutes, computed pay — that you can match line-by-line against the "Dead Head Allowance-Pilot" amount on your payslip.</p>
+
+  <div class="cta">
+    <h2>Verify your deadhead allowance in two minutes</h2>
+    <p>Upload your end-of-month PCSR. Get a per-sector breakdown of every DHF sector and the exact rupee figure that should appear on your payslip.</p>
+    <a href="/">Open the calculator →</a>
+  </div>
+
+  <h2 class="faq-h">Frequently asked questions</h2>
+  <div class="faq">
+    <details>
+      <summary>What is the deadhead allowance for IndiGo pilots?</summary>
+      <p>IndiGo's deadhead allowance pays ₹4,000 per scheduled block hour to Captains and ₹2,000 per scheduled block hour to First Officers, prorated to the closest minute. It is paid only for DHF sectors — those where the pilot travels as non-operating crew to or from a duty assignment. The rate is set in PAH §11.0 and the rule is in PAH §1.0.</p>
+    </details>
+    <details>
+      <summary>Which sectors qualify for deadhead allowance?</summary>
+      <p>Only sectors coded DHF in your PCSR. DHF is shown by an asterisk on the departure airport in the calendar grid, and confirmed by your employee number appearing as DHF in the Other Crew section. DHT sectors do not pay, and a duty consisting of DHF on both legs (DHF→DHF) is excluded.</p>
+    </details>
+    <details>
+      <summary>Is deadhead allowance based on actual or scheduled flight time?</summary>
+      <p>Scheduled. PAH §1.0 specifies scheduled block (STA − STD) from the airline's published schedule. Actual takeoff and landing times are not used. Sector Value (SV) is also not used — SV is a pay metric for operating sectors and does not apply to deadhead.</p>
+    </details>
+    <details>
+      <summary>How do I calculate my deadhead allowance manually?</summary>
+      <p>For each DHF sector, take scheduled block in minutes (STA − STD) and multiply by ₹4,000/60 (Captain) or ₹2,000/60 (First Officer). Sum across all DHF sectors in the month. A 167-minute DHF sector pays a Captain 167 × 4000 / 60 = ₹11,133.</p>
+    </details>
+    <details>
+      <summary>When is deadhead allowance paid?</summary>
+      <p>PAH §1.0 states that DHF block hours for the previous month are reflected on the payslip released on or before the 3rd of the current month. End-of-month PCSR actuals are the basis.</p>
+    </details>
+    <details>
+      <summary>Why does my deadhead allowance differ from the SV file total?</summary>
+      <p>Sector Value is not the same as scheduled block. SV reflects operational pay for operating sectors and does not apply to DHF pay under PAH §1.0. Deadhead must be computed from STA − STD as published in the airline's schedule, not from SV minutes.</p>
+    </details>
+    <details>
+      <summary>Do Senior Captains, LTC, TRI and DE pilots get a different rate?</summary>
+      <p>No — Senior Captain, LTC, TRI and DE all use the Captain rate (₹4,000 per scheduled block hour). Senior First Officers use the First Officer rate (₹2,000).</p>
+    </details>
+    <details>
+      <summary>What if my PCSR shows DHF but the asterisk is missing?</summary>
+      <p>The Other Crew section is the authoritative source, not the asterisk. If your employee number is listed against DHF for the sector, it qualifies as deadhead even if the asterisk is missing on the calendar grid. The asterisk is shorthand only.</p>
+    </details>
+  </div>
+
+  <div class="related">
+    <h3 style="margin-bottom:12px;">Related guides</h3>
+    <ul>
+      <li><a href="/guides/indigo-tlpd-layover-allowance.html">TLPD on Your IndiGo Payslip — Domestic Layover Allowance Explained (PAH §2.0) →</a></li>
+      <li><a href="/guides/indigo-tail-swap-allowance.html">Tail Swap Allowance — When You Get Paid ₹1,500 (PAH §6.0) →</a></li>
+      <li><a href="/guides/indigo-transit-halt-allowance.html">Transit Halt Allowance — The 90-Minute Rule (PAH §7.0) →</a></li>
+      <li><a href="/guides/indigo-night-flying-allowance.html">Night Flying Allowance — Why It's Calculated From STD, Not ATD (PAH §9.0) →</a></li>
+      <li><a href="/guides/what-is-pcsr.html">What Is a PCSR? IndiGo's Personal Crew Schedule Report Explained →</a></li>
+    </ul>
+  </div>
+
+</article>
+
+<footer class="site">
+  <div>
+    <a href="/">Home</a> ·
+    <a href="/privacy.html">Privacy</a> ·
+    <a href="/terms.html">Terms</a>
+  </div>
+  <div class="disclaimer">
+    CrewAllowance.com is an independent tool. Not affiliated with, endorsed by,
+    or sponsored by InterGlobe Aviation Ltd. or IndiGo. PAH section references
+    are to the Pilot Allowance Handbook FLT Issue 01 Rev 46 (effective 1 January 2026).
+    This guide is provided for verification purposes and does not constitute payroll advice.
+  </div>
+  <div style="margin-top:14px; font-size:11px; color:rgba(255,255,255,0.35);">
+    © 2026 CrewAllowance.com
+  </div>
+</footer>
+
+</body>
+</html>

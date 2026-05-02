@@ -1162,12 +1162,16 @@ function LandingPage({ goLogin, goSignup }) {
             padding:"4px 14px", fontSize:12, color:"rgba(255,255,255,0.9)", fontWeight:700,
             letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:20 }}>For IndiGo Cockpit Crew</div>
           <h1 style={{ fontSize:"clamp(28px,6vw,48px)", fontWeight:900, color:C.white,
-            lineHeight:1.1, letterSpacing:"-0.02em", margin:"0 0 18px" }}>
-            Know exactly what<br />allowances you're owed
+            lineHeight:1.1, letterSpacing:"-0.02em", margin:"0 0 14px" }}>
+            IndiGo Pilot Allowance Calculator
           </h1>
+          <div style={{ fontSize:"clamp(16px,3vw,22px)", fontWeight:700, color:"rgba(255,255,255,0.92)",
+            margin:"0 0 18px", lineHeight:1.3 }}>
+            Verify every PAH allowance on your monthly payslip
+          </div>
           <p style={{ fontSize:"clamp(14px,2.5vw,18px)", color:"rgba(255,255,255,0.75)",
-            maxWidth:480, margin:"0 auto 32px", lineHeight:1.6 }}>
-            Upload your Personal Crew Schedule Report (PCSR) and get an instant, itemised breakdown of every allowance — Deadhead, Night Flying, Layover, Tail-Swap, and Transit.
+            maxWidth:520, margin:"0 auto 32px", lineHeight:1.6 }}>
+            CrewAllowance.com checks your IndiGo monthly allowances — Deadhead, TLPD layover, Transit halt, Tail swap and Night flying — against PAH FLT Issue 01 Rev 46. Upload your PCSR, get a per-sector breakdown in two minutes.
           </p>
           <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
             <button type="button" onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
@@ -1203,6 +1207,44 @@ function LandingPage({ goLogin, goSignup }) {
             Upload your final PCSR from eCrew and instantly see which sectors and layovers make up each number on your payslip.
           </p>
           <PcsrBeforeAfter />
+        </div>
+      </div>
+
+      {/* ── SEO answer block: short, AI-quotable summary + guide links ── */}
+      <div style={{ background:C.white, padding:"56px 20px", borderBottom:"1px solid "+C.border }}>
+        <div style={{ maxWidth:760, margin:"0 auto" }}>
+          <div style={{ textAlign:"center", marginBottom:28 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>What is an IndiGo pilot allowance?</div>
+            <h2 style={{ fontSize:"clamp(20px,3.5vw,28px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em", margin:"0 0 14px" }}>
+              Five PAH allowances. One independent calculator.
+            </h2>
+            <p style={{ fontSize:15, color:C.textMid, lineHeight:1.65, margin:"0 auto", maxWidth:620 }}>
+              IndiGo cockpit crew earn five separate monthly allowances under the
+              Pilot Allowance Handbook (PAH) FLT Issue 01 Rev 46. CrewAllowance.com
+              recalculates each one from your end-of-month PCSR so you can verify
+              your payslip line by line. Built by pilots, for pilots — independent
+              and not affiliated with InterGlobe Aviation Ltd.
+            </p>
+          </div>
+          <div style={{ display:"grid", gap:10, gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))" }}>
+            {[
+              { name:"Deadhead Allowance",   ref:"PAH §1.0", href:"/guides/indigo-deadhead-allowance.html",  blurb:"₹4,000/sched block hour, DHF only" },
+              { name:"TLPD / Layover",       ref:"PAH §2.0", href:"/guides/indigo-tlpd-layover-allowance.html", blurb:"₹3,000 flat 10:01–24:00 hrs away from base" },
+              { name:"Tail Swap Allowance",  ref:"PAH §6.0", href:"/guides/indigo-tail-swap-allowance.html",  blurb:"₹1,500 per same-duty aircraft change" },
+              { name:"Transit Halt",         ref:"PAH §7.0", href:"/guides/indigo-transit-halt-allowance.html", blurb:"₹1,000/hr, 90-min rule, 4-hr cap" },
+              { name:"Night Flying",         ref:"PAH §9.0", href:"/guides/indigo-night-flying-allowance.html", blurb:"₹2,000/night hour, STD-based 0001–0600" },
+            ].map((a, i) => (
+              <a key={i} href={a.href} style={{ display:"block", textDecoration:"none", color:"inherit",
+                background:C.sky, borderRadius:12, padding:"14px 16px", border:"1.5px solid "+C.border }}>
+                <div style={{ fontSize:11, fontWeight:700, color:C.blue, letterSpacing:"0.05em", textTransform:"uppercase", marginBottom:4 }}>{a.ref}</div>
+                <div style={{ fontSize:14, fontWeight:800, color:C.navy, marginBottom:4 }}>{a.name} →</div>
+                <div style={{ fontSize:12, color:C.textMid, lineHeight:1.5 }}>{a.blurb}</div>
+              </a>
+            ))}
+          </div>
+          <div style={{ textAlign:"center", marginTop:24, fontSize:12, color:C.textLo }}>
+            Rates above are for Captains. First Officer rates are 50% unless noted. Effective 1 January 2026.
+          </div>
         </div>
       </div>
 

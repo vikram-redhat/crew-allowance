@@ -22,21 +22,25 @@
     <priority>0.3</priority>
   </url>
 
-  <!--
-    Add one <url> entry per public guide page as the content moat
-    is built out (see SEO/GEO report §5.2 for the planned slugs):
+  <url>
+    <loc>https://crewallowance.com/guides/indigo-deadhead-allowance.html</loc>
+    <lastmod>2026-05-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
 
-    /guides/indigo-deadhead-allowance
-    /guides/indigo-tlpd-layover-allowance
-    /guides/indigo-tail-swap-allowance
-    /guides/indigo-transit-halt-allowance
-    /guides/indigo-night-flying-allowance
-    /guides/what-is-pcsr
-    /guides/sector-value-explained
-    /guides/pah-flt-explained
-    /guides/payslip-glossary
-    /guides/captain-vs-fo-rates
-    /guides/indigo-allowance-pitfalls
+  <!--
+    Remaining planned guides (add one <url> per page as they ship):
+    /guides/indigo-tlpd-layover-allowance.html
+    /guides/indigo-tail-swap-allowance.html
+    /guides/indigo-transit-halt-allowance.html
+    /guides/indigo-night-flying-allowance.html
+    /guides/what-is-pcsr.html
+    /guides/sector-value-explained.html
+    /guides/pah-flt-explained.html
+    /guides/payslip-glossary.html
+    /guides/captain-vs-fo-rates.html
+    /guides/indigo-allowance-pitfalls.html
   -->
 
 </urlset>

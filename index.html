@@ -74,12 +74,36 @@
           "Sector Value (SV) Excel parsing",
           "Per-sector breakdown report"
         ],
-        "offers": {
-          "@type": "Offer",
-          "priceCurrency": "INR",
-          "price": "0",
-          "availability": "https://schema.org/InStock"
-        },
+        "offers": [
+          {
+            "@type": "Offer",
+            "name": "Monthly subscription",
+            "priceCurrency": "INR",
+            "price": "100",
+            "availability": "https://schema.org/InStock",
+            "category": "subscription",
+            "priceSpecification": {
+              "@type": "UnitPriceSpecification",
+              "price": "100",
+              "priceCurrency": "INR",
+              "unitText": "MONTH"
+            }
+          },
+          {
+            "@type": "Offer",
+            "name": "Annual subscription",
+            "priceCurrency": "INR",
+            "price": "1000",
+            "availability": "https://schema.org/InStock",
+            "category": "subscription",
+            "priceSpecification": {
+              "@type": "UnitPriceSpecification",
+              "price": "1000",
+              "priceCurrency": "INR",
+              "unitText": "YEAR"
+            }
+          }
+        ],
         "publisher": {
           "@type": "Organization",
           "name": "CrewAllowance.com",
