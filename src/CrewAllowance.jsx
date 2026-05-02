@@ -18,7 +18,7 @@ const sbWarn = () => console.warn("Supabase not configured — set VITE_SUPABASE
    APP CONFIGURATION
 ═══════════════════════════════════════════════════════════════════ */
 const CONFIG = {
-  appName:       "Crew Allowance",
+  appName:       "CrewAllowance.com",
   airline:       "IndiGo",
   tagline:       "Eff. Jan 2026",
   copyrightYear: "2026",
@@ -714,7 +714,7 @@ function MaintenanceScreen({ message, onAdminLogin }) {
         <p style={{ margin:"0 0 18px", fontSize:14, color:C.textMid, lineHeight:1.6 }}>
           {message
             ? message
-            : "Crew Allowance is temporarily down while we ship some improvements. Please check back in a little while — we won't be long."}
+            : "CrewAllowance.com is temporarily down while we ship some improvements. Please check back in a little while — we won't be long."}
         </p>
         <p style={{ margin:"0 0 20px", fontSize:12, color:C.textLo, lineHeight:1.6 }}>
           Questions? Email <a href="mailto:help@crewallowance.com" style={{ color:C.blue, textDecoration:"underline" }}>help@crewallowance.com</a>
@@ -1395,7 +1395,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
   };
 
   return (
-    <AuthShell title="Welcome back" sub="Sign in to your Crew Allowance account" onSubmit={submit}>
+    <AuthShell title="Welcome back" sub="Sign in to your CrewAllowance.com account" onSubmit={submit}>
       <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your registered email address" autoComplete="email" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Your password" autoComplete="current-password" />
       {err && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -1511,92 +1511,26 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
 }
 
 function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
-  const [planKey,    setPlanKey]    = useState(DEFAULT_PLAN);
-  const [freeCode,   setFreeCode]   = useState("");
-  const [showFree,   setShowFree]   = useState(false);
-  const [loading,    setLoading]    = useState(false);
-  const [done,       setDone]       = useState(false);
-  const [payErr,     setPayErr]     = useState("");
-  const [stripeReady, setStripeReady] = useState(false);
-
-  const stripeRef          = useRef(null);
-  const elementsRef        = useRef(null);
-  const paymentElementRef  = useRef(null);
-  const paymentDivRef      = useRef(null);
+  const [planKey,  setPlanKey]  = useState(DEFAULT_PLAN);
+  const [freeCode, setFreeCode] = useState("");
+  const [showFree, setShowFree] = useState(false);
+  const [loading,  setLoading]  = useState(false);
+  const [done,     setDone]     = useState(false);
+  const [payErr,   setPayErr]   = useState("");
 
   const plan = PLANS[planKey];
 
-  // ── Load Stripe.js ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
-    if (!STRIPE_PK) return;
-    if (!window.Stripe) {
-      const script = document.createElement("script");
-      script.src = "https://js.stripe.com/v3/";
-      script.onload = () => { stripeRef.current = window.Stripe(STRIPE_PK); };
-      document.head.appendChild(script);
-    } else {
-      stripeRef.current = window.Stripe(STRIPE_PK);
-    }
-  }, []);
-
-  // ── Mount Payment Element in DEFERRED mode ─────────────────────────────
-  // No clientSecret upfront. We supply mode/amount/currency so the Element
-  // can render and validate input, but no PaymentIntent or Subscription is
-  // created on the server until the user clicks Pay. This keeps the Stripe
-  // Dashboard clean of abandoned-checkout intents.
-  //
-  // Mounted ONCE per session and re-used across plan changes — we just call
-  // elements.update({ amount }) when the user picks a different plan.
-  useEffect(() => {
-    if (showFree || !stripeRef.current || !paymentDivRef.current) return;
-    if (paymentElementRef.current) return;   // already mounted
-
-    const elements = stripeRef.current.elements({
-      mode: "payment",
-      amount: plan.total * 100,    // paise
-      currency: "inr",
-      paymentMethodCreation: "manual",
-      appearance: {
-        theme: "stripe",
-        variables: { fontFamily:"'Nunito','Segoe UI',sans-serif", colorPrimary:"#1a6fd4", borderRadius:"10px" },
-      },
-    });
-    const paymentEl = elements.create("payment", { layout: "tabs" });
-    paymentEl.mount(paymentDivRef.current);
-    paymentEl.on("ready", () => setStripeReady(true));
-    elementsRef.current = elements;
-    paymentElementRef.current = paymentEl;
-
-    return () => {
-      if (paymentElementRef.current) {
-        paymentElementRef.current.unmount();
-        paymentElementRef.current = null;
-        elementsRef.current = null;
-      }
-    };
-    // Only depend on stripeRef/showFree — plan changes are handled separately
-    // by elements.update() below to avoid remount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFree, stripeReady]);
-
-  // When the plan changes, just tell the existing Element about the new amount.
-  useEffect(() => {
-    if (elementsRef.current && !showFree) {
-      elementsRef.current.update({ amount: plan.total * 100 });
-    }
-  }, [plan.total, showFree]);
-
   const finishActivation = () => { onActivate(pendingUser); setDone(true); };
 
-  // ── Pay handler — creates the PaymentIntent / Subscription on click ────
+  // ── Pay handler — opens Razorpay Checkout for the chosen plan ─────────
   const handlePay = async () => {
     setPayErr(""); setLoading(true);
 
     // Free-access path: server verifies the code and activates the user.
+    // Endpoint signature matches the legacy Stripe one (freeCode branch).
     if (showFree) {
       try {
-        const resp = await fetch("/api/create-subscription", {
+        const resp = await fetch("/api/razorpay-create-subscription", {
           method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({ plan:planKey, userId:pendingUser?.id||"", email:pendingUser?.email||"", freeCode:freeCode.trim() }),
         });
@@ -1608,48 +1542,85 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       return;
     }
 
-    // Paid path
-    if (!stripeRef.current || !elementsRef.current) {
-      setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return;
+    // Paid path — Razorpay Standard Checkout.
+    if (!window.Razorpay) {
+      setPayErr("Payment form not ready. Please refresh and try again.");
+      setLoading(false);
+      return;
     }
-    try {
-      // Step 1: validate the user's input client-side.
-      const { error: submitErr } = await elementsRef.current.submit();
-      if (submitErr) throw new Error(submitErr.message);
 
-      // Step 2: NOW create the PaymentIntent (trial) or Subscription (1mo/12mo).
+    try {
       const isTrial  = plan?.kind === "trial";
-      const endpoint = isTrial ? "/api/create-trial-payment" : "/api/create-subscription";
+      const endpoint = isTrial ? "/api/razorpay-create-order" : "/api/razorpay-create-subscription";
       const body     = isTrial
         ? { userId: pendingUser?.id || "", email: pendingUser?.email || "" }
         : { plan: planKey, userId: pendingUser?.id || "", email: pendingUser?.email || "" };
+
       const resp = await fetch(endpoint, {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify(body),
       });
-      const { clientSecret, error: serverErr } = await resp.json();
-      if (serverErr) throw new Error(serverErr);
-      if (!clientSecret) throw new Error("Payment session could not be created.");
+      const data = await resp.json();
+      if (!resp.ok || data.error) throw new Error(data.error || "Could not start payment.");
 
-      // Step 3: confirm payment with the freshly created clientSecret.
-      const { error: confirmErr, paymentIntent } = await stripeRef.current.confirmPayment({
-        elements: elementsRef.current,
-        clientSecret,
-        confirmParams: {
-          return_url: window.location.origin + "?payment_status=success",
-        },
-        redirect: "if_required",
-      });
-      if (confirmErr) throw new Error(confirmErr.message);
-      if (paymentIntent && paymentIntent.status === "succeeded") {
-        finishActivation();
-      } else if (paymentIntent && paymentIntent.status === "requires_action") {
-        setPayErr("Payment requires additional action. Please complete the authentication.");
-      } else {
-        finishActivation(); // processing — webhook will reconcile
+      const { keyId, orderId, subscriptionId } = data;
+      if (!keyId || (isTrial ? !orderId : !subscriptionId)) {
+        throw new Error("Payment session could not be created.");
       }
-    } catch (err) { setPayErr(err.message); }
-    setLoading(false);
+
+      const options = {
+        key:         keyId,
+        name:        "Crew Allowance",
+        description: `${plan.label} — ${fmtINR(plan.total)}`,
+        image:       "/favicon.svg",
+        prefill: {
+          name:    pendingUser?.name  || "",
+          email:   pendingUser?.email || "",
+        },
+        notes: {
+          userId: pendingUser?.id || "",
+          plan:   planKey,
+        },
+        theme: { color: "#1a6fd4" },
+        modal: {
+          ondismiss: () => { setLoading(false); },
+        },
+        handler: async (response) => {
+          // Razorpay returns different payloads for orders vs subscriptions.
+          try {
+            const verifyResp = await fetch("/api/razorpay-verify-payment", {
+              method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({
+                kind:                     isTrial ? "trial" : "subscription",
+                userId:                   pendingUser?.id || "",
+                razorpay_payment_id:      response.razorpay_payment_id,
+                razorpay_order_id:        response.razorpay_order_id,
+                razorpay_subscription_id: response.razorpay_subscription_id,
+                razorpay_signature:       response.razorpay_signature,
+              }),
+            });
+            const verifyData = await verifyResp.json();
+            if (!verifyResp.ok || verifyData.error) throw new Error(verifyData.error || "Could not verify payment.");
+            finishActivation();
+          } catch (err) {
+            setPayErr(err.message);
+            setLoading(false);
+          }
+        },
+      };
+      if (isTrial) options.order_id = orderId;
+      else         options.subscription_id = subscriptionId;
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", (resp) => {
+        setPayErr(resp?.error?.description || "Payment failed. Please try again.");
+        setLoading(false);
+      });
+      rzp.open();
+    } catch (err) {
+      setPayErr(err.message);
+      setLoading(false);
+    }
   };
 
   if (done) return (
@@ -1659,7 +1630,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, margin:"0 auto 16px" }}>✓</div>
         <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
           {showFree ? "Your free account is activated." : "Payment confirmed. Your subscription is active."}
-          <br />Welcome to Crew Allowance, {pendingUser?.name?.split(" ")[0]}!
+          <br />Welcome to CrewAllowance.com, {pendingUser?.name?.split(" ")[0]}!
         </p>
       </div>
       <Btn onClick={goLogin}>Sign in to your account →</Btn>
@@ -1703,7 +1674,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       {/* Order summary */}
       <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:12, padding:"14px 16px", marginBottom:18 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <span style={{ fontSize:13, color:C.textMid }}>Crew Allowance — {plan.label}</span>
+          <span style={{ fontSize:13, color:C.textMid }}>CrewAllowance.com — {plan.label}</span>
           <span style={{ fontSize:14, fontWeight:700, color:C.navy }}>{fmtINR(plan.total)}</span>
         </div>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
@@ -1738,12 +1709,10 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
             <span style={{ fontSize:13, color:C.goldText, fontWeight:700 }}>→</span>
           </button>
 
-          <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:11, color:C.textMid }}>
-            🔒 Payment handled securely by <strong>Stripe</strong>. We never see or store your payment details.
+          <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:10, padding:"12px 14px", marginBottom:14, fontSize:12, color:C.textMid, lineHeight:1.5 }}>
+            🔒 Payment handled securely by <strong>Razorpay</strong>. Cards, UPI, netbanking and wallets accepted.
+            We never see or store your payment details.
           </div>
-          <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:6 }}>Payment method</label>
-          <div ref={paymentDivRef} style={{ minHeight:46 }} />
-          {!stripeReady && <div style={{ fontSize:11, color:C.textLo, marginTop:4 }}>Loading secure payment form...</div>}
         </div>
       ) : (
         <div style={{ marginBottom:16 }}>
@@ -1758,12 +1727,12 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
 
       {payErr && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{payErr}</div>}
 
-      <Btn onClick={handlePay} variant={showFree?"gold":"primary"} disabled={loading||(!showFree&&!stripeReady)||(showFree&&!freeCode.trim())} icon={loading?"⟳":showFree?"✨":"🔒"}>
+      <Btn onClick={handlePay} variant={showFree?"gold":"primary"} disabled={loading||(showFree&&!freeCode.trim())} icon={loading?"⟳":showFree?"✨":"🔒"}>
         {loading
-          ? (showFree?"Activating...":"Processing...")
+          ? (showFree?"Activating...":"Opening payment...")
           : (showFree
               ? `Activate ${plan.label.toLowerCase()} →`
-              : `Pay ${fmtINR(plan.total)} & subscribe →`)}
+              : `Pay ${fmtINR(plan.total)} →`)}
       </Btn>
 
       <div style={{ marginTop:14, textAlign:"center", display:"flex", flexDirection:"column", gap:6 }}>
@@ -1919,8 +1888,9 @@ function ProfileScreen({ user, onSave }) {
         </div>
       </Card>
 
-      {/* Subscription management — hidden for admins (unlimited) and comp users (free, no Stripe relationship) */}
-      {!user.is_admin && user.subscription_plan !== "free" && user.stripe_customer_id && (
+      {/* Subscription management — hidden for admins (unlimited) and comp users (free, no payment relationship).
+          Shown for Razorpay subscribers (current path) and legacy Stripe subscribers (so they can still see status). */}
+      {!user.is_admin && user.subscription_plan !== "free" && (user.razorpay_subscription_id || user.stripe_customer_id) && (
         <Card style={{ marginTop:16 }}>
           <div style={{ fontSize:14, fontWeight:800, color:C.navy, marginBottom:10 }}>Subscription</div>
           <div style={{ display:"grid", gap:6, fontSize:13, color:C.textMid, marginBottom:14 }}>
@@ -1943,7 +1913,14 @@ function ProfileScreen({ user, onSave }) {
               </div>
             )}
           </div>
-          <ManageSubscriptionBtn userId={user.id} />
+          {user.razorpay_subscription_id && !user.subscription_cancel_at_period_end && (
+            <ManageSubscriptionBtn userId={user.id} />
+          )}
+          {user.subscription_cancel_at_period_end && (
+            <div style={{ fontSize:12, color:C.gold, marginTop:4 }}>
+              Cancellation scheduled. You'll keep access until the date above.
+            </div>
+          )}
         </Card>
       )}
 
@@ -1956,7 +1933,7 @@ function ProfileScreen({ user, onSave }) {
             <span style={{ fontWeight:700, color:C.green }}>Comp · Free</span>
           </div>
           <div style={{ fontSize:12, color:C.textLo, lineHeight:1.5 }}>
-            You have complimentary access to Crew Allowance. Questions?{" "}
+            You have complimentary access to CrewAllowance.com. Questions?{" "}
             <a href="mailto:help@crewallowance.com" style={{ color:C.blue }}>help@crewallowance.com</a>
           </div>
         </Card>
@@ -1966,23 +1943,35 @@ function ProfileScreen({ user, onSave }) {
 }
 
 function ManageSubscriptionBtn({ userId }) {
+  // Razorpay has no Stripe-style hosted Customer Portal. The most useful
+  // self-serve action is "cancel at end of current period" — the server
+  // handles the actual cancel call, and the webhook will reconcile the
+  // displayed status. Card / mandate updates are handled by Razorpay via
+  // their automatic retry email/SMS on the next failed charge.
   const [busy, setBusy] = useState(false);
-  const open = async () => {
+  const cancel = async () => {
+    if (!window.confirm("Cancel your subscription? You'll keep access until the end of the current billing period, after which it will not renew.")) {
+      return;
+    }
     setBusy(true);
     try {
-      const resp = await fetch("/api/customer-portal", {
+      const resp = await fetch("/api/razorpay-cancel-subscription", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ userId }),
       });
       const data = await resp.json();
-      if (data.error) throw new Error(data.error);
-      window.location.href = data.url;
-    } catch (err) { alert(err.message); }
-    setBusy(false);
+      if (!resp.ok || data.error) throw new Error(data.error || "Could not cancel.");
+      // Refresh the page so the profile is re-fetched and the cancel-pending
+      // banner appears. Webhook will write the final status shortly after.
+      window.location.reload();
+    } catch (err) {
+      alert(err.message);
+      setBusy(false);
+    }
   };
   return (
-    <Btn onClick={open} disabled={busy} variant="ghost" small>
-      {busy ? "Opening..." : "Manage subscription →"}
+    <Btn onClick={cancel} disabled={busy} variant="ghost" small>
+      {busy ? "Cancelling..." : "Cancel subscription"}
     </Btn>
   );
 }
@@ -1993,95 +1982,82 @@ function ManageSubscriptionBtn({ userId }) {
 function UpgradeScreen({ user, onActivated, goBack }) {
   // Filter out the trial plan — only show the 2 subscription options.
   const subPlans = Object.entries(PLANS).filter(([, p]) => p.kind === "subscription");
-  const [planKey,    setPlanKey]    = useState(subPlans[0][0]);
-  const [loading,    setLoading]    = useState(false);
-  const [payErr,     setPayErr]     = useState("");
-  const [stripeReady,setStripeReady]= useState(false);
-
-  const stripeRef         = useRef(null);
-  const elementsRef       = useRef(null);
-  const paymentElementRef = useRef(null);
-  const paymentDivRef     = useRef(null);
+  const [planKey, setPlanKey] = useState(subPlans[0][0]);
+  const [loading, setLoading] = useState(false);
+  const [payErr,  setPayErr]  = useState("");
 
   const plan = PLANS[planKey];
 
-  // Load Stripe.js
-  useEffect(() => {
-    const STRIPE_PK = import.meta.env.VITE_STRIPE_PK || "";
-    if (!STRIPE_PK) return;
-    if (!window.Stripe) {
-      const script = document.createElement("script");
-      script.src = "https://js.stripe.com/v3/";
-      script.onload = () => { stripeRef.current = window.Stripe(STRIPE_PK); };
-      document.head.appendChild(script);
-    } else { stripeRef.current = window.Stripe(STRIPE_PK); }
-  }, []);
-
-  // Mount Payment Element in deferred mode — no Subscription created until Pay.
-  useEffect(() => {
-    if (!stripeRef.current || !paymentDivRef.current) return;
-    if (paymentElementRef.current) return;
-    const elements = stripeRef.current.elements({
-      mode: "payment",
-      amount: plan.total * 100,
-      currency: "inr",
-      paymentMethodCreation: "manual",
-      appearance: { theme:"stripe", variables: { fontFamily:"'Nunito','Segoe UI',sans-serif", colorPrimary:"#1a6fd4", borderRadius:"10px" } },
-    });
-    const paymentEl = elements.create("payment", { layout: "tabs" });
-    paymentEl.mount(paymentDivRef.current);
-    paymentEl.on("ready", () => setStripeReady(true));
-    elementsRef.current = elements;
-    paymentElementRef.current = paymentEl;
-    return () => {
-      if (paymentElementRef.current) {
-        paymentElementRef.current.unmount();
-        paymentElementRef.current = null;
-        elementsRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stripeReady]);
-
-  // Update Element's amount when plan changes (no remount).
-  useEffect(() => {
-    if (elementsRef.current) elementsRef.current.update({ amount: plan.total * 100 });
-  }, [plan.total]);
-
   const handlePay = async () => {
     setPayErr(""); setLoading(true);
-    if (!stripeRef.current || !elementsRef.current) {
-      setPayErr("Payment form not ready. Please wait a moment."); setLoading(false); return;
-    }
-    try {
-      // Step 1: validate input.
-      const { error: submitErr } = await elementsRef.current.submit();
-      if (submitErr) throw new Error(submitErr.message);
 
-      // Step 2: create the Subscription only now.
-      const resp = await fetch("/api/create-subscription", {
+    if (!window.Razorpay) {
+      setPayErr("Payment form not ready. Please refresh and try again.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const resp = await fetch("/api/razorpay-create-subscription", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ plan:planKey, userId:user.id, email:user.email }),
       });
-      const { clientSecret, error: serverErr } = await resp.json();
-      if (serverErr) throw new Error(serverErr);
-      if (!clientSecret) throw new Error("Payment session could not be created.");
+      const data = await resp.json();
+      if (!resp.ok || data.error) throw new Error(data.error || "Could not start payment.");
 
-      // Step 3: confirm.
-      const { error: confirmErr, paymentIntent } = await stripeRef.current.confirmPayment({
-        elements: elementsRef.current,
-        clientSecret,
-        confirmParams: { return_url: window.location.origin + "?payment_status=success" },
-        redirect: "if_required",
+      const { keyId, subscriptionId } = data;
+      if (!keyId || !subscriptionId) throw new Error("Payment session could not be created.");
+
+      const options = {
+        key:             keyId,
+        subscription_id: subscriptionId,
+        name:            "Crew Allowance",
+        description:     `${plan.label} — ${fmtINR(plan.total)}`,
+        image:           "/favicon.svg",
+        prefill: {
+          name:  user?.name  || "",
+          email: user?.email || "",
+        },
+        notes: {
+          userId: user.id,
+          plan:   planKey,
+        },
+        theme: { color: "#1a6fd4" },
+        modal: {
+          ondismiss: () => { setLoading(false); },
+        },
+        handler: async (response) => {
+          try {
+            const verifyResp = await fetch("/api/razorpay-verify-payment", {
+              method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({
+                kind:                     "subscription",
+                userId:                   user.id,
+                razorpay_payment_id:      response.razorpay_payment_id,
+                razorpay_subscription_id: response.razorpay_subscription_id,
+                razorpay_signature:       response.razorpay_signature,
+              }),
+            });
+            const verifyData = await verifyResp.json();
+            if (!verifyResp.ok || verifyData.error) throw new Error(verifyData.error || "Could not verify payment.");
+            onActivated();
+          } catch (err) {
+            setPayErr(err.message);
+            setLoading(false);
+          }
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", (resp) => {
+        setPayErr(resp?.error?.description || "Payment failed. Please try again.");
+        setLoading(false);
       });
-      if (confirmErr) throw new Error(confirmErr.message);
-      if (paymentIntent?.status === "succeeded" || !paymentIntent) {
-        onActivated();
-      } else {
-        setPayErr("Payment did not complete. Please try again.");
-      }
-    } catch (err) { setPayErr(err.message); }
-    setLoading(false);
+      rzp.open();
+    } catch (err) {
+      setPayErr(err.message);
+      setLoading(false);
+    }
   };
 
   return (
@@ -2126,18 +2102,16 @@ function UpgradeScreen({ user, onActivated, goBack }) {
         })}
       </div>
 
-      <div style={{ background:C.white, borderRadius:14, border:"1.5px solid "+C.border, padding:"16px 18px", marginBottom:14 }}>
-        <div style={{ fontSize:11, color:C.textMid, marginBottom:10 }}>
-          🔒 Payment handled securely by Stripe. Card and UPI accepted.
+      <div style={{ background:C.white, borderRadius:14, border:"1.5px solid "+C.border, padding:"14px 18px", marginBottom:14 }}>
+        <div style={{ fontSize:12, color:C.textMid, lineHeight:1.5 }}>
+          🔒 Payment handled securely by <strong>Razorpay</strong>. Cards, UPI Autopay, netbanking and wallets accepted.
         </div>
-        <div ref={paymentDivRef} style={{ minHeight:46 }} />
-        {!stripeReady && <div style={{ fontSize:11, color:C.textLo, marginTop:6 }}>Loading secure payment form...</div>}
       </div>
 
       {payErr && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{payErr}</div>}
 
-      <Btn onClick={handlePay} disabled={loading || !stripeReady} icon={loading?"⟳":"🔒"}>
-        {loading ? "Processing..." : `Subscribe — ${fmtINR(plan.total)} →`}
+      <Btn onClick={handlePay} disabled={loading} icon={loading?"⟳":"🔒"}>
+        {loading ? "Opening payment..." : `Subscribe — ${fmtINR(plan.total)} →`}
       </Btn>
       <div style={{ marginTop:10, textAlign:"center" }}>
         <button type="button" onClick={goBack} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
@@ -4099,7 +4073,7 @@ function AdminScreen({ rates, adminEmail }) {
               Custom message (optional)
             </label>
             <textarea value={maintMessage} onChange={e => setMaintMessage(e.target.value)}
-              placeholder="Defaults to: 'Crew Allowance is temporarily down while we ship some improvements. Please check back in a little while — we won't be long.'"
+              placeholder="Defaults to: 'CrewAllowance.com is temporarily down while we ship some improvements. Please check back in a little while — we won't be long.'"
               rows={3}
               style={{ width:"100%", boxSizing:"border-box", background:C.white, border:"1.5px solid "+C.border,
                 borderRadius:10, padding:"10px 14px", color:C.text, fontFamily:"inherit", fontSize:13, outline:"none", resize:"vertical" }} />
