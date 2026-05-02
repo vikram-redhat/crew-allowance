@@ -18,7 +18,7 @@ const sbWarn = () => console.warn("Supabase not configured — set VITE_SUPABASE
    APP CONFIGURATION
 ═══════════════════════════════════════════════════════════════════ */
 const CONFIG = {
-  appName:       "Crew Allowance",
+  appName:       "CrewAllowance.com",
   airline:       "IndiGo",
   tagline:       "Eff. Jan 2026",
   copyrightYear: "2026",
@@ -714,7 +714,7 @@ function MaintenanceScreen({ message, onAdminLogin }) {
         <p style={{ margin:"0 0 18px", fontSize:14, color:C.textMid, lineHeight:1.6 }}>
           {message
             ? message
-            : "Crew Allowance is temporarily down while we ship some improvements. Please check back in a little while — we won't be long."}
+            : "CrewAllowance.com is temporarily down while we ship some improvements. Please check back in a little while — we won't be long."}
         </p>
         <p style={{ margin:"0 0 20px", fontSize:12, color:C.textLo, lineHeight:1.6 }}>
           Questions? Email <a href="mailto:help@crewallowance.com" style={{ color:C.blue, textDecoration:"underline" }}>help@crewallowance.com</a>
@@ -1395,7 +1395,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
   };
 
   return (
-    <AuthShell title="Welcome back" sub="Sign in to your Crew Allowance account" onSubmit={submit}>
+    <AuthShell title="Welcome back" sub="Sign in to your CrewAllowance.com account" onSubmit={submit}>
       <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your registered email address" autoComplete="email" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Your password" autoComplete="current-password" />
       {err && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -1630,7 +1630,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, margin:"0 auto 16px" }}>✓</div>
         <p style={{ color:C.textMid, fontSize:14, lineHeight:1.6, marginBottom:20 }}>
           {showFree ? "Your free account is activated." : "Payment confirmed. Your subscription is active."}
-          <br />Welcome to Crew Allowance, {pendingUser?.name?.split(" ")[0]}!
+          <br />Welcome to CrewAllowance.com, {pendingUser?.name?.split(" ")[0]}!
         </p>
       </div>
       <Btn onClick={goLogin}>Sign in to your account →</Btn>
@@ -1674,7 +1674,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
       {/* Order summary */}
       <div style={{ background:C.blueXLight, border:"1.5px solid "+C.border, borderRadius:12, padding:"14px 16px", marginBottom:18 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <span style={{ fontSize:13, color:C.textMid }}>Crew Allowance — {plan.label}</span>
+          <span style={{ fontSize:13, color:C.textMid }}>CrewAllowance.com — {plan.label}</span>
           <span style={{ fontSize:14, fontWeight:700, color:C.navy }}>{fmtINR(plan.total)}</span>
         </div>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
@@ -1933,7 +1933,7 @@ function ProfileScreen({ user, onSave }) {
             <span style={{ fontWeight:700, color:C.green }}>Comp · Free</span>
           </div>
           <div style={{ fontSize:12, color:C.textLo, lineHeight:1.5 }}>
-            You have complimentary access to Crew Allowance. Questions?{" "}
+            You have complimentary access to CrewAllowance.com. Questions?{" "}
             <a href="mailto:help@crewallowance.com" style={{ color:C.blue }}>help@crewallowance.com</a>
           </div>
         </Card>
@@ -4073,7 +4073,7 @@ function AdminScreen({ rates, adminEmail }) {
               Custom message (optional)
             </label>
             <textarea value={maintMessage} onChange={e => setMaintMessage(e.target.value)}
-              placeholder="Defaults to: 'Crew Allowance is temporarily down while we ship some improvements. Please check back in a little while — we won't be long.'"
+              placeholder="Defaults to: 'CrewAllowance.com is temporarily down while we ship some improvements. Please check back in a little while — we won't be long.'"
               rows={3}
               style={{ width:"100%", boxSizing:"border-box", background:C.white, border:"1.5px solid "+C.border,
                 borderRadius:10, padding:"10px 14px", color:C.text, fontFamily:"inherit", fontSize:13, outline:"none", resize:"vertical" }} />

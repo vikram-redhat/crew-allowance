@@ -43,6 +43,13 @@
     <priority>0.8</priority>
   </url>
 
+  <url>
+    <loc>https://crewallowance.com/guides/indigo-night-flying-allowance.html</loc>
+    <lastmod>2026-05-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
   <!--
     Stub "coming soon" pages exist at the URLs below but are intentionally
     excluded from the sitemap while marked <meta name="robots" content="noindex">.
@@ -51,7 +58,6 @@
 
       /guides/indigo-tail-swap-allowance.html
       /guides/indigo-transit-halt-allowance.html
-      /guides/indigo-night-flying-allowance.html
       /guides/what-is-pcsr.html
       /guides/sector-value-explained.html
       /guides/pah-flt-explained.html
