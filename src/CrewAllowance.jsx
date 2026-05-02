@@ -1129,11 +1129,11 @@ function LandingPage({ goLogin, goSignup }) {
     { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown of every allowance for the month — ready to verify against your payslip." },
   ];
   const allowances = [
-    { name:"Deadhead",    icon:"🛫", desc:"Per scheduled block hour when positioned as non-operating crew",       captain:"₹4,000/hr",  fo:"₹2,000/hr"  },
-    { name:"Night Flying",icon:"🌙", desc:"For each hour flown between 0000–0600 IST per PAH §9.0",              captain:"₹2,000/hr",  fo:"₹1,000/hr"  },
-    { name:"Layover",     icon:"🏨", desc:"For stays away from home base exceeding 10 hours 01 minute",          captain:"₹3,000 base",fo:"₹1,500 base" },
-    { name:"Tail-Swap",   icon:"✈️", desc:"When aircraft registration changes between consecutive sectors",       captain:"₹1,500/swap",fo:"₹750/swap"  },
-    { name:"Transit",     icon:"⏱",  desc:"Pro-rata for domestic halts between 90 mins and 4 hrs (PAH §7.0)",   captain:"₹1,000/hr",  fo:"₹500/hr"    },
+    { name:"Deadhead",    icon:"🛫", desc:"Per scheduled block hour when positioned as non-operating crew",       captain:"₹4,000/hr",  fo:"₹2,000/hr",  href:"/guides/indigo-deadhead-allowance.html" },
+    { name:"Night Flying",icon:"🌙", desc:"For each hour flown between 0000–0600 IST per PAH §9.0",              captain:"₹2,000/hr",  fo:"₹1,000/hr",  href:"/guides/indigo-night-flying-allowance.html" },
+    { name:"Layover",     icon:"🏨", desc:"For stays away from home base exceeding 10 hours 01 minute",          captain:"₹3,000 base",fo:"₹1,500 base", href:"/guides/indigo-tlpd-layover-allowance.html" },
+    { name:"Tail-Swap",   icon:"✈️", desc:"When aircraft registration changes between consecutive sectors",       captain:"₹1,500/swap",fo:"₹750/swap",  href:"/guides/indigo-tail-swap-allowance.html" },
+    { name:"Transit",     icon:"⏱",  desc:"Pro-rata for domestic halts between 90 mins and 4 hrs (PAH §7.0)",   captain:"₹1,000/hr",  fo:"₹500/hr",    href:"/guides/indigo-transit-halt-allowance.html" },
   ];
   return (
     <div style={{ background:C.white, fontFamily:"'Nunito','Segoe UI',sans-serif", color:C.text }}>
@@ -1286,16 +1286,20 @@ function LandingPage({ goLogin, goSignup }) {
           </div>
           <div style={{ display:"grid", gap:10 }}>
             {allowances.map((a, i) => (
-              <div key={i} style={{ background:C.white, borderRadius:14, padding:"16px 18px",
+              <a key={i} href={a.href} style={{ textDecoration:"none", color:"inherit",
+                background:C.white, borderRadius:14, padding:"16px 18px",
                 border:"1.5px solid "+C.border, boxShadow:C.shadow,
-                display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+                display:"flex", alignItems:"center", gap:16, flexWrap:"wrap",
+                transition:"border-color 0.15s, transform 0.15s" }}
+                onMouseOver={e => { e.currentTarget.style.borderColor = C.blue; }}
+                onMouseOut={e => { e.currentTarget.style.borderColor = C.border; }}>
                 <div style={{ width:40, height:40, borderRadius:12, background:C.blueXLight,
                   display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>{a.icon}</div>
                 <div style={{ flex:1, minWidth:160 }}>
                   <div style={{ fontSize:14, fontWeight:800, color:C.navy, marginBottom:3 }}>{a.name}</div>
                   <div style={{ fontSize:12, color:C.textMid }}>{a.desc}</div>
                 </div>
-                <div style={{ display:"flex", gap:12, flexShrink:0 }}>
+                <div style={{ display:"flex", gap:12, flexShrink:0, alignItems:"center" }}>
                   <div style={{ textAlign:"center" }}>
                     <div style={{ fontSize:10, color:C.textLo, marginBottom:2 }}>Captain</div>
                     <div style={{ fontSize:13, fontWeight:800, color:C.goldText }}>{a.captain}</div>
@@ -1304,9 +1308,15 @@ function LandingPage({ goLogin, goSignup }) {
                     <div style={{ fontSize:10, color:C.textLo, marginBottom:2 }}>F/O</div>
                     <div style={{ fontSize:13, fontWeight:800, color:C.blue }}>{a.fo}</div>
                   </div>
+                  <div style={{ fontSize:13, color:C.blue, fontWeight:800, marginLeft:6 }} aria-hidden="true">→</div>
                 </div>
-              </div>
+              </a>
             ))}
+          </div>
+          <div style={{ textAlign:"center", marginTop:18 }}>
+            <a href="/guides/" style={{ color:C.blue, fontSize:13, fontWeight:800, textDecoration:"none" }}>
+              Browse all allowance guides →
+            </a>
           </div>
         </div>
       </div>
@@ -1345,7 +1355,8 @@ function LandingPage({ goLogin, goSignup }) {
         <div style={{ marginTop:28, fontSize:11, color:"rgba(255,255,255,0.4)", letterSpacing:"0.06em" }}>
           © {CONFIG.copyrightYear} {CONFIG.appName} · For {CONFIG.airline} crew members
         </div>
-        <div style={{ marginTop:12, display:"flex", gap:20, justifyContent:"center" }}>
+        <div style={{ marginTop:12, display:"flex", gap:20, justifyContent:"center", flexWrap:"wrap" }}>
+          <a href="/guides/"      style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Allowance Guides</a>
           <a href="/privacy.html" style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Privacy Policy</a>
           <a href="/terms.html"   style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Terms of Service</a>
           <a href={"mailto:"+CONFIG.emailSupport} style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Contact</a>
