@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>IndiGo Pilot Allowance Guides — PAH FLT Issue 01 Rev 46 | CrewAllowance.com</title>
+  <meta name="description" content="Plain-English guides to every IndiGo cockpit crew allowance under PAH FLT Issue 01 Rev 46 — Deadhead, TLPD layover, Tail swap, Transit halt and Night flying. Worked examples, edge cases and FAQs." />
+  <meta name="author" content="CrewAllowance.com" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://crewallowance.com/guides/" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="CrewAllowance.com" />
+  <meta property="og:title" content="IndiGo Pilot Allowance Guides — CrewAllowance.com" />
+  <meta property="og:description" content="Plain-English guides to every IndiGo cockpit crew allowance under PAH FLT Issue 01 Rev 46." />
+  <meta property="og:url" content="https://crewallowance.com/guides/" />
+  <meta property="og:image" content="https://crewallowance.com/og-cover.png" />
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <meta name="theme-color" content="#0f3460" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "name": "IndiGo Pilot Allowance Guides",
+    "description": "Plain-English guides to every IndiGo cockpit crew allowance under PAH FLT Issue 01 Rev 46.",
+    "url": "https://crewallowance.com/guides/",
+    "isPartOf": { "@type": "WebSite", "name": "CrewAllowance.com", "url": "https://crewallowance.com/" }
+  }
+  </script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue: #1A6FD4;
+      --navy: #0F3460;
+      --blueXLight: #EEF3FA;
+      --sky: #F4F9FF;
+      --text: #1e293b;
+      --textMid: #475569;
+      --textLo: #64748b;
+      --border: #E2EAF4;
+      --gold: #C97900;
+      --green: #00855A;
+    }
+    body {
+      font-family: 'Nunito', -apple-system, 'Segoe UI', system-ui, sans-serif;
+      background: #fff;
+      color: var(--text);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    nav.top {
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 1px 8px rgba(26,111,212,0.07);
+    }
+    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--navy); }
+    .logo .mark {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--blue), var(--navy));
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 18px; box-shadow: 0 2px 8px rgba(26,111,212,0.28);
+    }
+    .logo .name { font-weight: 900; font-size: 16px; letter-spacing: -0.01em; }
+    .nav-cta {
+      background: linear-gradient(135deg, var(--blue), #2A82E0);
+      color: #fff; border: none; border-radius: 9px;
+      font-size: 13px; padding: 8px 18px; font-weight: 800;
+      text-decoration: none; box-shadow: 0 2px 8px rgba(26,111,212,0.28);
+    }
+    .breadcrumbs { max-width: 880px; margin: 16px auto 0; padding: 0 20px; font-size: 13px; color: var(--textLo); }
+    .breadcrumbs a { color: var(--blue); text-decoration: none; }
+    .breadcrumbs a:hover { text-decoration: underline; }
+
+    header.intro {
+      max-width: 760px; margin: 0 auto;
+      padding: 28px 20px 8px; width: 100%;
+      text-align: center;
+    }
+    header.intro h1 {
+      font-size: clamp(28px, 5vw, 40px);
+      color: var(--navy);
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+    }
+    header.intro p {
+      font-size: 16px;
+      color: var(--textMid);
+      max-width: 620px;
+      margin: 0 auto;
+    }
+
+    main {
+      flex: 1;
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 28px 20px 40px;
+      width: 100%;
+    }
+    section.group { margin-bottom: 36px; }
+    section.group h2 {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--blue);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+    a.card {
+      display: block;
+      background: var(--sky);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    a.card:hover { border-color: var(--blue); transform: translateY(-1px); }
+    a.card.ready { background: #F1F8F4; border-color: #C8E6D2; }
+    a.card .pah {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--blue);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    a.card.ready .pah { color: var(--green); }
+    a.card .ttl {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--navy);
+      margin-bottom: 6px;
+      line-height: 1.35;
+    }
+    a.card .desc {
+      font-size: 13px;
+      color: var(--textMid);
+      line-height: 1.5;
+    }
+    a.card .status {
+      display: inline-block;
+      margin-top: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+    a.card.ready .status { color: var(--green); }
+
+    footer.site {
+      background: var(--navy);
+      color: rgba(255,255,255,0.7);
+      padding: 28px 20px;
+      text-align: center;
+      font-size: 13px;
+    }
+    footer.site a { color: rgba(255,255,255,0.7); text-decoration: none; margin: 0 10px; }
+    footer.site a:hover { color: #fff; text-decoration: underline; }
+    footer.site .disclaimer {
+      max-width: 620px; margin: 12px auto 0; font-size: 12px; color: rgba(255,255,255,0.4);
+    }
+
+    @media (max-width: 520px) {
+      nav.top { padding: 12px 16px; }
+      main { padding: 20px 16px 30px; }
+      header.intro { padding: 20px 16px 4px; }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="top">
+  <a href="/" class="logo">
+    <span class="mark">✈</span>
+    <span class="name">CrewAllowance.com</span>
+  </a>
+  <a href="/" class="nav-cta">Open the calculator →</a>
+</nav>
+
+<div class="breadcrumbs">
+  <a href="/">Home</a> › Guides
+</div>
+
+<header class="intro">
+  <h1>IndiGo Pilot Allowance Guides</h1>
+  <p>Plain-English explanations of every allowance under PAH FLT Issue 01 Rev 46 — what they pay, how they're calculated, and the edge cases that make payslips look wrong.</p>
+</header>
+
+<main>
+
+  <section class="group">
+    <h2>The five PAH allowances</h2>
+    <div class="grid">
+      <a class="card ready" href="/guides/indigo-deadhead-allowance.html">
+        <div class="pah">PAH §1.0</div>
+        <div class="ttl">Deadhead Allowance</div>
+        <div class="desc">₹4,000 per scheduled block hour for Captains, ₹2,000 for First Officers, DHF sectors only.</div>
+        <span class="status">Ready</span>
+      </a>
+      <a class="card" href="/guides/indigo-tlpd-layover-allowance.html">
+        <div class="pah">PAH §2.0</div>
+        <div class="ttl">TLPD / Domestic Layover</div>
+        <div class="desc">₹3,000 flat for 10:01–24:00 hours away from home base, +₹150/hour beyond.</div>
+        <span class="status">Coming soon</span>
+      </a>
+      <a class="card" href="/guides/indigo-tail-swap-allowance.html">
+        <div class="pah">PAH §6.0</div>
+        <div class="ttl">Tail Swap Allowance</div>
+        <div class="desc">₹1,500 per qualifying same-duty aircraft change. DHT excluded, DHF→DHF excluded.</div>
+        <span class="status">Coming soon</span>
+      </a>
+      <a class="card" href="/guides/indigo-transit-halt-allowance.html">
+        <div class="pah">PAH §7.0</div>
+        <div class="ttl">Transit Halt Allowance</div>
+        <div class="desc">₹1,000/hr capped at 4 hours, on the 90-minute rule with a 15-minute difference exception.</div>
+        <span class="status">Coming soon</span>
+      </a>
+      <a class="card" href="/guides/indigo-night-flying-allowance.html">
+        <div class="pah">PAH §9.0</div>
+        <div class="ttl">Night Flying Allowance</div>
+        <div class="desc">₹2,000/night hour, calculated from scheduled departure (STD), 00:01–06:00 IST window.</div>
+        <span class="status">Coming soon</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>Reference & background</h2>
+    <div class="grid">
+      <a class="card" href="/guides/what-is-pcsr.html">
+        <div class="pah">Reference</div>
+        <div class="ttl">What Is a PCSR?</div>
+        <div class="desc">How to read your Personal Crew Schedule Report — calendar grid, Other Crew section, hotels and transfers.</div>
+        <span class="status">Coming soon</span>
+      </a>
+      <a class="card" href="/guides/sector-value-explained.html">
+        <div class="pah">Reference</div>
+        <div class="ttl">Sector Value (SV) Explained</div>
+        <div class="desc">What the 6eBreeze SV file actually contains, and how it relates to PAH allowances (and doesn't).</div>
+        <span class="status">Coming soon</span>
+      </a>
+      <a class="card" href="/guides/pah-flt-explained.html">
+        <div class="pah">Master reference</div>
+        <div class="ttl">PAH FLT Issue 01 Rev 46</div>
+        <div class="desc">A clause-by-clause plain-English reference to the Pilot Allowance Handbook.</div>
+        <span class="status">Coming soon</span>
+      </a>
+      <a class="card" href="/guides/payslip-glossary.html">
+        <div class="pah">Reference</div>
+        <div class="ttl">Payslip Glossary</div>
+        <div class="desc">Every IndiGo cockpit crew payslip line in plain English — DA-P, TLPD, Trans, NF.</div>
+        <span class="status">Coming soon</span>
+      </a>
+      <a class="card" href="/guides/captain-vs-fo-rates.html">
+        <div class="pah">Rate table</div>
+        <div class="ttl">Captain vs First Officer Rates</div>
+        <div class="desc">Side-by-side comparison of all five allowances at both rank tiers — effective 1 January 2026.</div>
+        <span class="status">Coming soon</span>
+      </a>
+      <a class="card" href="/guides/indigo-allowance-pitfalls.html">
+        <div class="pah">Cross-reference</div>
+        <div class="ttl">Top Allowance Pitfalls</div>
+        <div class="desc">The 13 most common reasons an IndiGo payslip allowance line looks wrong.</div>
+        <span class="status">Coming soon</span>
+      </a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site">
+  <div>
+    <a href="/">Home</a> ·
+    <a href="/privacy.html">Privacy</a> ·
+    <a href="/terms.html">Terms</a>
+  </div>
+  <div class="disclaimer">
+    CrewAllowance.com is an independent tool. Not affiliated with, endorsed by,
+    or sponsored by InterGlobe Aviation Ltd. or IndiGo. PAH section references
+    are to the Pilot Allowance Handbook FLT Issue 01 Rev 46 (effective 1 January 2026).
+  </div>
+  <div style="margin-top:14px; font-size:11px; color:rgba(255,255,255,0.35);">
+    © 2026 CrewAllowance.com
+  </div>
+</footer>
+
+</body>
+</html>
