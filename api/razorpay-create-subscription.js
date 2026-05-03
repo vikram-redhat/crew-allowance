@@ -25,6 +25,7 @@
 
 import Razorpay from "razorpay";
 import { createClient } from "@supabase/supabase-js";
+import { requireAuthedUser } from "./_lib/auth.js";
 
 const PLAN_TO_ENV = {
   "1mo":  "RAZORPAY_PLAN_1MO",
@@ -51,10 +52,15 @@ export default async function handler(req, res) {
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
   const { plan, userId, email, freeCode } = req.body || {};
+  if (!email) return res.status(400).json({ error: "email is required." });
 
-  if (!userId || !email) {
-    return res.status(400).json({ error: "userId and email are required." });
-  }
+  // Verify the caller's JWT matches the userId BEFORE any plan logic.
+  // Both paths (comp and paid) need this — without it, a leaked
+  // FREE_ACCESS_CODE could be replayed against any user's UUID to grant
+  // them comp access, and the paid path could create subscriptions
+  // against accounts that aren't the caller's. See HANDOFF §15.1 / §16.1.
+  const auth = await requireAuthedUser(req, userId);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   // Comp path uses a permissive plan check (trial / 1mo / 12mo all OK).
   // Paid path requires a real Razorpay plan, so only 1mo / 12mo accepted.

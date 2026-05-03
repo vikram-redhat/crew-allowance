@@ -17,6 +17,7 @@
 
 import Razorpay from "razorpay";
 import { createClient } from "@supabase/supabase-js";
+import { requireAuthedUser } from "./_lib/auth.js";
 
 const TRIAL_AMOUNT_INR = 100; // ₹100 — server-side authoritative
 
@@ -30,9 +31,15 @@ export default async function handler(req, res) {
   }
 
   const { userId, email } = req.body || {};
-  if (!userId || !email) {
-    return res.status(400).json({ error: "userId and email are required." });
-  }
+  if (!email) return res.status(400).json({ error: "email is required." });
+
+  // Verify the caller's JWT matches the userId. Without this, anyone
+  // could create an order against another user's account, then the
+  // verify-payment endpoint (also auth-gated now) would refuse to flip
+  // them — but the order would still pollute that user's profile row.
+  // See HANDOFF §15.1 / §16.1.
+  const auth = await requireAuthedUser(req, userId);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   const supa = serviceSupabase();
   if (!supa) return res.status(500).json({ error: "Supabase not configured." });

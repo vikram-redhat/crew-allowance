@@ -25,6 +25,7 @@
 
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
+import { requireAuthedUser } from "./_lib/auth.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -41,9 +42,18 @@ export default async function handler(req, res) {
     razorpay_signature,
   } = req.body || {};
 
-  if (!userId || !razorpay_payment_id || !razorpay_signature) {
+  if (!razorpay_payment_id || !razorpay_signature) {
     return res.status(400).json({ error: "Missing required fields." });
   }
+
+  // CRITICAL: verify the caller's JWT matches the userId they're flipping.
+  // The HMAC signature only covers Razorpay-issued IDs (order/payment/sub),
+  // it does NOT bind userId. Without this check, an attacker who observes
+  // any legitimate (payment_id, signature) pair from one of their own
+  // payments could re-POST those same fields with a victim's userId and
+  // grant the victim a fake "paid" status. See HANDOFF §15.1 / §16.1.
+  const auth = await requireAuthedUser(req, userId);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   // Build the canonical signed string per Razorpay's spec.
   let signedPayload;

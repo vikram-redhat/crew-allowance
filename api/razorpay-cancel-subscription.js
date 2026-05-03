@@ -19,6 +19,7 @@
 
 import Razorpay from "razorpay";
 import { createClient } from "@supabase/supabase-js";
+import { requireAuthedUser } from "./_lib/auth.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -30,7 +31,13 @@ export default async function handler(req, res) {
   }
 
   const { userId } = req.body || {};
-  if (!userId) return res.status(400).json({ error: "userId is required." });
+
+  // Verify the caller is who they claim to be — the JWT in the
+  // Authorization header must decode to this userId. Without this,
+  // any authenticated user could POST any other user's UUID and
+  // cancel their subscription. See HANDOFF §15.1 / §16.1.
+  const auth = await requireAuthedUser(req, userId);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

@@ -67,6 +67,38 @@ const fmtHM  = m => { const h = Math.floor(Math.abs(m)/60), mn = Math.round(Math
 const fmtINR = n => "₹"+(Math.round(n||0)).toLocaleString("en-IN");
 
 /* ═══════════════════════════════════════════════════════════════════
+   AUTHED FETCH — attach the user's Supabase JWT to a request
+
+   Every Razorpay POST endpoint (create-order, create-subscription,
+   verify-payment, cancel-subscription) now requires the caller to
+   prove they're the user they claim to be. The endpoint reads
+   Authorization: Bearer <JWT>, decodes it via supabase.auth.getUser,
+   and asserts decodedUser.id === body.userId. Without this, anyone
+   logged in could POST any other user's UUID and operate on that
+   account. See HANDOFF §16.1 for the full attack writeup.
+
+   This helper is a thin wrapper around fetch that grabs the current
+   session token and adds it to the Authorization header.
+═══════════════════════════════════════════════════════════════════ */
+async function authedFetch(url, options = {}) {
+  let token = null;
+  if (supabase) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      token = data?.session?.access_token || null;
+    } catch (e) {
+      console.warn("[authedFetch] getSession threw:", e.message);
+    }
+  }
+  const headers = {
+    ...(options.headers || {}),
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  return fetch(url, { ...options, headers });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    DYNAMIC IMPORT WRAPPER — friendly error on stale browser cache
 ═══════════════════════════════════════════════════════════════════
    When we deploy a new build, Vite reissues chunk filenames with new
@@ -1537,8 +1569,8 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
     // Endpoint signature matches the legacy Stripe one (freeCode branch).
     if (showFree) {
       try {
-        const resp = await fetch("/api/razorpay-create-subscription", {
-          method:"POST", headers:{"Content-Type":"application/json"},
+        const resp = await authedFetch("/api/razorpay-create-subscription", {
+          method:"POST",
           body: JSON.stringify({ plan:planKey, userId:pendingUser?.id||"", email:pendingUser?.email||"", freeCode:freeCode.trim() }),
         });
         const data = await resp.json();
@@ -1563,8 +1595,8 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
         ? { userId: pendingUser?.id || "", email: pendingUser?.email || "" }
         : { plan: planKey, userId: pendingUser?.id || "", email: pendingUser?.email || "" };
 
-      const resp = await fetch(endpoint, {
-        method:"POST", headers:{"Content-Type":"application/json"},
+      const resp = await authedFetch(endpoint, {
+        method:"POST",
         body: JSON.stringify(body),
       });
       const data = await resp.json();
@@ -1595,8 +1627,8 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
         handler: async (response) => {
           // Razorpay returns different payloads for orders vs subscriptions.
           try {
-            const verifyResp = await fetch("/api/razorpay-verify-payment", {
-              method:"POST", headers:{"Content-Type":"application/json"},
+            const verifyResp = await authedFetch("/api/razorpay-verify-payment", {
+              method:"POST",
               body: JSON.stringify({
                 kind:                     isTrial ? "trial" : "subscription",
                 userId:                   pendingUser?.id || "",
@@ -1962,8 +1994,8 @@ function ManageSubscriptionBtn({ userId }) {
     }
     setBusy(true);
     try {
-      const resp = await fetch("/api/razorpay-cancel-subscription", {
-        method:"POST", headers:{"Content-Type":"application/json"},
+      const resp = await authedFetch("/api/razorpay-cancel-subscription", {
+        method:"POST",
         body: JSON.stringify({ userId }),
       });
       const data = await resp.json();
@@ -2005,8 +2037,8 @@ function UpgradeScreen({ user, onActivated, goBack }) {
     }
 
     try {
-      const resp = await fetch("/api/razorpay-create-subscription", {
-        method:"POST", headers:{"Content-Type":"application/json"},
+      const resp = await authedFetch("/api/razorpay-create-subscription", {
+        method:"POST",
         body: JSON.stringify({ plan:planKey, userId:user.id, email:user.email }),
       });
       const data = await resp.json();
@@ -2035,8 +2067,8 @@ function UpgradeScreen({ user, onActivated, goBack }) {
         },
         handler: async (response) => {
           try {
-            const verifyResp = await fetch("/api/razorpay-verify-payment", {
-              method:"POST", headers:{"Content-Type":"application/json"},
+            const verifyResp = await authedFetch("/api/razorpay-verify-payment", {
+              method:"POST",
               body: JSON.stringify({
                 kind:                     "subscription",
                 userId:                   user.id,
