@@ -4,26 +4,136 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Transit Halt Allowance — The 90-Minute Rule and 15-Minute Diff (PAH §7.0) — Coming Soon | CrewAllowance.com</title>
-  <meta name="description" content="How IndiGo's transit halt allowance is calculated under PAH §7.0 — ₹1,000/hr (Captain), 4-hour cap, 90-minute rule with the 15-minute difference exception. Worked example and FAQ. Coming soon." />
+  <title>Transit Halt Allowance — The 90-Minute Rule and 15-Minute Diff (PAH §7.0) | CrewAllowance.com</title>
+  <meta name="description" content="How IndiGo's transit halt allowance is calculated under PAH §7.0 — ₹1,000/hr for Captains, ₹500 for First Officers, capped at four hours. The 90-minute eligibility rule, the 15-minute difference exception, and why home-base halts also count. Worked example and FAQ." />
+  <meta name="keywords" content="IndiGo transit halt allowance, transit allowance pilot India, 90-minute rule, PAH §7.0, scheduled vs actual halt, transit halt home base, IndiGo trans payslip" />
   <meta name="author" content="CrewAllowance.com" />
-  <!-- Currently a placeholder — keep noindex until real content lands. -->
-  <meta name="robots" content="noindex, follow" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
   <link rel="canonical" href="https://crewallowance.com/guides/indigo-transit-halt-allowance.html" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="article" />
   <meta property="og:site_name" content="CrewAllowance.com" />
-  <meta property="og:title" content="Transit Halt Allowance — The 90-Minute Rule and 15-Minute Diff — Coming Soon" />
-  <meta property="og:description" content="How IndiGo's transit halt allowance is calculated under PAH §7.0 — ₹1,000/hr (Captain), 4-hour cap, 90-minute rule with the 15-minute difference exception. Detailed guide coming soon." />
+  <meta property="og:title" content="Transit Halt Allowance — The 90-Minute Rule (PAH §7.0)" />
+  <meta property="og:description" content="₹1,000/hr capped at 4 hours. The 90-minute rule, the 15-minute exception, and why home-base halts count too." />
   <meta property="og:url" content="https://crewallowance.com/guides/indigo-transit-halt-allowance.html" />
   <meta property="og:image" content="https://crewallowance.com/og-cover.png" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Transit Halt Allowance — The 90-Minute Rule (PAH §7.0)" />
+  <meta name="twitter:description" content="₹1,000/hr capped at 4 hours, with the 90-minute and 15-minute rules. Worked example inside." />
+  <meta name="twitter:image" content="https://crewallowance.com/og-cover.png" />
 
   <!-- Icons -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <meta name="theme-color" content="#0f3460" />
+
+  <!-- Article schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Transit Halt Allowance — The 90-Minute Rule and 15-Minute Diff (PAH §7.0)",
+    "description": "How IndiGo's transit halt allowance is calculated under PAH §7.0 — ₹1,000/hr (Captain), capped at four hours, with the 90-minute eligibility rule and the 15-minute difference exception. Home-base halts also qualify.",
+    "datePublished": "2026-05-02",
+    "dateModified": "2026-05-02",
+    "inLanguage": "en-IN",
+    "author": { "@type": "Organization", "name": "CrewAllowance.com", "url": "https://crewallowance.com/" },
+    "publisher": {
+      "@type": "Organization",
+      "name": "CrewAllowance.com",
+      "logo": { "@type": "ImageObject", "url": "https://crewallowance.com/favicon.svg" }
+    },
+    "mainEntityOfPage": "https://crewallowance.com/guides/indigo-transit-halt-allowance.html",
+    "about": [
+      { "@type": "Thing", "name": "IndiGo transit halt allowance" },
+      { "@type": "Thing", "name": "90-minute rule" },
+      { "@type": "Thing", "name": "PAH FLT Issue 01 Rev 46" }
+    ],
+    "image": "https://crewallowance.com/og-cover.png"
+  }
+  </script>
+
+  <!-- BreadcrumbList schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://crewallowance.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Guides", "item": "https://crewallowance.com/guides/" },
+      { "@type": "ListItem", "position": 3, "name": "Transit Halt Allowance", "item": "https://crewallowance.com/guides/indigo-transit-halt-allowance.html" }
+    ]
+  }
+  </script>
+
+  <!-- FAQPage schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is the IndiGo transit halt allowance?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "IndiGo's transit halt allowance under PAH §7.0 pays ₹1,000 per hour to Captains and ₹500 per hour to First Officers, prorated to the closest minute and capped at 4 hours per halt (₹4,000 / ₹2,000 maximum). It applies to halts within a duty period — typically between two consecutive operating sectors — that meet the 90-minute eligibility rule."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is the 90-minute rule for transit halt allowance?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "A halt qualifies for transit allowance under PAH §7.0 if either (i) the scheduled halt is at least 90 minutes, or (ii) the actual halt is at least 90 minutes AND the difference between actual and scheduled exceeds 15 minutes. If neither condition is met, the halt does not pay."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is the transit halt allowance based on scheduled or actual halt time?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "It depends on how close the actual halt was to the schedule. If |actual − scheduled| ≤ 15 minutes, the payment is based on the scheduled halt. If |actual − scheduled| > 15 minutes, the payment is based on the actual halt. This 15-minute tolerance prevents small operational variations from changing the pay basis, while delays beyond 15 minutes are recognised by paying the longer actual halt."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does transit halt allowance apply at my home base?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Unlike TLPD (the layover allowance under PAH §2.0), the transit halt allowance has no home-base exclusion. PAH §7.0 simply pays for any qualifying halt within a duty period, regardless of which station it occurs at. A 90-minute transit at your home base between two sectors of the same duty is just as eligible as one at any outstation."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is the maximum transit halt allowance per halt?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The cap under PAH §7.0 is 4 hours per halt — ₹4,000 for Captains, ₹2,000 for First Officers. Any halt longer than 4 hours pays only the cap; the excess time over 4 hours does not earn additional allowance."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "When is a halt not eligible for transit allowance?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "A halt does not qualify if both: (a) the scheduled halt is under 90 minutes, AND (b) either the actual halt is also under 90 minutes, or the difference between actual and scheduled is 15 minutes or less. PAH §7.0 also excludes any halt that involves a DHT sector on either side, and delays before the first flight of the day do not count."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Are transit halts at international stations paid the same way?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. CrewAllowance.com excludes non-domestic halts from the transit allowance calculation. International transits are governed by separate PAH provisions and do not appear on the domestic transit halt line of your payslip."
+        }
+      }
+    ]
+  }
+  </script>
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,16 +146,16 @@
       --textMid: #475569;
       --textLo: #64748b;
       --border: #E2EAF4;
+      --gold: #C97900;
+      --green: #00855A;
     }
+    html { scroll-behavior: smooth; }
     body {
       font-family: 'Nunito', -apple-system, 'Segoe UI', system-ui, sans-serif;
       background: #fff;
       color: var(--text);
       line-height: 1.65;
       -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
     }
     nav.top {
       background: rgba(255,255,255,0.95);
@@ -78,98 +188,155 @@
     .breadcrumbs a { color: var(--blue); text-decoration: none; }
     .breadcrumbs a:hover { text-decoration: underline; }
 
-    main { flex: 1; max-width: 760px; margin: 0 auto; padding: 28px 20px 40px; width: 100%; }
-    .badge {
-      display: inline-block;
-      background: #FFF6E5;
-      color: #C97900;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      margin-bottom: 18px;
-    }
-    .pah-tag {
-      display: inline-block;
-      color: var(--blue);
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      margin-bottom: 6px;
-    }
-    h1 {
-      font-size: clamp(26px, 5vw, 38px);
+    article { max-width: 760px; margin: 0 auto; padding: 28px 20px 60px; }
+    article h1 {
+      font-size: clamp(28px, 5vw, 40px);
       color: var(--navy);
       font-weight: 900;
       line-height: 1.15;
       letter-spacing: -0.02em;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
+    article h2 {
+      font-size: clamp(22px, 3.5vw, 28px);
+      color: var(--navy);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin: 36px 0 14px;
+    }
+    article h3 {
+      font-size: 18px;
+      color: var(--navy);
+      font-weight: 800;
+      margin: 24px 0 10px;
+    }
+    article p, article li { font-size: 16px; color: var(--text); }
+    article p { margin-bottom: 14px; }
+    article ul, article ol { margin: 0 0 14px 22px; }
+    article li { margin-bottom: 8px; }
+    article strong { color: var(--navy); }
+    article a { color: var(--blue); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 2px; }
+
+    .meta { font-size: 13px; color: var(--textLo); margin-bottom: 28px; }
+    .meta .pah { color: var(--blue); font-weight: 700; }
+
     .lede {
       background: var(--blueXLight);
       border-left: 4px solid var(--blue);
-      padding: 16px 20px;
+      padding: 18px 20px;
       border-radius: 4px;
-      margin: 18px 0 26px;
-      font-size: 16px;
+      margin: 0 0 28px;
     }
-    .placeholder {
+    .lede p { font-size: 17px; margin-bottom: 0; color: var(--text); }
+    .lede strong { color: var(--navy); }
+
+    .rates {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 24px;
+      font-size: 15px;
+    }
+    .rates th, .rates td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .rates th { background: var(--navy); color: #fff; font-weight: 800; }
+    .rates tr:nth-child(even) td { background: var(--sky); }
+
+    .example {
       background: var(--sky);
-      border: 1px dashed var(--border);
-      border-radius: 14px;
-      padding: 32px 26px;
-      text-align: center;
-      margin: 26px 0;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 22px;
+      margin: 16px 0 24px;
     }
-    .placeholder h2 {
-      font-size: 20px;
-      color: var(--navy);
+    .example h3 { margin-top: 0; }
+    .calc { font-family: 'Consolas', ui-monospace, Menlo, monospace; font-size: 14px;
+      background: #fff; border: 1px solid var(--border); border-radius: 6px;
+      padding: 12px 14px; margin: 12px 0; color: var(--navy); white-space: pre-wrap; }
+
+    .callout {
+      background: #FFF6E5;
+      border-left: 4px solid var(--gold);
+      padding: 14px 18px;
+      border-radius: 4px;
+      margin: 16px 0;
+      font-size: 15px;
+    }
+    .callout strong { color: var(--gold); }
+
+    .keyrule {
+      background: linear-gradient(135deg, #1B2940, #0F3460);
+      color: #fff;
+      border-radius: 12px;
+      padding: 22px 24px;
+      margin: 24px 0;
+    }
+    .keyrule h3 {
+      color: #FFD27A;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       margin-bottom: 8px;
     }
-    .placeholder p {
-      font-size: 15px;
-      color: var(--textMid);
-      margin-bottom: 16px;
-      max-width: 520px;
-      margin-left: auto;
-      margin-right: auto;
+    .keyrule p {
+      color: rgba(255,255,255,0.92);
+      font-size: 17px;
+      margin-bottom: 0;
+      line-height: 1.55;
     }
-    .placeholder a.cta {
-      display: inline-block;
-      background: linear-gradient(135deg, var(--blue), var(--navy));
+    .keyrule strong { color: #fff; }
+
+    .cta {
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      border-radius: 16px;
+      padding: 28px 26px;
+      text-align: center;
+      margin: 40px 0;
       color: #fff;
-      border-radius: 10px;
-      font-weight: 800;
-      font-size: 15px;
-      padding: 12px 24px;
-      text-decoration: none;
-      box-shadow: 0 3px 12px rgba(26,111,212,0.25);
     }
-    .while-you-wait {
+    .cta h2 { color: #fff; margin-top: 0; }
+    .cta p { color: rgba(255,255,255,0.85); font-size: 15px; }
+    .cta a {
+      display: inline-block;
+      background: #fff; color: var(--blue);
+      border-radius: 10px; font-weight: 800; font-size: 15px;
+      padding: 12px 26px; text-decoration: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      margin-top: 14px;
+    }
+
+    .faq details {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+    .faq details[open] { background: var(--sky); }
+    .faq summary {
+      cursor: pointer;
+      font-weight: 800;
+      color: var(--navy);
+      font-size: 16px;
+      list-style: none;
+    }
+    .faq summary::-webkit-details-marker { display: none; }
+    .faq summary::after { content: " +"; color: var(--blue); }
+    .faq details[open] summary::after { content: " −"; }
+    .faq p { margin-top: 10px; font-size: 15px; color: var(--text); }
+
+    .related {
       border-top: 1px solid var(--border);
       padding-top: 24px;
-      margin-top: 32px;
+      margin-top: 36px;
     }
-    .while-you-wait h3 {
-      font-size: 17px;
-      color: var(--navy);
-      font-weight: 800;
-      margin-bottom: 12px;
-    }
-    .while-you-wait ul { list-style: none; padding: 0; }
-    .while-you-wait li {
-      margin-bottom: 8px;
-      font-size: 15px;
-    }
-    .while-you-wait a {
-      color: var(--blue);
-      text-decoration: none;
-      font-weight: 700;
-    }
-    .while-you-wait a:hover { text-decoration: underline; }
-    .while-you-wait .ready { font-weight: 800; color: var(--navy); }
+    .related ul { list-style: none; margin: 0; padding: 0; }
+    .related li { margin-bottom: 8px; font-size: 15px; }
+    .related a { color: var(--blue); text-decoration: none; font-weight: 700; }
+    .related a:hover { text-decoration: underline; }
 
     footer.site {
       background: var(--navy);
@@ -177,6 +344,7 @@
       padding: 28px 20px;
       text-align: center;
       font-size: 13px;
+      margin-top: 40px;
     }
     footer.site a { color: rgba(255,255,255,0.7); text-decoration: none; margin: 0 10px; }
     footer.site a:hover { color: #fff; text-decoration: underline; }
@@ -186,9 +354,12 @@
 
     @media (max-width: 520px) {
       nav.top { padding: 12px 16px; }
-      main { padding: 20px 16px 30px; }
+      article { padding: 20px 16px 40px; }
+      .rates { font-size: 14px; }
+      .rates th, .rates td { padding: 8px 10px; }
     }
   </style>
+
   <!-- Google Analytics -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-SV8LGZLLXS"></script>
   <script>
@@ -214,49 +385,223 @@
   Transit Halt Allowance
 </div>
 
-<main>
-  <span class="badge">Coming soon</span>
-  <div class="pah-tag">PAH §7.0</div>
+<article>
+
   <h1>Transit Halt Allowance — The 90-Minute Rule and 15-Minute Diff</h1>
+  <div class="meta">
+    <span class="pah">PAH FLT Issue 01 Rev 46 §7.0</span> · Last verified 2 May 2026 · Reading time ~8 min
+  </div>
 
   <div class="lede">
-    How IndiGo's transit halt allowance is calculated under PAH §7.0 — ₹1,000/hr (Captain), 4-hour cap, 90-minute rule with the 15-minute difference exception.
+    <p><strong>The transit halt allowance pays ₹1,000 per hour to Captains and ₹500 per hour to First Officers</strong>, prorated to the closest minute and capped at 4 hours per halt (₹4,000 / ₹2,000 maximum). It applies to halts <em>within</em> a duty period — typically between two consecutive operating sectors — that meet either the scheduled-≥-90-minute rule or the actual-≥-90-minute-AND-diff-&gt;-15-minute exception.</p>
   </div>
 
-  <div class="placeholder">
-    <h2>This guide is on the way</h2>
-    <p>
-      We're writing this one now. In the meantime, the calculator already
-      handles this allowance correctly under PAH FLT Issue 01 Rev 46 — you
-      can verify your payslip today and the detailed write-up will be here soon.
-    </p>
-    <a href="/" class="cta">Verify your payslip in 2 minutes →</a>
+  <h2>The rule in one sentence</h2>
+  <p>For every consecutive sector pair within the same duty, if the halt is long enough under either eligibility rule, pay ₹1,000/hr (Captain) or ₹500/hr (First Officer) on the appropriate basis (scheduled or actual), capped at 4 hours.</p>
+
+  <h2>The rate (effective 1 January 2026)</h2>
+  <table class="rates">
+    <thead>
+      <tr><th>Rank</th><th>Per hour</th><th>Per minute</th><th>Cap per halt</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Captain</td><td>₹1,000</td><td>₹16.67</td><td>₹4,000 (240 min)</td></tr>
+      <tr><td>First Officer</td><td>₹500</td><td>₹8.33</td><td>₹2,000 (240 min)</td></tr>
+    </tbody>
+  </table>
+  <p>Senior Captain, LTC, TRI and DE roles use the Captain rate. Senior First Officers use the First Officer rate. The cap means that a 5-hour halt and a 4-hour halt pay the same.</p>
+
+  <h2>Eligibility — the 90-minute rule (with the 15-minute exception)</h2>
+  <p>A halt qualifies for transit allowance if <strong>either</strong> of two conditions is true:</p>
+
+  <div class="keyrule">
+    <h3>Condition (i) — scheduled halt ≥ 90 minutes</h3>
+    <p>If the scheduled time between chocks-on of the inbound and chocks-off of the outbound is at least 90 minutes, the halt is eligible. The actual operation does not change this — even a delayed early-arrival or push-back doesn't disqualify a halt that was scheduled long.</p>
   </div>
 
-  <div class="while-you-wait">
-    <h3>While you wait — guides that are ready</h3>
+  <div class="keyrule">
+    <h3>Condition (ii) — actual halt ≥ 90 min AND |actual − scheduled| &gt; 15 min</h3>
+    <p>A halt that was scheduled under 90 minutes can still qualify if the <em>actual</em> halt ran to 90 minutes or more, AND the difference between actual and scheduled exceeded 15 minutes. This catches genuine delays that turned a quick turn into a long one — the schedule said 70 minutes, the inbound was 30 minutes late, and you ended up sitting at the airport for 100 minutes.</p>
+  </div>
+
+  <p>If neither condition is met, the halt does not pay. A halt scheduled at 80 minutes that ran to 95 minutes (diff = 15 minutes, not strictly greater than) <em>does not</em> qualify under condition (ii) — the diff must be more than 15 minutes.</p>
+
+  <h2>Payment basis — scheduled or actual?</h2>
+  <p>Once a halt is eligible, the payment is computed on either the scheduled or the actual halt:</p>
+  <ul>
+    <li>If <strong>|actual − scheduled| ≤ 15 minutes</strong>, the pay basis is the <strong>scheduled</strong> halt.</li>
+    <li>If <strong>|actual − scheduled| &gt; 15 minutes</strong>, the pay basis is the <strong>actual</strong> halt.</li>
+  </ul>
+  <p>Then apply the cap: if the chosen basis exceeds 240 minutes, the pay-minutes are clipped to 240. Multiply by ₹1,000/60 (Captain) or ₹500/60 (First Officer), prorated to the closest minute.</p>
+
+  <h2>Worked-rule reference table (from PAH §7.0)</h2>
+  <table class="rates">
+    <thead>
+      <tr><th>Sched halt</th><th>Actual halt</th><th>Diff</th><th>Eligibility rule</th><th>Pay basis</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>100 min</td><td>90 min</td><td>10 min</td><td>(i) sched ≥ 90, diff ≤ 15</td><td><strong>Scheduled (100)</strong></td></tr>
+      <tr><td>120 min</td><td>170 min</td><td>50 min</td><td>(i) sched ≥ 90, diff &gt; 15</td><td><strong>Actual (170)</strong></td></tr>
+      <tr><td>110 min</td><td>80 min</td><td>30 min</td><td>(i) sched ≥ 90, diff &gt; 15</td><td><strong>Actual (80)</strong></td></tr>
+      <tr><td>90 min</td><td>105 min</td><td>15 min</td><td>(i) sched = 90, diff = 15</td><td><strong>Scheduled (90)</strong></td></tr>
+      <tr><td>80 min</td><td>96 min</td><td>16 min</td><td>(ii) sched &lt; 90, actual ≥ 90, diff &gt; 15</td><td><strong>Actual (96)</strong></td></tr>
+      <tr><td>80 min</td><td>95 min</td><td>15 min</td><td>Neither — diff not &gt; 15</td><td><strong>No allowance</strong></td></tr>
+    </tbody>
+  </table>
+
+  <div class="keyrule">
+    <h3>The unique-knowledge bit — home-base transit halts COUNT</h3>
+    <p>Many pilots assume transit allowance excludes the home base — it doesn't. PAH §7.0 has <strong>no home-base exclusion</strong>. A 90-minute transit at your own base between two operating sectors of the same duty is just as eligible as one at any outstation. The largest single transit halts in a typical month are often at the pilot's home base — don't leave that money on the table.</p>
+  </div>
+
+  <h2>Worked example</h2>
+  <div class="example">
+    <h3>Captain D. — March, DEL base — six halts, four eligible</h3>
+    <p>Captain D. has six halts in their March PCSR. Each is between two consecutive sectors within the same duty. Three are at outstations, two are at the DEL home base, one involves a DHT sector.</p>
+    <table class="rates">
+      <thead>
+        <tr><th>Date · station</th><th>Sched halt</th><th>Actual halt</th><th>Eligibility</th><th>Pay basis</th><th>Pay</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>04 Mar · DEL <em>(home base)</em></td>
+          <td>145 min</td>
+          <td>118 min</td>
+          <td>(i) sched ≥ 90, diff = 27 (&gt; 15)</td>
+          <td>Actual (118)</td>
+          <td>₹1,966</td>
+        </tr>
+        <tr>
+          <td>11 Mar · HYD</td>
+          <td>90 min</td>
+          <td>98 min</td>
+          <td>(i) sched = 90, diff = 8 (≤ 15)</td>
+          <td>Scheduled (90)</td>
+          <td>₹1,500</td>
+        </tr>
+        <tr>
+          <td>17 Mar · DEL <em>(home base)</em></td>
+          <td>111 min</td>
+          <td>140 min</td>
+          <td>(i) sched ≥ 90, diff = 29 (&gt; 15)</td>
+          <td>Actual (140)</td>
+          <td>₹2,333</td>
+        </tr>
+        <tr>
+          <td>19 Mar · AMD</td>
+          <td>65 min</td>
+          <td>101 min</td>
+          <td>(ii) sched &lt; 90, actual ≥ 90, diff = 36 (&gt; 15)</td>
+          <td>Actual (101)</td>
+          <td>₹1,683</td>
+        </tr>
+        <tr>
+          <td>23 Mar · IXJ</td>
+          <td>80 min</td>
+          <td>87 min</td>
+          <td>Neither — actual &lt; 90</td>
+          <td>—</td>
+          <td>₹0</td>
+        </tr>
+        <tr>
+          <td>27 Mar · BLR <em>(includes DHT)</em></td>
+          <td>120 min</td>
+          <td>135 min</td>
+          <td>Excluded — DHT involvement</td>
+          <td>—</td>
+          <td>₹0</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="calc">March transit halt total
+= ₹1,966 + ₹1,500 + ₹2,333 + ₹1,683
+= ₹7,482</div>
+    <p>Captain D. should see <strong>₹7,482</strong> on the "Transit Allowance" line of their March payslip. A First Officer flying the same six halts would see ₹3,741.</p>
+    <p>Worth noting: the two largest payments (₹1,966 and ₹2,333) are both at <strong>DEL — Captain D.'s home base</strong>. That's the home-base-counts rule in action.</p>
+  </div>
+
+  <h2>Common reasons your transit allowance looks wrong</h2>
+
+  <h3>1. Home-base halts were excluded by mistake</h3>
+  <p>The single most common error. A 90-minute halt at your home base between two operating sectors is fully eligible. If your transit total looks light and you have any home-base halts in the month, this is the first place to check.</p>
+
+  <h3>2. The 15-minute boundary was applied as ≥ instead of &gt;</h3>
+  <p>PAH §7.0's condition (ii) requires the diff to be <em>strictly greater than</em> 15 minutes — exactly 15 minutes does not qualify under (ii). A halt scheduled at 80 minutes that ran to 95 minutes (diff = 15) does not pay. CrewAllowance.com applies this strictly.</p>
+
+  <h3>3. A DHT sector on either side of the halt was missed</h3>
+  <p>Halts involving any DHT sector — either the inbound or the outbound leg — are excluded under PAH §7.0. DHF sectors are <em>not</em> excluded, only DHT. If your PCSR shows a DHT flag in the Other Crew section that wasn't picked up by the calculator, an excluded halt may have been counted in error.</p>
+
+  <h3>4. Different duty periods were treated as one</h3>
+  <p>Transit applies only to halts <em>within</em> a single duty period — typically with a gap under 8 hours between sectors. A break between separate duties is a layover (under PAH §2.0) or a rest period, not a transit halt. CrewAllowance.com uses the duty boundaries from your PCSR to keep the two cleanly separated.</p>
+
+  <h3>5. Delays before the first flight of the day were counted</h3>
+  <p>A delay before your first flight of the day is not a transit halt — there's no inbound leg to halt from. Only halts <em>between</em> two flown sectors qualify.</p>
+
+  <h3>6. International transits were silently included</h3>
+  <p>CrewAllowance.com excludes non-domestic halts from the transit calculation. If your transit line is unexpectedly large after an international rotation, the foreign portion may have leaked in — flag it.</p>
+
+  <h2>How CrewAllowance.com calculates this for you</h2>
+  <p>The calculator parses your PCSR, walks every consecutive sector pair within each duty, pulls scheduled times (STA of inbound, STD of outbound) from FlightAware AeroAPI for the operation date, computes both the scheduled and actual halt durations, applies the 90-minute eligibility rule with the 15-minute exception, applies the 15-minute pay-basis rule, applies the 4-hour cap, and uses the PAH §11.0 rate for your rank. Home-base halts are <em>not</em> excluded. The output is a per-halt breakdown — date, station, scheduled vs actual halt, eligibility verdict, pay basis, computed pay — that you can match line-by-line against the "Transit Allowance" amount on your payslip.</p>
+
+  <div class="cta">
+    <h2>Verify your transit allowance in two minutes</h2>
+    <p>Upload your end-of-month PCSR. Get a per-halt breakdown including any home-base transits that should have been paid.</p>
+    <a href="/">Open the calculator →</a>
+  </div>
+
+  <h2 class="faq-h">Frequently asked questions</h2>
+  <div class="faq">
+    <details>
+      <summary>What is the IndiGo transit halt allowance?</summary>
+      <p>IndiGo's transit halt allowance under PAH §7.0 pays ₹1,000 per hour to Captains and ₹500 per hour to First Officers, prorated to the closest minute and capped at 4 hours per halt (₹4,000 / ₹2,000 maximum). It applies to halts within a duty period — typically between two consecutive operating sectors — that meet the 90-minute eligibility rule.</p>
+    </details>
+    <details>
+      <summary>What is the 90-minute rule for transit halt allowance?</summary>
+      <p>A halt qualifies under PAH §7.0 if either (i) the scheduled halt is at least 90 minutes, or (ii) the actual halt is at least 90 minutes AND the difference between actual and scheduled exceeds 15 minutes. If neither condition is met, the halt does not pay.</p>
+    </details>
+    <details>
+      <summary>Is transit halt allowance based on scheduled or actual halt time?</summary>
+      <p>It depends on how close the actual halt was to the schedule. If |actual − scheduled| ≤ 15 minutes, the payment is based on the scheduled halt. If |actual − scheduled| &gt; 15 minutes, the payment is based on the actual halt. The 15-minute tolerance prevents small variations from changing pay; longer delays are recognised by paying the longer actual halt.</p>
+    </details>
+    <details>
+      <summary>Does transit halt allowance apply at my home base?</summary>
+      <p>Yes. Unlike TLPD (PAH §2.0), the transit halt allowance has no home-base exclusion. PAH §7.0 simply pays for any qualifying halt within a duty period, regardless of station. A 90-minute transit at your home base between two operating sectors of the same duty is just as eligible as one at any outstation.</p>
+    </details>
+    <details>
+      <summary>What is the maximum transit halt allowance per halt?</summary>
+      <p>The cap under PAH §7.0 is 4 hours per halt — ₹4,000 for Captains, ₹2,000 for First Officers. Any halt longer than 4 hours pays only the cap; the excess time over 4 hours does not earn additional allowance.</p>
+    </details>
+    <details>
+      <summary>When is a halt not eligible for transit allowance?</summary>
+      <p>A halt does not qualify if both: (a) the scheduled halt is under 90 minutes, AND (b) either the actual halt is also under 90 minutes, or the difference between actual and scheduled is 15 minutes or less. PAH §7.0 also excludes any halt that involves a DHT sector on either side, and delays before the first flight of the day do not count.</p>
+    </details>
+    <details>
+      <summary>Do DHF sectors disqualify a transit halt?</summary>
+      <p>No — only DHT sectors disqualify a halt. PAH §7.0 explicitly allows halts where one side (or both sides) is a DHF sector, as long as no DHT sector is involved.</p>
+    </details>
+    <details>
+      <summary>Are transit halts at international stations paid the same way?</summary>
+      <p>No. CrewAllowance.com excludes non-domestic halts from the transit allowance calculation. International transits are governed by separate PAH provisions and do not appear on the domestic transit halt line of your payslip.</p>
+    </details>
+  </div>
+
+  <div class="related">
+    <h3 style="margin-bottom:12px;">Related guides</h3>
     <ul>
-      <li class="ready">Ready now:</li>
       <li><a href="/guides/indigo-deadhead-allowance.html">How IndiGo Deadhead Allowance Is Calculated (PAH §1.0) →</a></li>
-      <li><a href="/guides/indigo-tlpd-layover-allowance.html">TLPD on Your IndiGo Payslip — Domestic Layover Allowance Explained →</a></li>
-      <li><a href="/guides/indigo-night-flying-allowance.html">Night Flying Allowance — Why It's Calculated From STD, Not ATD →</a></li>
-    </ul>
-    <h3 style="margin-top:22px;">Other guides coming soon</h3>
-    <ul>
-      <li><a href="/guides/indigo-tail-swap-allowance.html">Tail Swap Allowance for IndiGo Pilots — When You Get Paid ₹1,500 →</a></li>
+      <li><a href="/guides/indigo-tlpd-layover-allowance.html">TLPD on Your IndiGo Payslip — Domestic Layover Allowance Explained (PAH §2.0) →</a></li>
+      <li><a href="/guides/indigo-tail-swap-allowance.html">Tail Swap Allowance — When You Get Paid ₹1,500 (PAH §6.0) →</a></li>
+      <li><a href="/guides/indigo-night-flying-allowance.html">Night Flying Allowance — Why It's Calculated From STD, Not ATD (PAH §9.0) →</a></li>
       <li><a href="/guides/what-is-pcsr.html">What Is a PCSR? IndiGo's Personal Crew Schedule Report Explained →</a></li>
-      <li><a href="/guides/sector-value-explained.html">Sector Value (SV) File from 6eBreeze — A Pilot's Reference →</a></li>
-      <li><a href="/guides/pah-flt-explained.html">PAH FLT Issue 01 Rev 46 — Plain-English Pilot Reference →</a></li>
-      <li><a href="/guides/payslip-glossary.html">IndiGo Pilot Payslip Glossary — Every Line Item Explained →</a></li>
-      <li><a href="/guides/captain-vs-fo-rates.html">Captain vs First Officer Allowance Rates — IndiGo →</a></li>
-      <li><a href="/guides/indigo-allowance-pitfalls.html">Top IndiGo Allowance Pitfalls — Why Pilots' Payslips Look Wrong →</a></li>
     </ul>
   </div>
-</main>
+
+</article>
 
 <footer class="site">
   <div>
     <a href="/">Home</a> ·
+    <a href="/guides/">All guides</a> ·
     <a href="/privacy.html">Privacy</a> ·
     <a href="/terms.html">Terms</a>
   </div>
@@ -264,6 +609,7 @@
     CrewAllowance.com is an independent tool. Not affiliated with, endorsed by,
     or sponsored by InterGlobe Aviation Ltd. or IndiGo. PAH section references
     are to the Pilot Allowance Handbook FLT Issue 01 Rev 46 (effective 1 January 2026).
+    This guide is provided for verification purposes and does not constitute payroll advice.
   </div>
   <div style="margin-top:14px; font-size:11px; color:rgba(255,255,255,0.35);">
     © 2026 CrewAllowance.com
