@@ -1369,7 +1369,7 @@ function LandingPage({ goLogin, goSignup }) {
 /* ═══════════════════════════════════════════════════════════════════
    AUTH SCREENS (Login, Signup, Checkout, Forgot, ResetPassword)
 ═══════════════════════════════════════════════════════════════════ */
-function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
+function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout }) {
   const [email, setEmail] = useState("");
   const [pass,  setPass]  = useState("");
   const [err,   setErr]   = useState("");
@@ -1383,12 +1383,19 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding }) {
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
     if (!profile) { setErr("Account not found. Please contact admin."); setBusy(false); return; }
     if (!profile.is_active && !profile.is_admin) {
+      // Comp users awaiting admin approval — keep the explanation, no path
+      // forward yet (admin has to flip them active manually).
       if (profile.subscription_status === "pending_approval") {
         setErr("Your comp-access request is awaiting admin approval. We'll activate your account shortly. Questions? help@crewallowance.com");
-      } else {
-        setErr("Your account is not yet active. Please complete your subscription or contact help@crewallowance.com.");
+        setBusy(false); return;
       }
-      setBusy(false); return;
+      // Everyone else inactive = signed up, never completed payment. Route
+      // them straight back to the checkout flow with their existing profile
+      // — same screen they would have seen right after signup. Lets them
+      // pick a plan and pay without us creating a duplicate account.
+      setBusy(false);
+      goCheckout({ ...profile, email: data.user.email });
+      return;
     }
     onLogin({ ...profile, email: data.user.email });
     setBusy(false);
@@ -4217,7 +4224,7 @@ export default function App() {
   }
 
   if (screen === "landing")        return <LandingPage goLogin={() => setScreen("login")} goSignup={() => setScreen("signup")} />;
-  if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} />;
+  if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} />;
   if (screen === "signup")         return <SignupScreen goLogin={() => setScreen("login")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} goForgot={() => setScreen("forgot")} />;
   if (screen === "checkout")       return <CheckoutScreen pendingUser={pendingUser} goLogin={() => setScreen("login")} onActivate={onActivate} />;
   if (screen === "forgot")         return <ForgotScreen goLogin={() => setScreen("login")} />;
