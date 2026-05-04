@@ -884,13 +884,16 @@ function PcsrBeforeAfter() {
               <span style={{ fontSize:13, fontWeight:800, color:"#1a1a1a" }}>Personal Crew Schedule Report</span>
             </div>
             <div style={{ fontSize:10, color:C.textMid, textAlign:"center", marginTop:3 }}>
-              01/03/2026 - 31/03/2026 (All times in Local Station)
+              ▓▓/▓▓/▓▓▓▓ - ▓▓/▓▓/▓▓▓▓ (All times in Local Station)
             </div>
           </div>
-          {/* Crew info bar */}
+          {/* Crew info bar — content blurred for the marketing screenshot.
+              Shape preserved (employee-id letters, lastname, first-initial,
+              base/rank/fleet) so the row reads as a recognisable PCSR
+              header without exposing any pilot identity. */}
           <div style={{ background:"#e8f0e8", padding:"5px 12px", fontSize:10, fontWeight:700, color:"#2a5a2a",
             fontFamily:gridFont }}>
-            28XXX SHARMA, A. DEL,CP,320
+            ▓▓▓▓▓ ▓▓▓▓▓▓, ▓. ▓▓▓,▓▓,▓▓▓
           </div>
           {/* Calendar grid */}
           <div style={{ overflowX:"auto", padding:"0 4px 10px" }}>
@@ -898,10 +901,13 @@ function PcsrBeforeAfter() {
               <thead>
                 <tr>
                   {gridDays.map(d => (
+                    // Day-number, day-of-week and date-month suffix all blurred
+                    // so the column header reads as a recognisable PCSR calendar
+                    // grid without exposing any specific date.
                     <th key={d.day} style={{ border:cellBorder, padding:"3px 2px", textAlign:"center",
                       background:"#f5f7fa", fontWeight:700, color:C.navy, width:`${100/7}%` }}>
-                      <div>{d.day}/03</div>
-                      <div style={{ fontWeight:400, color:C.textLo }}>{d.dow}</div>
+                      <div>▓▓/▓▓</div>
+                      <div style={{ fontWeight:400, color:C.textLo }}>▓▓▓</div>
                     </th>
                   ))}
                   <th style={{ border:cellBorder, padding:"3px 2px", textAlign:"center", background:"#f5f7fa",
@@ -917,13 +923,19 @@ function PcsrBeforeAfter() {
                         <div style={{ textAlign:"center", color:C.textLo, padding:"16px 0", fontSize:9 }}></div>
                       )}
                       {d.flights.map((f,i) => (
+                        // Flight cell content blurred: shape preserved (4-digit
+                        // flight number, 3-letter airport codes, A-prefixed
+                        // HH:MM times, [###] aircraft type) so the cell reads
+                        // as a real PCSR sector. The `f.hl` highlight is kept
+                        // so the visual rhythm of "one delayed/notable flight"
+                        // still reads.
                         <div key={i} style={{ marginBottom: i < d.flights.length-1 ? 6 : 0, lineHeight:1.4 }}>
-                          <div style={{ color: f.hl ? "#c04000" : "#1a6fd4", fontWeight:700, fontSize:9 }}>{f.flt}</div>
-                          <div style={{ color:C.textMid }}>{f.dep}</div>
-                          <div style={{ color:C.textMid }}>{f.arr}</div>
-                          <div style={{ color:C.textLo }}>{f.t1}</div>
-                          <div style={{ color:C.textLo }}>{f.t2}</div>
-                          <div style={{ color:C.textLo }}>{f.ac}</div>
+                          <div style={{ color: f.hl ? "#c04000" : "#1a6fd4", fontWeight:700, fontSize:9 }}>▓▓▓▓</div>
+                          <div style={{ color:C.textMid }}>▓▓▓</div>
+                          <div style={{ color:C.textMid }}>▓▓▓</div>
+                          <div style={{ color:C.textLo }}>▓▓▓:▓▓</div>
+                          <div style={{ color:C.textLo }}>▓▓▓:▓▓</div>
+                          <div style={{ color:C.textLo }}>[▓▓▓]</div>
                         </div>
                       ))}
                     </td>
@@ -935,14 +947,16 @@ function PcsrBeforeAfter() {
               </tbody>
             </table>
           </div>
-          {/* Stats bar like real PCSR */}
+          {/* Stats bar — labels preserved so the row reads as a recognisable
+              PCSR summary; numeric values blurred so no real pilot's monthly
+              stats are exposed in the marketing screenshot. */}
           <div style={{ background:"#e8eef6", padding:"6px 12px", fontSize:9, color:C.navy, fontFamily:gridFont,
             display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:4, borderTop:"1.5px solid "+C.border }}>
-            <span><b>Block Hours</b> 69:59</span>
-            <span><b>Duty Hours</b> 137:24</span>
-            <span><b>Dead Head</b> 12:51</span>
-            <span><b>Flights</b> 15</span>
-            <span><b>Landings</b> 37</span>
+            <span><b>Block Hours</b> ▓▓:▓▓</span>
+            <span><b>Duty Hours</b> ▓▓▓:▓▓</span>
+            <span><b>Dead Head</b> ▓▓:▓▓</span>
+            <span><b>Flights</b> ▓▓</span>
+            <span><b>Landings</b> ▓▓</span>
           </div>
         </div>
 
@@ -955,7 +969,10 @@ function PcsrBeforeAfter() {
               <span style={{ fontSize:18 }}>📊</span>
               <div>
                 <div style={{ fontSize:12, fontWeight:800, color:C.white }}>Allowance Breakdown</div>
-                <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)" }}>A. Sharma · March 2026</div>
+                {/* Pilot identity blurred (your name · the month) — the
+                    allowance category names and ₹ amounts below are kept
+                    visible because they ARE the marketing message. */}
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)" }}>▓. ▓▓▓▓▓▓ · ▓▓▓▓▓ ▓▓▓▓</div>
               </div>
             </div>
             <div style={{ fontSize:18, fontWeight:900, color:C.white }}>₹24,350</div>
