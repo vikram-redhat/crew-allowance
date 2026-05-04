@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, createContext, useContext, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { runCalculations } from "./calculate.js";
 import "./App.css";
@@ -561,9 +561,16 @@ function dlCSV(res, pilot) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   DESIGN TOKENS
+   DESIGN TOKENS  +  THEME (light / dark)
+
+   Every component reads colors via `const { C } = useColors();`. The 18
+   palette keys are identical between LIGHT and DARK so the JSX stays
+   untouched — only the values flip.
+
+   Persistence: localStorage("theme") = "light" | "dark" | "system".
+   Default on first visit is "system" (mirrors the OS).
 ═══════════════════════════════════════════════════════════════════ */
-const C = {
+const LIGHT = {
   sky:"#f0f7ff", skyMid:"#daeeff", white:"#ffffff",
   blue:"#1a6fd4", blueMid:"#3d8ef0", blueLight:"#e8f2fd", blueXLight:"#f4f9ff",
   navy:"#0f3460",
@@ -574,12 +581,97 @@ const C = {
   border:"#e2eaf4", borderMid:"#c8d8ee",
   shadow:"0 2px 12px rgba(26,111,212,0.08)",
   shadowMd:"0 4px 24px rgba(26,111,212,0.12)",
+  // Fixed brand gradient — used as a backdrop for white text/icons. Does NOT
+  // flip with theme, otherwise the white foreground becomes unreadable.
+  brand1:"#1a6fd4", brand2:"#0f3460",
 };
+
+// `white` (surface), `navy` (heading) and `text*` keys carry semantic meaning
+// rather than literal colors — in dark mode they become dark surfaces and
+// light text. All gradients in JSX continue to read from the same keys, so
+// brand-blue gradients keep working on both themes.
+const DARK = {
+  sky:"#0b1220", skyMid:"#0f172a", white:"#1e293b",
+  blue:"#60a5fa", blueMid:"#93c5fd", blueLight:"#1e3a8a", blueXLight:"#0f172a",
+  navy:"#e2e8f0",
+  gold:"#d4a017", goldBg:"#3a2e0d", goldBorder:"#7a5a1c", goldText:"#fbbf24",
+  green:"#10b981", greenBg:"#064e3b",
+  red:"#f87171",  redBg:"#3f1416",
+  text:"#f1f5f9", textMid:"#cbd5e1", textLo:"#94a3b8",
+  border:"#334155", borderMid:"#475569",
+  shadow:"0 2px 12px rgba(0,0,0,0.45)",
+  shadowMd:"0 4px 24px rgba(0,0,0,0.55)",
+  // Same brand-blue values as LIGHT — see LIGHT.brand1/2 comment.
+  brand1:"#1a6fd4", brand2:"#0f3460",
+};
+
+const ThemeContext = createContext({ C: LIGHT, theme: "light", effective: "light", setTheme: () => {} });
+
+function useColors() { return useContext(ThemeContext); }
+
+// Resolves the effective theme (system → actual). Safe in non-browser envs.
+function resolveSystemTheme() {
+  if (typeof window === "undefined" || !window.matchMedia) return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function readSavedTheme() {
+  if (typeof window === "undefined") return "system";
+  try {
+    const s = window.localStorage.getItem("theme");
+    if (s === "light" || s === "dark" || s === "system") return s;
+  } catch { /* ignore */ }
+  return "system";
+}
+
+function ThemeProvider({ children }) {
+  const [theme, setThemeState] = useState(readSavedTheme);
+  const [systemTheme, setSystemTheme] = useState(resolveSystemTheme);
+
+  // Track OS-level theme changes so "system" responds live without reload.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setSystemTheme(mql.matches ? "dark" : "light");
+    if (mql.addEventListener) mql.addEventListener("change", onChange);
+    else mql.addListener(onChange);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener("change", onChange);
+      else mql.removeListener(onChange);
+    };
+  }, []);
+
+  const effective = theme === "system" ? systemTheme : theme;
+
+  // Reflect the effective theme on <html> so static pages and the inline
+  // boot script stay in sync, and so any CSS using [data-theme=dark] selectors
+  // (e.g. App.css scrollbar overrides) flips automatically.
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = effective;
+    }
+  }, [effective]);
+
+  const setTheme = (next) => {
+    setThemeState(next);
+    try { window.localStorage.setItem("theme", next); } catch { /* ignore */ }
+  };
+
+  const value = useMemo(() => ({
+    C: effective === "dark" ? DARK : LIGHT,
+    theme,
+    effective,
+    setTheme,
+  }), [theme, effective]);
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    SHARED UI COMPONENTS
 ═══════════════════════════════════════════════════════════════════ */
 function FInput({ label, type="text", value, onChange, placeholder, autoComplete, hint, readOnly }) {
+  const { C } = useColors();
   const [f, setF] = useState(false);
   return (
     <div style={{ marginBottom: 16 }}>
@@ -588,7 +680,7 @@ function FInput({ label, type="text", value, onChange, placeholder, autoComplete
         onChange={e => onChange && onChange(e.target.value)}
         placeholder={placeholder} autoComplete={autoComplete} readOnly={readOnly}
         onFocus={() => setF(true)} onBlur={() => setF(false)}
-        style={{ width:"100%", background: readOnly ? "#f8fafc" : C.white,
+        style={{ width:"100%", background: readOnly ? C.blueXLight : C.white,
           border:"1.5px solid "+(f ? C.blue : C.border), borderRadius:10,
           padding:"12px 14px", color:C.text, fontFamily:"inherit", fontSize:15,
           outline:"none", transition:"all 0.15s", boxSizing:"border-box",
@@ -599,6 +691,7 @@ function FInput({ label, type="text", value, onChange, placeholder, autoComplete
 }
 
 function FSelect({ label, value, onChange, options }) {
+  const { C } = useColors();
   return (
     <div style={{ marginBottom: 16 }}>
       {label && <label style={{ display:"block", fontSize:12, fontWeight:700, color:C.navy, marginBottom:5 }}>{label}</label>}
@@ -612,15 +705,18 @@ function FSelect({ label, value, onChange, options }) {
   );
 }
 
-const BtnS = {
-  primary:  { background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")", color:C.white, border:"none", boxShadow:"0 2px 8px rgba(26,111,212,0.28)" },
+// Built per-render so the values follow the active theme. Cheap (object alloc).
+const btnStyles = (C) => ({
+  primary:  { background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")", color:"#ffffff", border:"none", boxShadow:"0 2px 8px rgba(26,111,212,0.28)" },
   ghost:    { background:C.white, color:C.blue, border:"1.5px solid "+C.borderMid, boxShadow:C.shadow },
   danger:   { background:C.white, color:C.red, border:"1.5px solid #fca5a5", boxShadow:"none" },
-  gold:     { background:"linear-gradient(135deg,"+C.goldText+",#8a5500)", color:C.white, border:"none", boxShadow:"0 2px 8px rgba(180,112,0,0.28)" },
-  disabled: { background:"#e9eef5", color:C.textLo, border:"none", boxShadow:"none", cursor:"not-allowed" },
-};
+  gold:     { background:"linear-gradient(135deg,"+C.goldText+",#8a5500)", color:"#ffffff", border:"none", boxShadow:"0 2px 8px rgba(180,112,0,0.28)" },
+  disabled: { background:C.skyMid, color:C.textLo, border:"none", boxShadow:"none", cursor:"not-allowed" },
+});
 
 function Btn({ children, onClick, variant="primary", small, disabled, full=true, icon, submit }) {
+  const { C } = useColors();
+  const BtnS = btnStyles(C);
   const s = disabled ? BtnS.disabled : (BtnS[variant] || BtnS.primary);
   // When submit=true, the click is handled by the parent <form>'s onSubmit —
   // don't also fire onClick here, that would double-trigger the action.
@@ -637,18 +733,21 @@ function Btn({ children, onClick, variant="primary", small, disabled, full=true,
 }
 
 function Card({ children, style, color }) {
+  const { C } = useColors();
   const b  = color==="gold" ? C.goldBorder : color==="blue" ? C.blue : color==="green" ? C.green : C.border;
   const bg = color==="gold" ? C.goldBg : color==="blue" ? C.blueXLight : color==="green" ? C.greenBg : C.white;
   return <div style={{ background:bg, border:"1.5px solid "+b, borderRadius:14, padding:"16px", boxShadow:C.shadow, ...style }}>{children}</div>;
 }
 
 function Badge({ children, color="blue" }) {
+  const { C } = useColors();
   const m = { blue:{bg:C.blueLight,c:C.blue}, green:{bg:C.greenBg,c:C.green}, red:{bg:C.redBg,c:C.red}, gold:{bg:C.goldBg,c:C.goldText} };
   const t = m[color] || m.blue;
   return <span style={{ display:"inline-block", padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:700, background:t.bg, color:t.c }}>{children}</span>;
 }
 
 function CollapsibleTable({ title, total, note, headers, rows, renderRow }) {
+  const { C } = useColors();
   const [open, setOpen] = useState(true);
   return (
     <div style={{ marginBottom:14, borderRadius:14, border:"1.5px solid "+C.border, overflow:"hidden", boxShadow:C.shadow }}>
@@ -666,7 +765,7 @@ function CollapsibleTable({ title, total, note, headers, rows, renderRow }) {
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
             <thead>
               <tr>{headers.map((h, i) => (
-                <th key={i} style={{ background:"#f8fbff", color:C.textMid, padding:"8px 10px", textAlign:"left",
+                <th key={i} style={{ background:C.blueXLight, color:C.textMid, padding:"8px 10px", textAlign:"left",
                   fontWeight:700, fontSize:10, letterSpacing:"0.05em", textTransform:"uppercase",
                   borderBottom:"1.5px solid "+C.border, whiteSpace:"nowrap" }}>{h}</th>
               ))}</tr>
@@ -686,8 +785,9 @@ function CollapsibleTable({ title, total, note, headers, rows, renderRow }) {
 }
 
 function TC({ children, i, right, gold }) {
+  const { C } = useColors();
   return (
-    <td style={{ padding:"9px 10px", background:i%2===0 ? C.white : "#f8fbff",
+    <td style={{ padding:"9px 10px", background:i%2===0 ? C.white : C.blueXLight,
       borderBottom:"1px solid "+C.border, color:gold ? C.goldText : C.text,
       fontWeight:gold ? 700 : 400, textAlign:right ? "right" : "left", whiteSpace:"nowrap" }}>
       {children}
@@ -696,6 +796,7 @@ function TC({ children, i, right, gold }) {
 }
 
 function AuthShell({ children, title, sub, wide, onSubmit }) {
+  const { C } = useColors();
   const handleSubmit = onSubmit ? (e => { e.preventDefault(); onSubmit(); }) : undefined;
   return (
     <div style={{ minHeight:"100vh",
@@ -703,7 +804,7 @@ function AuthShell({ children, title, sub, wide, onSubmit }) {
       display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px 16px" }}>
       <div style={{ textAlign:"center", marginBottom:24 }}>
         <div style={{ width:54, height:54, borderRadius:16,
-          background:"linear-gradient(135deg,"+C.blue+","+C.navy+")",
+          background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:26, margin:"0 auto 12px", boxShadow:"0 6px 20px rgba(26,111,212,0.3)" }}>✈</div>
         <div style={{ fontSize:22, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
@@ -728,6 +829,7 @@ function AuthShell({ children, title, sub, wide, onSubmit }) {
    MAINTENANCE SCREEN  (shown to all non-admins when admin flips the flag)
 ═══════════════════════════════════════════════════════════════════ */
 function MaintenanceScreen({ message, onAdminLogin }) {
+  const { C } = useColors();
   return (
     <div style={{ minHeight:"100vh",
       background:"linear-gradient(160deg,"+C.skyMid+" 0%,"+C.sky+" 50%,"+C.white+" 100%)",
@@ -766,6 +868,7 @@ function MaintenanceScreen({ message, onAdminLogin }) {
    PDF DROP ZONE  (PCSR)
 ═══════════════════════════════════════════════════════════════════ */
 function PcsrDropZone({ file, onParsed, onFail }) {
+  const { C } = useColors();
   const [drag, setDrag]       = useState(false);
   const [parsing, setParsing] = useState(false);
   const ref = useRef();
@@ -817,6 +920,7 @@ function PcsrDropZone({ file, onParsed, onFail }) {
    PCSR → RESULTS — animated before/after toggle
 ═══════════════════════════════════════════════════════════════════ */
 function PcsrBeforeAfter() {
+  const { C } = useColors();
   const [showResult, setShowResult] = useState(false);
 
   useEffect(() => {
@@ -949,7 +1053,7 @@ function PcsrBeforeAfter() {
         {/* ── Results view ── */}
         <div style={{ opacity: showResult ? 1 : 0, transform: showResult ? "translateX(0)" : "translateX(20px)",
           transition:fade, position: showResult ? "relative" : "absolute", top:0, left:0, right:0 }}>
-          <div style={{ background:"linear-gradient(135deg,"+C.blue+","+C.navy+")", padding:"10px 16px",
+          <div style={{ background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")", padding:"10px 16px",
             display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
               <span style={{ fontSize:18 }}>📊</span>
@@ -1029,6 +1133,7 @@ function PcsrBeforeAfter() {
    PAYSLIP vs CREW ALLOWANCE — animated before/after toggle
 ═══════════════════════════════════════════════════════════════════ */
 function PayslipCompare() {
+  const { C } = useColors();
   const [showDetail, setShowDetail] = useState(false);
 
   // Auto-toggle every 4 seconds
@@ -1154,6 +1259,7 @@ function PayslipCompare() {
    LANDING PAGE
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
+  const { C } = useColors();
   const steps = [
     { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your final Personal Crew Schedule Report (PCSR) for the month as a PDF from eCrew." },
     { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
@@ -1174,7 +1280,7 @@ function LandingPage({ goLogin, goSignup }) {
         padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:34, height:34, borderRadius:10,
-            background:"linear-gradient(135deg,"+C.blue+","+C.navy+")",
+            background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
             display:"flex", alignItems:"center", justifyContent:"center",
             fontSize:18, boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
           <div style={{ fontSize:16, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
@@ -1187,7 +1293,7 @@ function LandingPage({ goLogin, goSignup }) {
             cursor:"pointer", fontWeight:700, fontFamily:"inherit", boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>Get started →</button>
         </div>
       </div>
-      <div style={{ background:"linear-gradient(160deg,"+C.navy+" 0%,"+C.blue+" 60%,"+C.blueMid+" 100%)",
+      <div style={{ background:"linear-gradient(160deg,"+C.brand2+" 0%,"+C.brand1+" 60%,"+C.blueMid+" 100%)",
         padding:"60px 20px 80px", textAlign:"center", position:"relative", overflow:"hidden" }}>
         <div style={{ position:"relative", maxWidth:640, margin:"0 auto" }}>
           <div style={{ display:"inline-block", background:"rgba(255,255,255,0.12)", borderRadius:20,
@@ -1228,7 +1334,9 @@ function LandingPage({ goLogin, goSignup }) {
         ))}
       </div>
       {/* ── PCSR → Results showcase — prominent, right after hero ── */}
-      <div style={{ background:"linear-gradient(180deg,"+C.navy+" 0%,#1a3a6a 100%)", padding:"50px 20px 40px" }}>
+      {/* Brand-blue showcase strip — colors are intentionally hardcoded so the
+          white text on top stays readable in both light and dark themes. */}
+      <div style={{ background:"linear-gradient(180deg,#0f3460 0%,#1a3a6a 100%)", padding:"50px 20px 40px" }}>
         <div style={{ maxWidth:520, margin:"0 auto", textAlign:"center" }}>
           <div style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.5)", letterSpacing:"0.12em",
             textTransform:"uppercase", marginBottom:10 }}>From your PCSR</div>
@@ -1296,7 +1404,7 @@ function LandingPage({ goLogin, goSignup }) {
               <div>
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
                   <span style={{ width:22, height:22, borderRadius:"50%",
-                    background:"linear-gradient(135deg,"+C.blue+","+C.navy+")",
+                    background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
                     display:"inline-flex", alignItems:"center", justifyContent:"center",
                     fontSize:11, fontWeight:900, color:C.white, flexShrink:0 }}>{i+1}</span>
                   <span style={{ fontSize:15, fontWeight:800, color:C.navy }}>{s.title}</span>
@@ -1375,7 +1483,7 @@ function LandingPage({ goLogin, goSignup }) {
           </button>
         </div>
       </div>
-      <div style={{ background:"linear-gradient(135deg,"+C.navy+","+C.blue+")", padding:"50px 20px", textAlign:"center" }}>
+      <div style={{ background:"linear-gradient(135deg,"+C.brand2+","+C.brand1+")", padding:"50px 20px", textAlign:"center" }}>
         <h2 style={{ fontSize:"clamp(20px,4vw,28px)", fontWeight:900, color:C.white, letterSpacing:"-0.01em", marginBottom:12 }}>
           Ready to know what you're owed?
         </h2>
@@ -1402,6 +1510,7 @@ function LandingPage({ goLogin, goSignup }) {
    AUTH SCREENS (Login, Signup, Checkout, Forgot, ResetPassword)
 ═══════════════════════════════════════════════════════════════════ */
 function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout }) {
+  const { C } = useColors();
   const [email, setEmail] = useState("");
   const [pass,  setPass]  = useState("");
   const [err,   setErr]   = useState("");
@@ -1454,6 +1563,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout }) {
 }
 
 function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
+  const { C } = useColors();
   const [name,    setName]    = useState("");
   const [email,   setEmail]   = useState("");
   const [empId,   setEmpId]   = useState("");
@@ -1550,6 +1660,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
 }
 
 function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
+  const { C } = useColors();
   const [planKey,  setPlanKey]  = useState(DEFAULT_PLAN);
   const [freeCode, setFreeCode] = useState("");
   const [showFree, setShowFree] = useState(false);
@@ -1787,6 +1898,7 @@ function CheckoutScreen({ pendingUser, goLogin, onActivate }) {
 }
 
 function ForgotScreen({ goLogin }) {
+  const { C } = useColors();
   const [email, setEmail] = useState("");
   const [sent,  setSent]  = useState(false);
   const [busy,  setBusy]  = useState(false);
@@ -1826,6 +1938,7 @@ function ForgotScreen({ goLogin }) {
 }
 
 function ResetPasswordScreen({ goLogin }) {
+  const { C } = useColors();
   const [pass,    setPass]    = useState("");
   const [confirm, setConfirm] = useState("");
   const [err,     setErr]     = useState("");
@@ -1868,9 +1981,53 @@ function ResetPasswordScreen({ goLogin }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   THEME TOGGLE  (Light / Dark / System)
+   3-segment selector rendered inside the Profile screen's Appearance card.
+   `theme` is the user's saved preference; "system" means follow the OS.
+═══════════════════════════════════════════════════════════════════ */
+function ThemeToggle() {
+  const { C, theme, effective, setTheme } = useColors();
+  const opts = [
+    { id:"light",  label:"Light",  icon:"☀" },
+    { id:"dark",   label:"Dark",   icon:"☾" },
+    { id:"system", label:"System", icon:"⚙" },
+  ];
+  return (
+    <div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:8 }}>
+        {opts.map(o => {
+          const active = theme === o.id;
+          return (
+            <button key={o.id} type="button" onClick={() => setTheme(o.id)}
+              style={{
+                padding:"10px 8px",
+                borderRadius:10,
+                border:"1.5px solid "+(active ? C.blue : C.border),
+                background: active ? C.blueLight : C.white,
+                color: active ? C.blue : C.textMid,
+                fontWeight:700, fontSize:13, fontFamily:"inherit",
+                cursor:"pointer", transition:"all 0.15s",
+                display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+              }}>
+              <span style={{ fontSize:14 }}>{o.icon}</span>{o.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ fontSize:11, color:C.textLo, marginTop:8 }}>
+        {theme === "system"
+          ? `Following system preference — currently ${effective}.`
+          : `Always ${theme}.`}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    PROFILE SCREEN
 ═══════════════════════════════════════════════════════════════════ */
 function ProfileScreen({ user, onSave }) {
+  const { C } = useColors();
   const [name,  setName]  = useState(user.name  || "");
   const [empId, setEmpId] = useState(user.emp_id || "");
   const [rank,  setRank]  = useState(user.rank  || "Captain");
@@ -1903,7 +2060,7 @@ function ProfileScreen({ user, onSave }) {
 
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:500, margin:"0 auto" }}>
-      <div style={{ background:"linear-gradient(120deg,"+C.blue+","+C.navy+")", borderRadius:18,
+      <div style={{ background:"linear-gradient(120deg,"+C.brand1+","+C.brand2+")", borderRadius:18,
         padding:"20px", marginBottom:24, boxShadow:"0 4px 20px rgba(26,111,212,0.22)" }}>
         <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>Pilot Profile</div>
         <div style={{ fontSize:22, fontWeight:900, color:C.white }}>Complete your profile</div>
@@ -1925,6 +2082,12 @@ function ProfileScreen({ user, onSave }) {
           {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
           <Btn onClick={save} disabled={busy}>{busy?"Saving...":"Save profile →"}</Btn>
         </div>
+      </Card>
+
+      {/* Appearance — light / dark / follow-OS. Saved in localStorage. */}
+      <Card style={{ marginTop:16 }}>
+        <div style={{ fontSize:14, fontWeight:800, color:C.navy, marginBottom:10 }}>Appearance</div>
+        <ThemeToggle />
       </Card>
 
       {/* Subscription management — hidden for admins (unlimited) and comp users (free, no payment relationship).
@@ -2019,6 +2182,7 @@ function ManageSubscriptionBtn({ userId }) {
    UPGRADE SCREEN  (after trial used — pick a subscription)
 ═══════════════════════════════════════════════════════════════════ */
 function UpgradeScreen({ user, onActivated, goBack }) {
+  const { C } = useColors();
   // Filter out the trial plan — only show the 2 subscription options.
   const subPlans = Object.entries(PLANS).filter(([, p]) => p.kind === "subscription");
   const [planKey, setPlanKey] = useState(subPlans[0][0]);
@@ -2101,7 +2265,7 @@ function UpgradeScreen({ user, onActivated, goBack }) {
 
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:520, margin:"0 auto" }}>
-      <div style={{ background:"linear-gradient(120deg,"+C.blue+","+C.navy+")", borderRadius:18,
+      <div style={{ background:"linear-gradient(120deg,"+C.brand1+","+C.brand2+")", borderRadius:18,
         padding:"24px 20px", marginBottom:20, textAlign:"center", boxShadow:"0 4px 20px rgba(26,111,212,0.22)" }}>
         <div style={{ fontSize:32, marginBottom:8 }}>🎉</div>
         <div style={{ fontSize:20, fontWeight:900, color:C.white, marginBottom:6 }}>Liked what you saw?</div>
@@ -2165,6 +2329,7 @@ function UpgradeScreen({ user, onActivated, goBack }) {
    CALC SCREEN  (PCSR-based, single file upload)
 ═══════════════════════════════════════════════════════════════════ */
 function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
+  const { C } = useColors();
   const [pcsrFile,   setPcsrFile]   = useState(null);
   const [pcsrData,   setPcsrData]   = useState(null);   // parsed PCSR result
   const [result,     setResult]     = useState(null);
@@ -2385,7 +2550,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
 
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:680, margin:"0 auto" }}>
-      <div style={{ background:"linear-gradient(120deg,"+C.blue+","+C.navy+")", borderRadius:18,
+      <div style={{ background:"linear-gradient(120deg,"+C.brand1+","+C.brand2+")", borderRadius:18,
         padding:"20px", marginBottom:20, boxShadow:"0 4px 20px rgba(26,111,212,0.22)" }}>
         <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>
           {rank} · {user.emp_id || "—"} · {homeBase}
@@ -2734,6 +2899,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
    by bump_calculation_run RPC, so they never appear in these counts.
 ═══════════════════════════════════════════════════════════════════ */
 function UsageMetricsPanel() {
+  const { C } = useColors();
   const [rows, setRows] = useState([]);   // raw run rows: { user_id, period, ran_at }
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -2893,6 +3059,7 @@ function UsageMetricsPanel() {
 }
 
 function ApiUsagePanel() {
+  const { C } = useColors();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -3037,6 +3204,7 @@ function ApiUsagePanel() {
    Useful for debugging "why is this sector wrong?" questions from users.
 ═══════════════════════════════════════════════════════════════════ */
 function ApiProbePanel() {
+  const { C } = useColors();
   const [provider, setProvider] = useState("aeroapi");
   const [flight,   setFlight]   = useState("6E");
   const [dep,      setDep]      = useState("");
@@ -3254,6 +3422,7 @@ function ApiProbePanel() {
    §13.13 for the design rationale.
 ═══════════════════════════════════════════════════════════════════ */
 function RatesEditorPanel({ adminEmail }) {
+  const { C } = useColors();
   const [versions, setVersions] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [err,      setErr]      = useState("");
@@ -3617,6 +3786,7 @@ function RatesEditorPanel({ adminEmail }) {
 // directly, so this prop is no longer used by AdminScreen itself.
 // eslint-disable-next-line no-unused-vars
 function AdminScreen({ rates, adminEmail }) {
+  const { C } = useColors();
   const [tab,   setTab]   = useState("users");
   const [users, setUsers] = useState([]);
   const [userQuery, setUserQuery] = useState("");
@@ -3787,7 +3957,7 @@ function AdminScreen({ rates, adminEmail }) {
 
   return (
     <div style={{ padding:"16px 16px 90px", maxWidth:680, margin:"0 auto" }}>
-      <div style={{ background:"linear-gradient(120deg,"+C.navy+","+C.blue+")", borderRadius:18,
+      <div style={{ background:"linear-gradient(120deg,"+C.brand2+","+C.brand1+")", borderRadius:18,
         padding:"20px", marginBottom:20, boxShadow:"0 4px 20px rgba(26,111,212,0.22)" }}>
         <div style={{ fontSize:11, color:"rgba(255,255,255,0.6)", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>Admin Panel</div>
         <div style={{ fontSize:22, fontWeight:900, color:C.white }}>System Management</div>
@@ -4145,6 +4315,15 @@ function AdminScreen({ rates, adminEmail }) {
    ROOT APP
 ═══════════════════════════════════════════════════════════════════ */
 export default function App() {
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
+  );
+}
+
+function AppInner() {
+  const { C } = useColors();
   const [screen,      setScreen]      = useState("loading");
   const [user,        setUser]        = useState(null);
   const [tab,         setTab]         = useState("calc");
@@ -4240,7 +4419,7 @@ export default function App() {
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center",
       background:"linear-gradient(160deg,"+C.skyMid+","+C.sky+")", fontFamily:"'Nunito','Segoe UI',sans-serif" }}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ width:54, height:54, borderRadius:16, background:"linear-gradient(135deg,"+C.blue+","+C.navy+")",
+        <div style={{ width:54, height:54, borderRadius:16, background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, margin:"0 auto 16px",
           boxShadow:"0 6px 20px rgba(26,111,212,0.3)" }}>✈</div>
         <div style={{ fontSize:14, color:C.textMid }}>Loading...</div>
@@ -4272,7 +4451,7 @@ export default function App() {
         display:"flex", alignItems:"center", justifyContent:"space-between",
         position:"sticky", top:0, zIndex:20, boxShadow:"0 1px 8px rgba(26,111,212,0.07)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ width:36, height:36, borderRadius:11, background:"linear-gradient(135deg,"+C.blue+","+C.navy+")",
+          <div style={{ width:36, height:36, borderRadius:11, background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
             display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
           <div>
             <div style={{ fontSize:16, fontWeight:900, color:C.navy, letterSpacing:"-0.02em", lineHeight:1 }}>{APP_NAME}</div>
@@ -4308,7 +4487,7 @@ export default function App() {
         <div style={{ flex:1, padding:"10px 8px 12px", display:"flex", flexDirection:"column",
           alignItems:"center", justifyContent:"center", borderTop:"2.5px solid transparent" }}>
           <div style={{ width:28, height:28, borderRadius:"50%",
-            background:"linear-gradient(135deg,"+C.blue+","+C.navy+")",
+            background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
             display:"flex", alignItems:"center", justifyContent:"center",
             fontSize:11, fontWeight:900, color:C.white, marginBottom:2 }}>
             {user?.name?.split(" ").map(w => w[0]).slice(0, 2).join("")}

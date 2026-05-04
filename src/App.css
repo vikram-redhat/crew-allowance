@@ -21,8 +21,22 @@ button {
   border-radius: 3px;
 }
 
+/* Dark theme scrollbar — matches the dark slate surface palette so the
+   sidebar doesn't show a bright blue strip on dark backgrounds. */
+html[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
 select option {
   background: white;
+}
+
+html[data-theme="dark"] select option {
+  background: #1e293b;
+  color: #f1f5f9;
 }
 
 @keyframes pulse {

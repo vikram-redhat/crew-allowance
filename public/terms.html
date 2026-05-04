@@ -4,6 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Terms of Service — CrewAllowance.com</title>
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#0f3460" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#0b1220" />
+
+  <!-- Theme bootstrap — must run before paint to avoid a light-mode flash.
+       Mirrors the logic used by the React app's ThemeProvider. -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("theme");
+        var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var effective = (saved === "dark" || saved === "light") ? saved : (prefersDark ? "dark" : "light");
+        document.documentElement.dataset.theme = effective;
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -101,6 +117,45 @@
       border-top: 1px solid #e2eaf4;
     }
     footer a { color: #1a6fd4; text-decoration: none; margin: 0 8px; }
+
+    /* ── Dark theme overlay — mirrors the React app's DARK palette. */
+    html[data-theme="dark"] body {
+      background: #0b1220;
+      color: #f1f5f9;
+    }
+    html[data-theme="dark"] nav {
+      background: #1e293b;
+      border-bottom-color: #334155;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.4);
+    }
+    html[data-theme="dark"] .logo-text { color: #e2e8f0; }
+    html[data-theme="dark"] nav a.back { color: #60a5fa; }
+    html[data-theme="dark"] h2 {
+      color: #e2e8f0;
+      border-bottom-color: #334155;
+    }
+    html[data-theme="dark"] p,
+    html[data-theme="dark"] ul li { color: #cbd5e1; }
+    html[data-theme="dark"] .card {
+      background: #1e293b;
+      border-color: #334155;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.45);
+    }
+    html[data-theme="dark"] .warning-box {
+      background: #3a2e0d;
+      border-color: #7a5a1c;
+    }
+    html[data-theme="dark"] .warning-box p { color: #fbbf24; }
+    html[data-theme="dark"] .contact-box {
+      background: #0f172a;
+      border-color: #475569;
+    }
+    html[data-theme="dark"] .contact-box a { color: #60a5fa; }
+    html[data-theme="dark"] footer {
+      color: #94a3b8;
+      border-top-color: #334155;
+    }
+    html[data-theme="dark"] footer a { color: #60a5fa; }
   </style>
   <!-- Google Analytics -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-SV8LGZLLXS"></script>
