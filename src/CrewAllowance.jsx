@@ -826,31 +826,6 @@ function PcsrBeforeAfter() {
 
   const fade = "all 0.5s ease";
 
-  // Dummy PCSR grid data — 7 visible days with stacked flight cells (mimics the real calendar grid)
-  const gridDays = [
-    { day:"01", dow:"Wed", flights:[
-      {flt:"6327",dep:"DEL",arr:"BOM",t1:"A08:25",t2:"A09:12",ac:"[320]"},
-    ]},
-    { day:"02", dow:"Thu", flights:[
-      {flt:"2312",dep:"BOM",arr:"DEL",t1:"A09:55",t2:"A09:46",ac:"[320]",hl:true},
-    ]},
-    { day:"03", dow:"Fri", flights:[
-      {flt:"6836",dep:"DEL",arr:"CCU",t1:"A06:54",t2:"A08:57",ac:"[321]"},
-    ]},
-    { day:"04", dow:"Sat", flights:[]},
-    { day:"05", dow:"Sun", flights:[
-      {flt:"2052",dep:"DEL",arr:"HYD",t1:"A12:06",t2:"A14:15",ac:"[321]"},
-      {flt:"2073",dep:"HYD",arr:"DEL",t1:"A15:53",t2:"A17:30",ac:"[320]"},
-    ]},
-    { day:"06", dow:"Mon", flights:[
-      {flt:"770",dep:"TRZ",arr:"DEL",t1:"A05:27",t2:"A08:19",ac:"[320]"},
-    ]},
-    { day:"07", dow:"Tue", flights:[]},
-  ];
-
-  const cellBorder = "1px solid #d4dce8";
-  const gridFont = "'Arial Narrow', Arial, sans-serif";
-
   return (
     <div style={{ maxWidth:520, margin:"0 auto" }}>
       {/* Toggle */}
@@ -874,90 +849,23 @@ function PcsrBeforeAfter() {
       <div style={{ background:C.white, borderRadius:14, border:"1.5px solid rgba(255,255,255,0.2)",
         boxShadow:"0 8px 40px rgba(0,0,0,0.3)", overflow:"hidden", position:"relative", minHeight:340 }}>
 
-        {/* ── PCSR view — calendar grid format ── */}
+        {/* ── PCSR view — real screenshot with the data band pixelated.
+            See public/pcsr-sample.png. The pixelation script lives at
+            scratch/pixelate_pcsr.py if the source image ever needs to
+            be regenerated (e.g. with a different sample month). The
+            title bar, date range, column-header dates and grid
+            structure stay sharp so the screenshot reads as an
+            authentic PCSR; only the per-day flight content + crew
+            header bar are mosaicked. */}
         <div style={{ opacity: showResult ? 0 : 1, transform: showResult ? "translateX(-20px)" : "translateX(0)",
           transition:fade, position: showResult ? "absolute" : "relative", top:0, left:0, right:0 }}>
-          {/* Header mimicking real PCSR */}
-          <div style={{ padding:"12px 16px 8px", borderBottom:"2px solid #1a1a1a" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <span style={{ fontSize:11, color:C.textMid }}>InterGlobe Aviation</span>
-              <span style={{ fontSize:13, fontWeight:800, color:"#1a1a1a" }}>Personal Crew Schedule Report</span>
-            </div>
-            <div style={{ fontSize:10, color:C.textMid, textAlign:"center", marginTop:3 }}>
-              ▓▓/▓▓/▓▓▓▓ - ▓▓/▓▓/▓▓▓▓ (All times in Local Station)
-            </div>
-          </div>
-          {/* Crew info bar — content blurred for the marketing screenshot.
-              Shape preserved (employee-id letters, lastname, first-initial,
-              base/rank/fleet) so the row reads as a recognisable PCSR
-              header without exposing any pilot identity. */}
-          <div style={{ background:"#e8f0e8", padding:"5px 12px", fontSize:10, fontWeight:700, color:"#2a5a2a",
-            fontFamily:gridFont }}>
-            ▓▓▓▓▓ ▓▓▓▓▓▓, ▓. ▓▓▓,▓▓,▓▓▓
-          </div>
-          {/* Calendar grid */}
-          <div style={{ overflowX:"auto", padding:"0 4px 10px" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontFamily:gridFont, fontSize:8.5, minWidth:340 }}>
-              <thead>
-                <tr>
-                  {gridDays.map(d => (
-                    // Day-number, day-of-week and date-month suffix all blurred
-                    // so the column header reads as a recognisable PCSR calendar
-                    // grid without exposing any specific date.
-                    <th key={d.day} style={{ border:cellBorder, padding:"3px 2px", textAlign:"center",
-                      background:"#f5f7fa", fontWeight:700, color:C.navy, width:`${100/7}%` }}>
-                      <div>▓▓/▓▓</div>
-                      <div style={{ fontWeight:400, color:C.textLo }}>▓▓▓</div>
-                    </th>
-                  ))}
-                  <th style={{ border:cellBorder, padding:"3px 2px", textAlign:"center", background:"#f5f7fa",
-                    color:C.textLo, fontSize:8 }}>...</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  {gridDays.map(d => (
-                    <td key={d.day} style={{ border:cellBorder, padding:"3px 2px", verticalAlign:"top",
-                      background: d.flights.length ? C.white : "#fafbfc", minHeight:80 }}>
-                      {d.flights.length === 0 && (
-                        <div style={{ textAlign:"center", color:C.textLo, padding:"16px 0", fontSize:9 }}></div>
-                      )}
-                      {d.flights.map((f,i) => (
-                        // Flight cell content blurred: shape preserved (4-digit
-                        // flight number, 3-letter airport codes, A-prefixed
-                        // HH:MM times, [###] aircraft type) so the cell reads
-                        // as a real PCSR sector. The `f.hl` highlight is kept
-                        // so the visual rhythm of "one delayed/notable flight"
-                        // still reads.
-                        <div key={i} style={{ marginBottom: i < d.flights.length-1 ? 6 : 0, lineHeight:1.4 }}>
-                          <div style={{ color: f.hl ? "#c04000" : "#1a6fd4", fontWeight:700, fontSize:9 }}>▓▓▓▓</div>
-                          <div style={{ color:C.textMid }}>▓▓▓</div>
-                          <div style={{ color:C.textMid }}>▓▓▓</div>
-                          <div style={{ color:C.textLo }}>▓▓▓:▓▓</div>
-                          <div style={{ color:C.textLo }}>▓▓▓:▓▓</div>
-                          <div style={{ color:C.textLo }}>[▓▓▓]</div>
-                        </div>
-                      ))}
-                    </td>
-                  ))}
-                  <td style={{ border:cellBorder, verticalAlign:"middle", textAlign:"center" }}>
-                    <div style={{ color:C.textLo, fontSize:9, lineHeight:1.5 }}>24<br/>more<br/>days</div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          {/* Stats bar — labels preserved so the row reads as a recognisable
-              PCSR summary; numeric values blurred so no real pilot's monthly
-              stats are exposed in the marketing screenshot. */}
-          <div style={{ background:"#e8eef6", padding:"6px 12px", fontSize:9, color:C.navy, fontFamily:gridFont,
-            display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:4, borderTop:"1.5px solid "+C.border }}>
-            <span><b>Block Hours</b> ▓▓:▓▓</span>
-            <span><b>Duty Hours</b> ▓▓▓:▓▓</span>
-            <span><b>Dead Head</b> ▓▓:▓▓</span>
-            <span><b>Flights</b> ▓▓</span>
-            <span><b>Landings</b> ▓▓</span>
-          </div>
+          <img
+            src="/pcsr-sample.png"
+            alt="Sample Personal Crew Schedule Report — flight data and crew identity pixelated"
+            style={{ display:"block", width:"100%", height:"auto" }}
+            loading="lazy"
+            decoding="async"
+          />
         </div>
 
         {/* ── Results view ── */}
