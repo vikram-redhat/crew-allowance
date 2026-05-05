@@ -4,26 +4,152 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Sector Value (SV) File from 6eBreeze — A Pilot's Reference — Coming Soon | CrewAllowance.com</title>
-  <meta name="description" content="What the Sector Value file from 6eBreeze actually contains — FLTNBR, time slots in UTC, SectorValue in minutes — and how it relates (and doesn't relate) to PAH allowances. Coming soon." />
+  <title>Sector Value (SV) File from 6eBreeze — A Pilot's Reference — CrewAllowance.com</title>
+  <meta name="description" content="What the Sector Value file from 6eBreeze actually contains — FLTNBR, time slots in UTC, SectorValue in minutes — and where it does and doesn't apply to PAH allowances. Worked examples, conversion notes, common mistakes." />
+  <meta name="keywords" content="IndiGo Sector Value, 6eBreeze SV file, SectorValue minutes, FLTNBR, Time_Slot UTC, Sector Pay, Night Flying SV, IndiGo pilot pay, 6eBreeze export" />
   <meta name="author" content="CrewAllowance.com" />
-  <!-- Currently a placeholder — keep noindex until real content lands. -->
-  <meta name="robots" content="noindex, follow" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
   <link rel="canonical" href="https://crewallowance.com/guides/sector-value-explained.html" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="article" />
   <meta property="og:site_name" content="CrewAllowance.com" />
-  <meta property="og:title" content="Sector Value (SV) File from 6eBreeze — A Pilot's Reference — Coming Soon" />
-  <meta property="og:description" content="What the Sector Value file from 6eBreeze actually contains — FLTNBR, time slots in UTC, SectorValue in minutes — and how it relates to PAH allowances. Detailed guide coming soon." />
+  <meta property="og:title" content="Sector Value (SV) File from 6eBreeze — A Pilot's Reference" />
+  <meta property="og:description" content="What the SV file actually contains, how Time_Slot in UTC maps to your IST departure, where SV applies to PAH allowances and where it doesn't." />
   <meta property="og:url" content="https://crewallowance.com/guides/sector-value-explained.html" />
   <meta property="og:image" content="https://crewallowance.com/og-cover.png" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Sector Value (SV) File from 6eBreeze — A Pilot's Reference" />
+  <meta name="twitter:description" content="FLTNBR, Time_Slot in UTC, SectorValue in minutes — what each column means and how it relates to PAH pay." />
+  <meta name="twitter:image" content="https://crewallowance.com/og-cover.png" />
 
   <!-- Icons -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
   <meta name="theme-color" content="#0f3460" />
+
+  <!-- Article schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "Sector Value (SV) File from 6eBreeze — A Pilot's Reference",
+    "description": "Plain-English reference for the IndiGo Sector Value (SV) file: every column, the UTC time-slot convention, the difference between SV and scheduled block, and where SV applies to PAH allowance calculation.",
+    "datePublished": "2026-05-04",
+    "dateModified": "2026-05-04",
+    "inLanguage": "en-IN",
+    "author": { "@type": "Organization", "name": "CrewAllowance.com", "url": "https://crewallowance.com/" },
+    "publisher": {
+      "@type": "Organization",
+      "name": "CrewAllowance.com",
+      "logo": { "@type": "ImageObject", "url": "https://crewallowance.com/favicon.svg" }
+    },
+    "mainEntityOfPage": "https://crewallowance.com/guides/sector-value-explained.html",
+    "about": [
+      { "@type": "Thing", "name": "IndiGo Sector Value file" },
+      { "@type": "Thing", "name": "6eBreeze" },
+      { "@type": "Thing", "name": "PAH FLT Issue 01 Rev 46" }
+    ],
+    "image": "https://crewallowance.com/og-cover.png"
+  }
+  </script>
+
+  <!-- BreadcrumbList schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://crewallowance.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Guides", "item": "https://crewallowance.com/guides/" },
+      { "@type": "ListItem", "position": 3, "name": "Sector Value Explained", "item": "https://crewallowance.com/guides/sector-value-explained.html" }
+    ]
+  }
+  </script>
+
+  <!-- FAQPage schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is the Sector Value (SV) file?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The Sector Value file is a monthly Excel export from 6eBreeze (Departments → OCC → Sector Pay) that records, per flight number and per route and per departure time-slot, the canonical pay-relevant block time in minutes — the SectorValue. It is the airline's pay-system reference for what each flight 'is worth' as a pay metric. The SV file is not a list of flights you flew — it is a rate card."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Where do I download the SV file from?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "From 6eBreeze. Sign in, navigate to Departments → OCC → Sector Pay, and download the latest month's Excel (.xlsx) export. The SV file for a given month is typically published around the 20th–21st of the following month, after end-of-month operational reconciliation."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What's the difference between SV and scheduled block (STA−STD)?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Scheduled block is the published timetable: STA minus STD for a specific operation on a specific date. Sector Value is the pay-system reference for that flight number on that route in that time-slot — and it can differ from STA−STD by a few minutes either way. SV reflects pay-system rules including scheduled-block adjustments. The two are related but not identical, which is why deadhead allowance under PAH §1.0 uses scheduled block from the published schedule, not SV."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why is Time_Slot in UTC and not IST?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The SV file is generated by IndiGo's pay system which standardises on UTC across the global network. Each row is keyed by a UTC hour band (e.g. 17_18 means 17:00–17:59 UTC), and to look up your sector you need to convert your IST departure time to UTC by subtracting 5 hours 30 minutes. A 04:40 IST departure is 23:10 UTC the previous day, which falls in the 23_24 slot. This UTC keying trips up many manual calculations."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Which PAH allowances actually use the SV file?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Night Flying allowance (PAH §9.0) uses SectorValue as the canonical block-time anchor for computing how much of your sector fell within the 00:00–06:00 IST night window. Deadhead (§1.0) uses scheduled block STA−STD, NOT SV. Layover (§2.0), Tail Swap (§6.0), and Transit (§7.0) don't use SV at all — they rely on duty boundaries, aircraft registrations, and halt durations from the schedule. Sector Pay itself is a separate per-tier compensation under §11.0 that uses SectorValue, but that's a different pay line from the five allowances."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does my deadhead allowance differ from the SV total?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Because deadhead pays on scheduled block (STA−STD), not on SectorValue. Across a month with several DHF sectors the two totals can differ by tens of minutes, which translates to several hundred rupees. PAH §1.0 is unambiguous: scheduled block is the basis. If the SV minutes for a DHF sector look low, check it against STA−STD from the published schedule for the date of operation."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What does FLTNBR look like in the SV file?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "FLTNBR is stored as an integer without the 6E prefix. So flight 6E519 is stored as 519, 6E2052 as 2052, 6E6045 as 6045. When matching against your PCSR (which shows 6E-prefixed flight numbers), strip the 6E prefix and compare numerically. SV also doesn't carry letter suffixes — the air-return code 6805A appears as FLTNBR=6805 with DEP=ARR=BLR; the suffix and the round-trip pattern are inferred from DEP=ARR rather than from the flight number itself."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does the SV file sometimes have BLR-BLR or DEL-DEL rows?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Same departure and arrival airport in the SV file marks an irregular operation — most commonly an air-return (Ground-Turn-Back) where the aircraft took off, encountered a problem, and returned to the originating airport. The SectorValue for these rows reflects the actual block time of the abort, typically 30–90 minutes. Air-return rows are how the pay system records the disruption — the pilot's eventual successful flight to the original destination appears as a separate normal row."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What if the SV file for my month isn't available yet?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "SV files are typically published around the 20th of the following month. If you're trying to verify a payslip earlier than that, the calculator can fall back to the previous 1–3 months' SV files as an approximation. Sector pay rates and time-slot patterns are stable month-to-month, so a January SV file usually maps acceptably to February or March operations. The calculator surfaces a banner when an approximation is in use so you know the result isn't from the canonical source."
+        }
+      }
+    ]
+  }
+  </script>
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,16 +162,16 @@
       --textMid: #475569;
       --textLo: #64748b;
       --border: #E2EAF4;
+      --gold: #C97900;
+      --green: #00855A;
     }
+    html { scroll-behavior: smooth; }
     body {
       font-family: 'Nunito', -apple-system, 'Segoe UI', system-ui, sans-serif;
       background: #fff;
       color: var(--text);
       line-height: 1.65;
       -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
     }
     nav.top {
       background: rgba(255,255,255,0.95);
@@ -78,98 +204,140 @@
     .breadcrumbs a { color: var(--blue); text-decoration: none; }
     .breadcrumbs a:hover { text-decoration: underline; }
 
-    main { flex: 1; max-width: 760px; margin: 0 auto; padding: 28px 20px 40px; width: 100%; }
-    .badge {
-      display: inline-block;
-      background: #FFF6E5;
-      color: #C97900;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      margin-bottom: 18px;
-    }
-    .pah-tag {
-      display: inline-block;
-      color: var(--blue);
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      margin-bottom: 6px;
-    }
-    h1 {
-      font-size: clamp(26px, 5vw, 38px);
+    article { max-width: 760px; margin: 0 auto; padding: 28px 20px 60px; }
+    article h1 {
+      font-size: clamp(28px, 5vw, 40px);
       color: var(--navy);
       font-weight: 900;
       line-height: 1.15;
       letter-spacing: -0.02em;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
+    article h2 {
+      font-size: clamp(22px, 3.5vw, 28px);
+      color: var(--navy);
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin: 36px 0 14px;
+    }
+    article h3 {
+      font-size: 18px;
+      color: var(--navy);
+      font-weight: 800;
+      margin: 24px 0 10px;
+    }
+    article p, article li { font-size: 16px; color: var(--text); }
+    article p { margin-bottom: 14px; }
+    article ul, article ol { margin: 0 0 14px 22px; }
+    article li { margin-bottom: 8px; }
+    article strong { color: var(--navy); }
+    article a { color: var(--blue); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 2px; }
+    article code {
+      font-family: 'Consolas', ui-monospace, Menlo, monospace;
+      background: var(--sky);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+      color: var(--navy);
+    }
+
+    .meta { font-size: 13px; color: var(--textLo); margin-bottom: 28px; }
+    .meta .pah { color: var(--blue); font-weight: 700; }
+
     .lede {
       background: var(--blueXLight);
       border-left: 4px solid var(--blue);
-      padding: 16px 20px;
+      padding: 18px 20px;
       border-radius: 4px;
-      margin: 18px 0 26px;
-      font-size: 16px;
+      margin: 0 0 28px;
     }
-    .placeholder {
+    .lede p { font-size: 17px; margin-bottom: 0; color: var(--text); }
+    .lede strong { color: var(--navy); }
+
+    .rates {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 24px;
+      font-size: 15px;
+    }
+    .rates th, .rates td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .rates th { background: var(--navy); color: #fff; font-weight: 800; }
+    .rates tr:nth-child(even) td { background: var(--sky); }
+
+    .example {
       background: var(--sky);
-      border: 1px dashed var(--border);
-      border-radius: 14px;
-      padding: 32px 26px;
-      text-align: center;
-      margin: 26px 0;
-    }
-    .placeholder h2 {
-      font-size: 20px;
-      color: var(--navy);
-      margin-bottom: 8px;
-    }
-    .placeholder p {
-      font-size: 15px;
-      color: var(--textMid);
-      margin-bottom: 16px;
-      max-width: 520px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-    .placeholder a.cta {
-      display: inline-block;
-      background: linear-gradient(135deg, var(--blue), var(--navy));
-      color: #fff;
+      border: 1px solid var(--border);
       border-radius: 10px;
-      font-weight: 800;
-      font-size: 15px;
-      padding: 12px 24px;
-      text-decoration: none;
-      box-shadow: 0 3px 12px rgba(26,111,212,0.25);
+      padding: 20px 22px;
+      margin: 16px 0 24px;
     }
-    .while-you-wait {
+    .example h3 { margin-top: 0; }
+    .calc { font-family: 'Consolas', ui-monospace, Menlo, monospace; font-size: 14px;
+      background: #fff; border: 1px solid var(--border); border-radius: 6px;
+      padding: 12px 14px; margin: 12px 0; color: var(--navy); white-space: pre-wrap; }
+
+    .callout {
+      background: #FFF6E5;
+      border-left: 4px solid var(--gold);
+      padding: 14px 18px;
+      border-radius: 4px;
+      margin: 16px 0;
+      font-size: 15px;
+    }
+    .callout strong { color: var(--gold); }
+
+    .cta {
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      border-radius: 16px;
+      padding: 28px 26px;
+      text-align: center;
+      margin: 40px 0;
+      color: #fff;
+    }
+    .cta h2 { color: #fff; margin-top: 0; }
+    .cta p { color: rgba(255,255,255,0.85); font-size: 15px; }
+    .cta a {
+      display: inline-block;
+      background: #fff; color: var(--blue);
+      border-radius: 10px; font-weight: 800; font-size: 15px;
+      padding: 12px 26px; text-decoration: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      margin-top: 14px;
+    }
+
+    .faq details {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+    .faq details[open] { background: var(--sky); }
+    .faq summary {
+      cursor: pointer;
+      font-weight: 800;
+      color: var(--navy);
+      font-size: 16px;
+      list-style: none;
+    }
+    .faq summary::-webkit-details-marker { display: none; }
+    .faq summary::after { content: " +"; color: var(--blue); }
+    .faq details[open] summary::after { content: " −"; }
+    .faq p { margin-top: 10px; font-size: 15px; color: var(--text); }
+
+    .related {
       border-top: 1px solid var(--border);
       padding-top: 24px;
-      margin-top: 32px;
+      margin-top: 36px;
     }
-    .while-you-wait h3 {
-      font-size: 17px;
-      color: var(--navy);
-      font-weight: 800;
-      margin-bottom: 12px;
-    }
-    .while-you-wait ul { list-style: none; padding: 0; }
-    .while-you-wait li {
-      margin-bottom: 8px;
-      font-size: 15px;
-    }
-    .while-you-wait a {
-      color: var(--blue);
-      text-decoration: none;
-      font-weight: 700;
-    }
-    .while-you-wait a:hover { text-decoration: underline; }
-    .while-you-wait .ready { font-weight: 800; color: var(--navy); }
+    .related ul { list-style: none; margin: 0; padding: 0; }
+    .related li { margin-bottom: 8px; font-size: 15px; }
+    .related a { color: var(--blue); text-decoration: none; font-weight: 700; }
+    .related a:hover { text-decoration: underline; }
 
     footer.site {
       background: var(--navy);
@@ -177,6 +345,7 @@
       padding: 28px 20px;
       text-align: center;
       font-size: 13px;
+      margin-top: 40px;
     }
     footer.site a { color: rgba(255,255,255,0.7); text-decoration: none; margin: 0 10px; }
     footer.site a:hover { color: #fff; text-decoration: underline; }
@@ -186,7 +355,9 @@
 
     @media (max-width: 520px) {
       nav.top { padding: 12px 16px; }
-      main { padding: 20px 16px 30px; }
+      article { padding: 20px 16px 40px; }
+      .rates { font-size: 14px; }
+      .rates th, .rates td { padding: 8px 10px; }
     }
   </style>
   <!-- Google Analytics -->
@@ -211,48 +382,192 @@
 <div class="breadcrumbs">
   <a href="/">Home</a> ›
   <a href="/guides/">Guides</a> ›
-  Sector Value (SV) File from 6eBreeze
+  Sector Value Explained
 </div>
 
-<main>
-  <span class="badge">Coming soon</span>
-  <div class="pah-tag">Reference guide</div>
+<article>
+
   <h1>Sector Value (SV) File from 6eBreeze — A Pilot's Reference</h1>
+  <div class="meta">
+    <span class="pah">PAH FLT Issue 01 Rev 46</span> · Last verified 4 May 2026 · Reading time ~7 min
+  </div>
 
   <div class="lede">
-    What the Sector Value file from 6eBreeze actually contains — FLTNBR, time slots in UTC, SectorValue in minutes — and how it relates to PAH allowances.
+    <p><strong>The Sector Value file is a monthly Excel export from 6eBreeze that gives, per flight number and per route and per departure time-slot, the canonical pay-relevant block time in minutes.</strong> It is the airline's pay-system reference — a rate card, not a list of flights you flew. Knowing what's in it (and what isn't) clears up most of the confusion around why your payslip totals can differ from a back-of-envelope calculation off your PCSR.</p>
   </div>
 
-  <div class="placeholder">
-    <h2>This guide is on the way</h2>
-    <p>
-      We're writing this one now. In the meantime, the calculator already
-      handles this allowance correctly under PAH FLT Issue 01 Rev 46 — you
-      can verify your payslip today and the detailed write-up will be here soon.
-    </p>
-    <a href="/" class="cta">Verify your payslip in 2 minutes →</a>
+  <h2>What the SV file is and where to get it</h2>
+
+  <p>The SV file is a single-sheet Excel workbook (<code>.xlsx</code>) downloaded from 6eBreeze: <strong>Departments → OCC → Sector Pay</strong>. A typical month's file contains thousands of rows — every published flight × route × time-slot combination IndiGo operated in the month.</p>
+
+  <p>The file is published around the <strong>20th–21st of the following month</strong>, after end-of-month operational reconciliation. So your March SV file becomes available roughly 20 April. If you're trying to verify your payslip before that date, the SV file you need may not exist yet — see "What if the SV file isn't available yet?" below.</p>
+
+  <h2>The columns, one at a time</h2>
+
+  <p>A row from the SV file looks like this:</p>
+
+  <div class="calc">FLTNBR | DEP | ARR | CREATEDDATETIME | Time_Slot | StartTime | EndTime | SectorValue | TotalFlight | ACTYPE</div>
+
+  <table class="rates">
+    <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>FLTNBR</code></td><td>Numeric flight number, no <code>6E</code> prefix. <code>519</code> = 6E519, <code>2052</code> = 6E2052.</td></tr>
+      <tr><td><code>DEP</code></td><td>3-letter IATA departure airport. May have a trailing space — trim before comparing.</td></tr>
+      <tr><td><code>ARR</code></td><td>3-letter IATA arrival airport. Same trim caveat. <code>DEP === ARR</code> means an irregular operation (air-return).</td></tr>
+      <tr><td><code>CREATEDDATETIME</code></td><td>Excel serial date — when the row was added to the pay system. Useful for audit, not for matching.</td></tr>
+      <tr><td><code>Time_Slot</code></td><td>UTC hour band as <code>HH_HH</code>, e.g. <code>17_18</code> = 17:00–17:59 UTC. <strong>Critical: this is UTC, not IST.</strong></td></tr>
+      <tr><td><code>StartTime</code></td><td>Slot start as a fraction of a day (Excel time format). 0.7083 = 17:00 UTC.</td></tr>
+      <tr><td><code>EndTime</code></td><td>Slot end as a fraction of a day. 0.7493 = 17:59 UTC.</td></tr>
+      <tr><td><code>SectorValue</code></td><td>The pay-relevant block time <strong>in minutes</strong>. 149 means 2h 29m. This is the canonical block-time the pay system applies for this flight × route × time-slot combination.</td></tr>
+      <tr><td><code>TotalFlight</code></td><td>How many times this flight × route × time-slot combo operated in the source period — for context, not pay.</td></tr>
+      <tr><td><code>ACTYPE</code></td><td>Aircraft type code (320, 321 etc.). Useful for cross-checks but not used in standard pay lookups.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>The Time_Slot trap — why your SV lookup fails when you assume IST</h2>
+
+  <p>This is the single most common manual-calculation mistake. The SV file's <code>Time_Slot</code> column is keyed in <strong>UTC hour bands</strong>, not IST. To find the row matching one of your sectors, you have to convert your IST departure time to UTC first.</p>
+
+  <p>The conversion is constant year-round: <strong>UTC = IST − 5 hours 30 minutes</strong>. India does not observe daylight saving.</p>
+
+  <div class="callout">
+    <strong>Worked conversion.</strong> A 04:40 IST departure is 04:40 − 05:30 = −00:50, which wraps to 23:10 UTC <em>the previous calendar day</em>. That falls in the <code>23_24</code> UTC slot, not the <code>4_5</code> slot you might have guessed. Pilots looking up early-morning IST departures consistently miss this and conclude the SV file "doesn't have my flight" when it does — under the previous day's UTC slot.
   </div>
 
-  <div class="while-you-wait">
-    <h3>While you wait — guides that are ready</h3>
+  <h2>SV is not the same as scheduled block</h2>
+
+  <p>This is the second most common mistake. A flight's SectorValue is computed by IndiGo's pay system using internal rules. It is related to, but not identical to, the scheduled block time you'd get from STA − STD.</p>
+
+  <p>A worked illustration: a Captain's January DHF sectors might total <strong>790 minutes by SV</strong> but <strong>835 minutes by STA−STD</strong>. The 45-minute difference matters — at the Captain deadhead rate of ₹4,000 per scheduled block hour that's ₹3,000 of allowance.</p>
+
+  <p>Per <strong>PAH §1.0</strong>, deadhead allowance is paid on scheduled block (STA − STD) from the published schedule, NOT on SectorValue. That is unambiguous. If you compute deadhead from SV minutes you will routinely under- or over-pay yourself by tens of minutes per month. <a href="/guides/indigo-deadhead-allowance.html">More on the deadhead rule.</a></p>
+
+  <h2>Where SV is and isn't used in PAH allowances</h2>
+
+  <table class="rates">
+    <thead><tr><th>Allowance</th><th>PAH §</th><th>Uses SV?</th><th>What it actually uses</th></tr></thead>
+    <tbody>
+      <tr><td>Deadhead</td><td>§1.0</td><td><strong>No</strong></td><td>Scheduled block (STA − STD) from the airline's published schedule.</td></tr>
+      <tr><td>Layover (TLPD)</td><td>§2.0</td><td><strong>No</strong></td><td>Duration of a 10h+ rest at a non-home station, between two duties.</td></tr>
+      <tr><td>Tail Swap</td><td>§6.0</td><td><strong>No</strong></td><td>Same-duty aircraft registration change between consecutive sectors.</td></tr>
+      <tr><td>Transit</td><td>§7.0</td><td><strong>No</strong></td><td>Halt duration between two operating sectors at the same station — measured against scheduled and actual times.</td></tr>
+      <tr><td>Night Flying</td><td>§9.0</td><td><strong>Yes</strong></td><td>SectorValue is used as the block-time anchor for computing how many minutes of the sector fall in the 00:00–06:00 IST night window.</td></tr>
+    </tbody>
+  </table>
+
+  <p>SectorValue also drives <strong>Sector Pay</strong> itself — your per-tier compensation under PAH §11.0 — but that's a separate pay line on the payslip from the five allowances. This guide focuses on the allowances.</p>
+
+  <h2>Worked example — looking up one sector</h2>
+
+  <div class="example">
+    <h3>Captain G. — looking up a March sector</h3>
+    <p>Captain G. operated <code>6E5037 DEL→JAI</code> on 19 March with an actual departure of <code>04:32 IST</code>. They want to find the matching row in the March SV file.</p>
+
+    <p><strong>Step 1 — translate the flight number.</strong> <code>6E5037</code> → <code>FLTNBR = 5037</code>. Strip the <code>6E</code> prefix.</p>
+
+    <p><strong>Step 2 — compute the UTC departure hour.</strong> 04:32 IST − 05:30 = −00:58, which wraps to 23:02 UTC the previous day. The UTC hour is <strong>23</strong>, so <code>Time_Slot = 23_24</code>.</p>
+
+    <p><strong>Step 3 — match.</strong> Filter the SV file to <code>FLTNBR=5037 AND DEP="DEL" AND ARR="JAI" AND Time_Slot="23_24"</code>. (Trim trailing whitespace from <code>DEP</code> and <code>ARR</code>.)</p>
+
+    <div class="calc">FLTNBR | DEP | ARR | Time_Slot | SectorValue | TotalFlight | ACTYPE
+5037   | DEL | JAI | 23_24     | 50          | 81          | 320</div>
+
+    <p>The matching row gives <code>SectorValue = 50</code> minutes — that's the pay-system block time for this flight when it departs in the 23:00–24:00 UTC slot (i.e. early-morning IST).</p>
+
+    <p><strong>What this means for Captain G.'s pay:</strong></p>
     <ul>
-      <li class="ready">Ready now:</li>
-      <li><a href="/guides/indigo-deadhead-allowance.html">How IndiGo Deadhead Allowance Is Calculated (PAH §1.0) →</a></li>
-      <li><a href="/guides/indigo-tlpd-layover-allowance.html">TLPD on Your IndiGo Payslip — Domestic Layover Allowance Explained →</a></li>
-      <li><a href="/guides/indigo-night-flying-allowance.html">Night Flying Allowance — Why It's Calculated From STD, Not ATD →</a></li>
-      <li><a href="/guides/indigo-tail-swap-allowance.html">Tail Swap Allowance for IndiGo Pilots — When You Get Paid ₹1,500 →</a></li>
-      <li><a href="/guides/indigo-transit-halt-allowance.html">Transit Halt Allowance — The 90-Minute Rule and 15-Minute Diff →</a></li>
+      <li><a href="/guides/indigo-night-flying-allowance.html">Night flying</a> uses this 50-minute SectorValue as the block anchor: the entire scheduled block (04:45 IST to 05:35 IST = 50 min) falls inside the 00:00–06:00 IST night window, so all 50 minutes count as night minutes. Pay = 50 × ₹2,000 / 60 = <strong>₹1,667</strong>.</li>
+      <li>If this had been a DHF sector, deadhead pay would be calculated from the <strong>scheduled block (STA − STD)</strong> from the published schedule, not from this 50-minute SV.</li>
     </ul>
-    <h3 style="margin-top:22px;">Other guides coming soon</h3>
+  </div>
+
+  <h2>What if the SV file for my month isn't available yet?</h2>
+
+  <p>SV files are typically published around the 20th of the following month. If you're trying to verify a payslip earlier than that — or you're reconciling an older month and the file has been archived — the calculator will fall back to a recent prior month's SV file as an approximation.</p>
+
+  <p>Sector pay rates and time-slot patterns are stable month to month for IndiGo's domestic network. A January SV file generally maps acceptably to February or March operations, with small differences only on flights that changed schedule slot. The calculator surfaces an "approximation in use" banner when this fallback is active so you know the result isn't from the canonical source.</p>
+
+  <h2>Common reasons your SV lookup fails</h2>
+
+  <h3>1. You used IST instead of UTC for the time slot</h3>
+  <p>The most common mistake by far. Always convert to UTC by subtracting 5h30m from your IST departure before mapping to the slot. Early-morning IST departures (00:00–05:30 IST) wrap to the previous calendar day's UTC.</p>
+
+  <h3>2. Trailing whitespace in DEP or ARR</h3>
+  <p>The SV file routinely stores <code>"DEL "</code> with a trailing space. <code>"DEL " === "DEL"</code> is false. Always <code>.trim()</code> when comparing programmatically; in Excel, use <code>=TRIM(B2)</code> to clean the column first.</p>
+
+  <h3>3. The flight number was prefixed with 6E</h3>
+  <p>SV stores <code>FLTNBR</code> as the bare integer. <code>6E519</code> in your PCSR = <code>519</code> in SV. Strip the prefix.</p>
+
+  <h3>4. Same flight number, different routes</h3>
+  <p>IndiGo reuses flight numbers across the day. <code>6E6045</code> may operate <code>BOM→DEL</code> in the morning and <code>DEL→GAU</code> in the afternoon — both rows exist in SV under <code>FLTNBR=6045</code> with different DEP/ARR. Always match on flight number AND dep AND arr, not just flight number.</p>
+
+  <h3>5. The flight isn't in this month's SV file because it operated in a different month</h3>
+  <p>The SV file lists flights operated in the file's month. A sector operated on the last day of February will be in the February SV file, not March. If you're verifying a layover that spans the month boundary, the outbound and return sectors may live in different SV files.</p>
+
+  <h2>How CrewAllowance.com uses your SV file</h2>
+
+  <p>The calculator parses your uploaded SV file and uses it for one specific calculation: <strong>Night Flying allowance under PAH §9.0</strong>. For each sector you operated, it strips the <code>6E</code> prefix from the PCSR flight number, converts your IST departure to a UTC time-slot, and matches against the SV row by <code>(FLTNBR, DEP, ARR, Time_Slot)</code>. The matched <code>SectorValue</code> is then used as the block-time anchor for computing night minutes.</p>
+
+  <p>The other four allowances — Deadhead, Layover, Tail Swap, Transit — don't use the SV file. They run off PCSR data plus a flight-status data provider for scheduled/actual times and aircraft registrations.</p>
+
+  <div class="cta">
+    <h2>Verify your night flying allowance with your SV file</h2>
+    <p>Upload your end-of-month PCSR and your monthly SV file. Get a per-sector breakdown of night-window minutes, the SectorValue used, and the rupee figure that should appear on your payslip's Night Flying line.</p>
+    <a href="/">Open the calculator →</a>
+  </div>
+
+  <h2 class="faq-h">Frequently asked questions</h2>
+  <div class="faq">
+    <details>
+      <summary>What is the Sector Value (SV) file?</summary>
+      <p>The Sector Value file is a monthly Excel export from 6eBreeze (Departments → OCC → Sector Pay) that records, per flight number and per route and per departure time-slot, the canonical pay-relevant block time in minutes — the SectorValue. It is the airline's pay-system reference for what each flight 'is worth' as a pay metric. It is a rate card, not a list of flights you flew.</p>
+    </details>
+    <details>
+      <summary>Where do I download the SV file from?</summary>
+      <p>From 6eBreeze. Sign in, navigate to <strong>Departments → OCC → Sector Pay</strong>, and download the latest month's Excel (.xlsx) export. The SV file for a given month is typically published around the 20th–21st of the following month, after end-of-month operational reconciliation.</p>
+    </details>
+    <details>
+      <summary>What's the difference between SV and scheduled block (STA−STD)?</summary>
+      <p>Scheduled block is the published timetable: STA minus STD for a specific operation on a specific date. Sector Value is the pay-system reference for that flight number on that route in that time-slot — and it can differ from STA−STD by a few minutes either way. SV reflects pay-system rules including scheduled-block adjustments. The two are related but not identical, which is why deadhead allowance under PAH §1.0 uses scheduled block from the published schedule, not SV.</p>
+    </details>
+    <details>
+      <summary>Why is Time_Slot in UTC and not IST?</summary>
+      <p>The SV file is generated by IndiGo's pay system which standardises on UTC across the global network. Each row is keyed by a UTC hour band (e.g. <code>17_18</code> means 17:00–17:59 UTC). To look up your sector you need to convert your IST departure time to UTC by subtracting 5 hours 30 minutes. A 04:40 IST departure is 23:10 UTC the previous day, which falls in the <code>23_24</code> slot. This UTC keying trips up many manual calculations.</p>
+    </details>
+    <details>
+      <summary>Which PAH allowances actually use the SV file?</summary>
+      <p>Only Night Flying allowance under PAH §9.0 uses SectorValue as the canonical block-time anchor. Deadhead (§1.0) uses scheduled block STA−STD, not SV. Layover (§2.0), Tail Swap (§6.0), and Transit (§7.0) don't use SV at all — they rely on duty boundaries, aircraft registrations, and halt durations from the schedule. Sector Pay itself is a separate per-tier compensation under §11.0 that uses SectorValue, but that's a different pay line from the five allowances.</p>
+    </details>
+    <details>
+      <summary>Why does my deadhead allowance differ from the SV total?</summary>
+      <p>Because deadhead pays on scheduled block (STA − STD), not on SectorValue. Across a month with several DHF sectors the two totals can differ by tens of minutes, which translates to several hundred rupees. PAH §1.0 is unambiguous: scheduled block is the basis. If the SV minutes for a DHF sector look low, check it against STA − STD from the published schedule for the date of operation.</p>
+    </details>
+    <details>
+      <summary>What does FLTNBR look like in the SV file?</summary>
+      <p>FLTNBR is stored as an integer without the <code>6E</code> prefix. So flight 6E519 is stored as <code>519</code>, 6E2052 as <code>2052</code>, 6E6045 as <code>6045</code>. When matching against your PCSR (which shows <code>6E</code>-prefixed flight numbers), strip the prefix and compare numerically. SV also doesn't carry letter suffixes — the air-return code <code>6805A</code> appears as <code>FLTNBR=6805</code> with <code>DEP=ARR=BLR</code>; the suffix and the round-trip pattern are inferred from <code>DEP=ARR</code> rather than from the flight number itself.</p>
+    </details>
+    <details>
+      <summary>Why does the SV file sometimes have BLR-BLR or DEL-DEL rows?</summary>
+      <p>Same departure and arrival airport in the SV file marks an irregular operation — most commonly an air-return (Ground-Turn-Back) where the aircraft took off, encountered a problem, and returned to the originating airport. The SectorValue for these rows reflects the actual block time of the abort, typically 30–90 minutes. The pilot's eventual successful flight to the original destination appears as a separate normal row with the original DEP and ARR.</p>
+    </details>
+    <details>
+      <summary>What if the SV file for my month isn't available yet?</summary>
+      <p>SV files are typically published around the 20th of the following month. If you're trying to verify a payslip earlier than that, the calculator can fall back to the previous 1–3 months' SV files as an approximation. Sector pay rates and time-slot patterns are stable month-to-month, so a January SV file usually maps acceptably to February or March operations. The calculator surfaces a banner when an approximation is in use so you know the result isn't from the canonical source.</p>
+    </details>
+  </div>
+
+  <div class="related">
+    <h3 style="margin-bottom:12px;">Related guides</h3>
     <ul>
       <li><a href="/guides/what-is-pcsr.html">What Is a PCSR? IndiGo's Personal Crew Schedule Report Explained →</a></li>
-      <li><a href="/guides/pah-flt-explained.html">PAH FLT Issue 01 Rev 46 — Plain-English Pilot Reference →</a></li>
-      <li><a href="/guides/payslip-glossary.html">IndiGo Pilot Payslip Glossary — Every Line Item Explained →</a></li>
-      <li><a href="/guides/captain-vs-fo-rates.html">Captain vs First Officer Allowance Rates — IndiGo →</a></li>
-      <li><a href="/guides/indigo-allowance-pitfalls.html">Top IndiGo Allowance Pitfalls — Why Pilots' Payslips Look Wrong →</a></li>
+      <li><a href="/guides/indigo-night-flying-allowance.html">Night Flying Allowance — Why It's Calculated From STD, Not ATD (PAH §9.0) →</a></li>
+      <li><a href="/guides/indigo-deadhead-allowance.html">Deadhead Allowance — Per Scheduled Block Hour (PAH §1.0) →</a></li>
+      <li><a href="/guides/indigo-tlpd-layover-allowance.html">TLPD on Your IndiGo Payslip — Domestic Layover Allowance Explained (PAH §2.0) →</a></li>
+      <li><a href="/guides/indigo-tail-swap-allowance.html">Tail Swap Allowance — When You Get Paid ₹1,500 (PAH §6.0) →</a></li>
     </ul>
   </div>
-</main>
+
+</article>
 
 <footer class="site">
   <div>
@@ -264,6 +579,7 @@
     CrewAllowance.com is an independent tool. Not affiliated with, endorsed by,
     or sponsored by InterGlobe Aviation Ltd. or IndiGo. PAH section references
     are to the Pilot Allowance Handbook FLT Issue 01 Rev 46 (effective 1 January 2026).
+    This guide is provided for verification purposes and does not constitute payroll advice.
   </div>
   <div style="margin-top:14px; font-size:11px; color:rgba(255,255,255,0.35);">
     © 2026 CrewAllowance.com
