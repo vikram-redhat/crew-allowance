@@ -33,6 +33,33 @@ function t2m_local(s) {
   return h * 60 + (m || 0);
 }
 
+// Detect PCSRs whose embedded font lacks a /ToUnicode CMap. The visible
+// glyphs render fine in any PDF viewer, but text extractors (pdfjs, pdftotext,
+// pdfminer) get back the post-encoding bytes — which fall in Latin Extended-A/B
+// (U+0100–U+024F) and look like Cyrillic/Greek mojibake (Ŷ, ƚ, Ğ, ƌ, etc.).
+// Known producer: DevExpress XtraReports (older IndiGo eCrew export path).
+//
+// Heuristic: if the first 2000 chars contain ≥30 extended-Latin codepoints AND
+// more than twice the number of ASCII letters, the font is uncooperative and
+// no amount of regex tuning will recover the sectors. Bail early with an
+// actionable error rather than misclassifying as EOM-with-no-sectors.
+//
+// Returns a small diagnostic object so callers (and admin telemetry) can
+// distinguish encoding-broken from genuinely-empty PDFs.
+function detectEncodingBroken(text) {
+  const sample = String(text || "").slice(0, 2000);
+  if (!sample) return { broken: false, extCount: 0, asciiLetters: 0 };
+  let extCount = 0;
+  let asciiLetters = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const cp = sample.charCodeAt(i);
+    if (cp >= 0x0100 && cp <= 0x024F) extCount++;
+    else if ((cp >= 0x41 && cp <= 0x5A) || (cp >= 0x61 && cp <= 0x7A)) asciiLetters++;
+  }
+  const broken = extCount >= 30 && extCount > asciiLetters * 2;
+  return { broken, extCount, asciiLetters };
+}
+
 // Parse DD/MM/YY or DD/MM/YYYY → "YYYY-MM-DD"
 function parseDate(d) {
   if (!d) return null;
@@ -1232,6 +1259,23 @@ export async function parsePcsrPdf(buffer) {
   const { pdfArrayBufferToItems } = await import("./pdfToText.js");
   const { pages } = await pdfArrayBufferToItems(buffer);
   const rawText = pages.map(p => p.items.map(it => it.str).join(" ")).join("\n");
+
+  // Bail out early on PDFs whose embedded font lacks a /ToUnicode CMap.
+  // No format detector or sector regex will work — the text is mojibake.
+  // Throwing a specific, actionable error here is much more useful than the
+  // generic "no sectors found" message the user would otherwise see.
+  const enc = detectEncodingBroken(rawText);
+  if (enc.broken) {
+    const err = new Error(
+      "Could not read text from this PCSR PDF. " +
+      "The file appears to use a non-standard font that prevents text extraction. " +
+      "Please re-export your PCSR from eCrew using the 'Download' option (not 'Print to PDF'), " +
+      "and try again. If the issue persists, please email the file to help@crewallowance.com so we can investigate."
+    );
+    err.code = "ENCODING_BROKEN";
+    err.diagnostic = { extCount: enc.extCount, asciiLetters: enc.asciiLetters };
+    throw err;
+  }
 
   const format = detectFormat(rawText);
 

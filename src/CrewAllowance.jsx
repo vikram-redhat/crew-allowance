@@ -19,7 +19,7 @@ const sbWarn = () => console.warn("Supabase not configured — set VITE_SUPABASE
 ═══════════════════════════════════════════════════════════════════ */
 const CONFIG = {
   appName:       "CrewAllowance.com",
-  airline:       "IndiGo",
+  airline:       "",   // Carrier name decoration — blank = generic (no airline shown beside logo/footer)
   tagline:       "Eff. Jan 2026",
   copyrightYear: "2026",
   siteUrl:       "https://crewallowance.com",
@@ -54,7 +54,7 @@ const rankBucket = r => {
 
 const DEFAULT_RATES = {
   lastUpdated: "1 January 2026",
-  source: "IndiGo Revised Cockpit Crew Allowances",
+  source: "Default cockpit crew allowance rates",
   deadhead:  { Captain: 4000, "First Officer": 2000, "Cabin Crew": null },
   night:     { Captain: 2000, "First Officer": 1000, "Cabin Crew": null },
   layover:   { Captain: { base: 3000, beyondRate: 150 }, "First Officer": { base: 1500, beyondRate: 75 }, "Cabin Crew": null },
@@ -534,7 +534,7 @@ function dlCSV(res, pilot) {
   add(); add("DEADHEAD"); add("Date","Flight","From","To","Sched Block (mins)","Amount (INR)");
   res.deadhead.sectors.forEach(s => add(s.date, s.flight, s.from, s.to, s.scheduled_block_mins, Math.round(s.amount)));
   add("TOTAL","","","","", Math.round(res.deadhead.amount)); add();
-  add("NIGHT FLYING (00:00–06:00 IST, PAH §9.0)"); add("Date","Flight","From","To","STD IST","STA IST","Night Mins","SV","Amount (INR)");
+  add("NIGHT FLYING (00:00–06:00 local)"); add("Date","Flight","From","To","STD","STA","Night Mins","SV","Amount (INR)");
   res.night.sectors.forEach(s => add(s.date, s.flight, s.from, s.to, s.std_ist, s.sta_ist, s.night_mins, s.sv_used ?? "—", Math.round(s.amount)));
   add("TOTAL","","","","","","", Math.round(res.night.amount)); add();
   add("LAYOVER"); add("Station","Date In","Date Out","Check-In","Check-Out","Hrs","Base","Extra","Total (INR)","Note");
@@ -808,7 +808,7 @@ function AuthShell({ children, title, sub, wide, onSubmit }) {
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:26, margin:"0 auto 12px", boxShadow:"0 6px 20px rgba(26,111,212,0.3)" }}>✈</div>
         <div style={{ fontSize:22, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
-        <div style={{ fontSize:11, color:C.blue, letterSpacing:"0.12em", textTransform:"uppercase", marginTop:2, opacity:0.75 }}>{CONFIG.airline} · {CONFIG.tagline}</div>
+        <div style={{ fontSize:11, color:C.blue, letterSpacing:"0.12em", textTransform:"uppercase", marginTop:2, opacity:0.75 }}>{CONFIG.airline ? `${CONFIG.airline} · ${CONFIG.tagline}` : CONFIG.tagline}</div>
       </div>
       <form onSubmit={handleSubmit} style={{ width:"100%", maxWidth:wide ? 520 : 420, background:C.white, borderRadius:22,
         boxShadow:"0 12px 48px rgba(26,111,212,0.14)", padding:"28px 24px", border:"1px solid "+C.border }}>
@@ -1188,15 +1188,15 @@ function LandingPage({ goLogin, goSignup }) {
   const steps = [
     { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your final Personal Crew Schedule Report (PCSR) for the month as a PDF from eCrew." },
     { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
-    { icon:"⚡", title:"Instant enrichment & calculation", body:"The app fetches scheduled times and aircraft registrations automatically from AeroDataBox, then applies all IndiGo allowance rules instantly." },
+    { icon:"⚡", title:"Instant enrichment & calculation", body:"The app fetches scheduled times and aircraft registrations automatically, then applies your airline's allowance rules instantly." },
     { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown of every allowance for the month — ready to verify against your payslip." },
   ];
   const allowances = [
     { name:"Deadhead",    icon:"🛫", desc:"Per scheduled block hour when positioned as non-operating crew",       captain:"₹4,000/hr",  fo:"₹2,000/hr",  href:"/guides/indigo-deadhead-allowance.html" },
-    { name:"Night Flying",icon:"🌙", desc:"For each hour flown between 0000–0600 IST per PAH §9.0",              captain:"₹2,000/hr",  fo:"₹1,000/hr",  href:"/guides/indigo-night-flying-allowance.html" },
+    { name:"Night Flying",icon:"🌙", desc:"For each hour flown between 00:00 and 06:00",                          captain:"₹2,000/hr",  fo:"₹1,000/hr",  href:"/guides/indigo-night-flying-allowance.html" },
     { name:"Layover",     icon:"🏨", desc:"For stays away from home base exceeding 10 hours 01 minute",          captain:"₹3,000 base",fo:"₹1,500 base", href:"/guides/indigo-tlpd-layover-allowance.html" },
     { name:"Tail-Swap",   icon:"✈️", desc:"When aircraft registration changes between consecutive sectors",       captain:"₹1,500/swap",fo:"₹750/swap",  href:"/guides/indigo-tail-swap-allowance.html" },
-    { name:"Transit",     icon:"⏱",  desc:"Pro-rata for domestic halts between 90 mins and 4 hrs (PAH §7.0)",   captain:"₹1,000/hr",  fo:"₹500/hr",    href:"/guides/indigo-transit-halt-allowance.html" },
+    { name:"Transit",     icon:"⏱",  desc:"Pro-rata for domestic halts between 90 mins and 4 hrs",               captain:"₹1,000/hr",  fo:"₹500/hr",    href:"/guides/indigo-transit-halt-allowance.html" },
   ];
   return (
     <div style={{ background:C.white, fontFamily:"'Nunito','Segoe UI',sans-serif", color:C.text }}>
@@ -1223,18 +1223,18 @@ function LandingPage({ goLogin, goSignup }) {
         <div style={{ position:"relative", maxWidth:640, margin:"0 auto" }}>
           <div style={{ display:"inline-block", background:"rgba(255,255,255,0.12)", borderRadius:20,
             padding:"4px 14px", fontSize:12, color:"rgba(255,255,255,0.9)", fontWeight:700,
-            letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:20 }}>For IndiGo Cockpit Crew</div>
+            letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:20 }}>For Cockpit Crew</div>
           <h1 style={{ fontSize:"clamp(28px,6vw,48px)", fontWeight:900, color:C.white,
             lineHeight:1.1, letterSpacing:"-0.02em", margin:"0 0 14px" }}>
-            IndiGo Pilot Allowance Calculator
+            Pilot Allowance Calculator
           </h1>
           <div style={{ fontSize:"clamp(16px,3vw,22px)", fontWeight:700, color:"rgba(255,255,255,0.92)",
             margin:"0 0 18px", lineHeight:1.3 }}>
-            Verify every PAH allowance on your monthly payslip
+            Verify every allowance on your monthly payslip
           </div>
           <p style={{ fontSize:"clamp(14px,2.5vw,18px)", color:"rgba(255,255,255,0.75)",
             maxWidth:520, margin:"0 auto 32px", lineHeight:1.6 }}>
-            CrewAllowance.com checks your IndiGo monthly allowances — Deadhead, TLPD layover, Transit halt, Tail swap and Night flying — against PAH FLT Issue 01 Rev 46. Upload your PCSR, get a per-sector breakdown in two minutes.
+            CrewAllowance.com checks your monthly allowances — Deadhead, Layover, Transit halt, Tail swap and Night flying — against your airline's handbook. Upload your crew schedule, get a per-sector breakdown in two minutes.
           </p>
           <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
             <button type="button" onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
@@ -1279,25 +1279,25 @@ function LandingPage({ goLogin, goSignup }) {
       <div style={{ background:C.white, padding:"56px 20px", borderBottom:"1px solid "+C.border }}>
         <div style={{ maxWidth:760, margin:"0 auto" }}>
           <div style={{ textAlign:"center", marginBottom:28 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>What is an IndiGo pilot allowance?</div>
+            <div style={{ fontSize:12, fontWeight:700, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>What is a pilot allowance?</div>
             <h2 style={{ fontSize:"clamp(20px,3.5vw,28px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em", margin:"0 0 14px" }}>
-              Five PAH allowances. One independent calculator.
+              Five core allowances. One independent calculator.
             </h2>
             <p style={{ fontSize:15, color:C.textMid, lineHeight:1.65, margin:"0 auto", maxWidth:620 }}>
-              IndiGo cockpit crew earn five separate monthly allowances under the
-              Pilot Allowance Handbook (PAH) FLT Issue 01 Rev 46. CrewAllowance.com
-              recalculates each one from your end-of-month PCSR so you can verify
-              your payslip line by line. Built by pilots, for pilots — independent
-              and not affiliated with InterGlobe Aviation Ltd.
+              Cockpit crew typically earn five separate monthly allowances on top
+              of base pay. CrewAllowance.com recalculates each one from your
+              end-of-month crew schedule so you can verify your payslip line by
+              line. Built by pilots, for pilots — independent and not affiliated
+              with any airline.
             </p>
           </div>
           <div style={{ display:"grid", gap:10, gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))" }}>
             {[
-              { name:"Deadhead Allowance",   ref:"PAH §1.0", href:"/guides/indigo-deadhead-allowance.html",  blurb:"₹4,000/sched block hour, DHF only" },
-              { name:"TLPD / Layover",       ref:"PAH §2.0", href:"/guides/indigo-tlpd-layover-allowance.html", blurb:"₹3,000 flat 10:01–24:00 hrs away from base" },
-              { name:"Tail Swap Allowance",  ref:"PAH §6.0", href:"/guides/indigo-tail-swap-allowance.html",  blurb:"₹1,500 per same-duty aircraft change" },
-              { name:"Transit Halt",         ref:"PAH §7.0", href:"/guides/indigo-transit-halt-allowance.html", blurb:"₹1,000/hr, 90-min rule, 4-hr cap" },
-              { name:"Night Flying",         ref:"PAH §9.0", href:"/guides/indigo-night-flying-allowance.html", blurb:"₹2,000/night hour, STD-based 0001–0600" },
+              { name:"Deadhead Allowance",   ref:"Per block hour", href:"/guides/indigo-deadhead-allowance.html",  blurb:"₹4,000/sched block hour, DHF only" },
+              { name:"Layover Allowance",    ref:"Per diem",       href:"/guides/indigo-tlpd-layover-allowance.html", blurb:"₹3,000 flat 10:01–24:00 hrs away from base" },
+              { name:"Tail Swap Allowance",  ref:"Per swap",       href:"/guides/indigo-tail-swap-allowance.html",  blurb:"₹1,500 per same-duty aircraft change" },
+              { name:"Transit Halt",         ref:"Per hour",       href:"/guides/indigo-transit-halt-allowance.html", blurb:"₹1,000/hr, 90-min rule, 4-hr cap" },
+              { name:"Night Flying",         ref:"Per night hour", href:"/guides/indigo-night-flying-allowance.html", blurb:"₹2,000/night hour, 00:01–06:00" },
             ].map((a, i) => (
               <a key={i} href={a.href} style={{ display:"block", textDecoration:"none", color:"inherit",
                 background:C.sky, borderRadius:12, padding:"14px 16px", border:"1.5px solid "+C.border }}>
@@ -1346,7 +1346,7 @@ function LandingPage({ goLogin, goSignup }) {
       <div style={{ background:C.sky, padding:"60px 20px" }}>
         <div style={{ maxWidth:700, margin:"0 auto" }}>
           <div style={{ textAlign:"center", marginBottom:32 }}>
-            <h2 style={{ fontSize:"clamp(22px,4vw,30px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>All five IndiGo allowances covered</h2>
+            <h2 style={{ fontSize:"clamp(22px,4vw,30px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>All five core allowances covered</h2>
             <p style={{ fontSize:13, color:C.textMid, marginTop:8 }}>Rates effective 1 January 2026</p>
           </div>
           <div style={{ display:"grid", gap:10 }}>
@@ -1418,7 +1418,7 @@ function LandingPage({ goLogin, goSignup }) {
           Create your account →
         </button>
         <div style={{ marginTop:28, fontSize:11, color:"rgba(255,255,255,0.4)", letterSpacing:"0.06em" }}>
-          © {CONFIG.copyrightYear} {CONFIG.appName} · For {CONFIG.airline} crew members
+          © {CONFIG.copyrightYear} {CONFIG.appName} · For airline crew members
         </div>
         <div style={{ marginTop:12, display:"flex", gap:20, justifyContent:"center", flexWrap:"wrap" }}>
           <a href="/guides/"      style={{ fontSize:12, color:"rgba(255,255,255,0.45)", textDecoration:"none" }}>Allowance Guides</a>
@@ -1546,10 +1546,10 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
   };
 
   return (
-    <AuthShell title="Create account" sub="IndiGo crew only · Takes 60 seconds" onSubmit={submit}>
+    <AuthShell title="Create account" sub="Airline crew · Takes 60 seconds" onSubmit={submit}>
       <FInput label="Full name" value={name} onChange={setName} placeholder="Your full name as it appears on your ID" />
       <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your email address" />
-      <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your IndiGo employee number" hint="Required — keeps your account secure and unique" />
+      <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your airline employee number" hint="Required — keeps your account secure and unique" />
       <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
       <FInput label="Home Base (IATA)" value={base} onChange={setBase} placeholder="e.g. DEL" hint="3-letter IATA code of your home airport" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Choose a strong password (min 8 characters)" />
@@ -2000,8 +2000,8 @@ function ProfileScreen({ user, onSave }) {
       )}
       <Card>
         <div onKeyDown={e => { if (e.key === "Enter") save(); }}>
-          <FInput label="Full Name" value={name}  onChange={setName}  placeholder="Your name as on IndiGo ID" />
-          <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your IndiGo employee number" hint="Required" />
+          <FInput label="Full Name" value={name}  onChange={setName}  placeholder="Your name as on airline ID" />
+          <FInput label="Employee ID" value={empId} onChange={setEmpId} placeholder="Your airline employee number" hint="Required" />
           <FSelect label="Rank" value={rank} onChange={setRank} options={RANKS} />
           <FInput label="Home Base (IATA)" value={base} onChange={v => setBase(v.toUpperCase().slice(0,3))} placeholder="e.g. DEL" hint="3-letter IATA code of your home base airport" />
           {err && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -2677,7 +2677,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
               border:"1px solid " + (result.rates_meta.isHistorical ? C.goldBorder : C.border),
               color: result.rates_meta.isHistorical ? C.goldText : C.textMid, lineHeight:1.55 }}>
               {result.rates_meta.isHistorical ? <strong>Historical rates applied — </strong> : <strong>Rates applied: </strong>}
-              IndiGo allowance rates effective <strong>{new Date(result.rates_meta.effective_from + "T00:00:00Z").toLocaleDateString("en-IN", { day:"numeric", month:"long", year:"numeric", timeZone:"UTC" })}</strong>
+              Allowance rates effective <strong>{new Date(result.rates_meta.effective_from + "T00:00:00Z").toLocaleDateString("en-IN", { day:"numeric", month:"long", year:"numeric", timeZone:"UTC" })}</strong>
               {result.rates_meta.source ? ` (${result.rates_meta.source})` : ""}.
               {result.rates_meta.isHistorical && (
                 <> Newer rates effective <strong>{new Date(result.rates_meta.latest_effective_from + "T00:00:00Z").toLocaleDateString("en-IN", { day:"numeric", month:"long", year:"numeric", timeZone:"UTC" })}</strong> exist but do not apply to this PCSR's month.</>
@@ -2707,7 +2707,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
                 ))}
               </ul>
               <div>
-                IndiGo typically pays additional <strong>tail-swap (~₹{(1500).toLocaleString("en-IN")})</strong> and <strong>transit allowance</strong> for each such event under disruption rules that don't cleanly map to PAH §6.0/§7.0. We can't compute these reliably yet, so your total below may be <strong>under by roughly ₹3,000 per air-return</strong>. <strong>Please verify against your payslip.</strong>
+                Airlines typically pay additional <strong>tail-swap (~₹{(1500).toLocaleString("en-IN")})</strong> and <strong>transit allowance</strong> for each such event under disruption rules that the calculator can't reliably reconstruct yet, so your total below may be <strong>under by roughly ₹3,000 per air-return</strong>. <strong>Please verify against your payslip.</strong>
               </div>
             </div>
           )}
@@ -2752,7 +2752,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
           )}
           {result.night.sectors.length > 0 && (
             <CollapsibleTable title="Night Flying Allowance" total={result.night.amount}
-              note="PAH §9.0: STD (IST) + Sector Value → intersect with 00:00–06:00 IST"
+              note="Computed from STD (local) + Sector Value, intersected with 00:00–06:00."
               headers={["Date","Flight","Route","STD","Est. ATA","Night Mins","SV","Amount"]} rows={result.night.sectors}
               renderRow={(s,i) => (
                 <tr key={i}><TC i={i}>{s.date}</TC><TC i={i}>{s.flight}</TC><TC i={i}>{s.from}→{s.to}</TC>
@@ -2799,7 +2799,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
           )}
           {result.transit.halts.length > 0 && (
             <CollapsibleTable title="Transit Allowance" total={result.transit.amount}
-              note="PAH §7.0: scheduled halt primary; actual if differs >15 mins. Min 90 mins, capped 4 hrs."
+              note="Scheduled halt primary; actual if differs >15 mins. Min 90 mins, capped 4 hrs."
               headers={["Date","Station","Arrived","Departed","Halt","Billable","Basis","Amount"]} rows={result.transit.halts}
               renderRow={(h,i) => (
                 <tr key={i}><TC i={i}>{h.date}</TC><TC i={i}><strong>{h.station}</strong></TC>
@@ -3541,7 +3541,7 @@ function RatesEditorPanel({ adminEmail }) {
         {editing && (
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
             <input type="text" value={draft.source} onChange={e => setDraft({ ...draft, source: e.target.value })}
-              placeholder="Source (e.g. IndiGo Circular YYYY-MM)"
+              placeholder="Source (e.g. Airline Circular YYYY-MM)"
               style={{ padding:"8px 10px", border:"1.5px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:"inherit" }} />
             <input type="text" value={draft.note} onChange={e => setDraft({ ...draft, note: e.target.value })}
               placeholder="Optional note"
@@ -3579,7 +3579,7 @@ function RatesEditorPanel({ adminEmail }) {
         {/* Layover row (nested base + beyondRate per rank) */}
         <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed "+C.border }}>
           <div style={{ fontSize:11, color:C.textMid, fontWeight:600, marginBottom:6 }}>
-            Domestic Layover (TLPD): base ₹ for 10:01–24:00, then per extra hour
+            Domestic Layover: base ₹ for 10:01–24:00, then per extra hour
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"170px 1fr 1fr 1fr", gap:8, marginBottom:4 }}>
             <div style={{ fontSize:10, color:C.textMid, paddingLeft:8 }}>Base ₹</div>
@@ -3609,7 +3609,7 @@ function RatesEditorPanel({ adminEmail }) {
   return (
     <div>
       <Card color="blue" style={{ marginBottom:14 }}>
-        <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:6 }}>IndiGo Allowance Rates — versioned history</div>
+        <div style={{ fontSize:13, fontWeight:700, color:C.navy, marginBottom:6 }}>Allowance Rates — versioned history</div>
         <div style={{ fontSize:12, color:C.textMid, lineHeight:1.6 }}>
           Each version applies from its <strong>effective-from</strong> date onwards, until a newer version takes over. When a pilot runs a PCSR for a given month, the calculator picks the version whose effective-from is the most recent date on or before the start of that month — so a January PCSR run in May still uses January's rates after April's rates were added. Cabin Crew rates are not currently calculated; leave them blank.
         </div>
@@ -3634,7 +3634,7 @@ function RatesEditorPanel({ adminEmail }) {
             <input type="date" value={newEffectiveFrom} onChange={e => setNewEffectiveFrom(e.target.value)}
               style={{ padding:"8px 10px", border:"1.5px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:"inherit" }} />
             <input type="text" value={newSource} onChange={e => setNewSource(e.target.value)}
-              placeholder="Source (e.g. IndiGo Circular Apr 2026)"
+              placeholder="Source (e.g. Airline Circular Apr 2026)"
               style={{ padding:"8px 10px", border:"1.5px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:"inherit" }} />
           </div>
           <input type="text" value={newNote} onChange={e => setNewNote(e.target.value)}
@@ -3661,7 +3661,7 @@ function RatesEditorPanel({ adminEmail }) {
             </div>
           ))}
           <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed "+C.border }}>
-            <div style={{ fontSize:11, color:C.textMid, fontWeight:600, marginBottom:6 }}>Domestic Layover (TLPD)</div>
+            <div style={{ fontSize:11, color:C.textMid, fontWeight:600, marginBottom:6 }}>Domestic Layover</div>
             {[["base", "Base ₹"], ["beyondRate", "Per extra hour ₹"]].map(([sub, sublbl]) => (
               <div key={sub} style={{ display:"grid", gridTemplateColumns:"170px 1fr 1fr 1fr", gap:8, marginBottom:4 }}>
                 <div style={{ fontSize:10, color:C.textMid, paddingLeft:8 }}>{sublbl}</div>
@@ -4059,7 +4059,7 @@ function AdminScreen({ rates, adminEmail }) {
             </div>
 
             {[
-              { id:"adb",     title:"AeroDataBox",     note:"Cheapest. Quality has been inconsistent for IndiGo (wrong STA on some sectors); kept as a fallback." },
+              { id:"adb",     title:"AeroDataBox",     note:"Cheapest. Quality has been inconsistent (wrong STA on some sectors); kept as a fallback." },
               { id:"fr24",    title:"Flightradar24",   note:"Excellent actuals + aircraft regs. NO scheduled times — derived from actuals. Best for tail-swap detection." },
               { id:"aeroapi", title:"FlightAware",     note:"Best of both: scheduled AND actual gate times AND aircraft reg. History to 2011. Pay-per-query (~$0.002/call)." },
             ].map(opt => (
@@ -4102,7 +4102,7 @@ function AdminScreen({ rates, adminEmail }) {
               FR24 fallback for missing aircraft reg
             </div>
             <div style={{ fontSize:12, color:C.textMid, marginBottom:14, lineHeight:1.6 }}>
-              FlightAware sometimes returns <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>null</code> for aircraft registration on certain IndiGo flights (e.g. 6E2230 DEL-KNU on 1 Jan, 6E2052 DEL-HYD on 11 Jan). When this happens, the calculator can make a secondary call to FR24 — which has carried valid regs for the same flights — and merge the reg into the cached row. Only fires when the primary provider is <strong>FlightAware</strong>.
+              FlightAware sometimes returns <code style={{ background:C.sky, padding:"1px 5px", borderRadius:4 }}>null</code> for aircraft registration on certain regional sectors where ADS-B / surface coverage is incomplete (FA support has confirmed this for Indian Tier-2 airports). When this happens, the calculator can make a secondary call to FR24 — which has carried valid regs for the same flights — and merge the reg into the cached row. Only fires when the primary provider is <strong>FlightAware</strong>.
               <br /><br />
               <strong>Cost: zero.</strong> FR24 Essential is flat $90/month, so fallback calls don't add to the bill. Disable this once FlightAware fixes their data so your usage panel goes back to a single provider.
               <br /><br />
@@ -4380,7 +4380,7 @@ function AppInner() {
             display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
           <div>
             <div style={{ fontSize:16, fontWeight:900, color:C.navy, letterSpacing:"-0.02em", lineHeight:1 }}>{APP_NAME}</div>
-            <div style={{ fontSize:9, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", opacity:0.75 }}>{CONFIG.airline}</div>
+            {CONFIG.airline && <div style={{ fontSize:9, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", opacity:0.75 }}>{CONFIG.airline}</div>}
           </div>
         </div>
         <button type="button" onClick={onLogout} style={{ background:C.blueXLight, border:"1px solid "+C.border,
