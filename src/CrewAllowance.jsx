@@ -1187,7 +1187,7 @@ function LandingPage({ goLogin, goSignup }) {
   const { C } = useColors();
   const steps = [
     { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your final Personal Crew Schedule Report (PCSR) for the month as a PDF from eCrew." },
-    { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need. Sector Values are uploaded once per month by your admin — shared across all crew." },
+    { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need." },
     { icon:"⚡", title:"Instant enrichment & calculation", body:"The app fetches scheduled times and aircraft registrations automatically, then applies your airline's allowance rules instantly." },
     { icon:"📊", title:"Download your breakdown", body:"Get a complete itemised CSV breakdown of every allowance for the month — ready to verify against your payslip." },
   ];
