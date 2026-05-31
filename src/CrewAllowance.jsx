@@ -1434,7 +1434,7 @@ function LandingPage({ goLogin, goSignup }) {
 /* ═══════════════════════════════════════════════════════════════════
    AUTH SCREENS (Login, Signup, Checkout, Forgot, ResetPassword)
 ═══════════════════════════════════════════════════════════════════ */
-function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout }) {
+function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout, maintenanceMode }) {
   const { C } = useColors();
   const [email, setEmail] = useState("");
   const [pass,  setPass]  = useState("");
@@ -1448,6 +1448,16 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout }) {
     if (error) { setErr("Invalid email or password."); setBusy(false); return; }
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single();
     if (!profile) { setErr("Account not found. Please contact admin."); setBusy(false); return; }
+    // During maintenance, give non-admins a clear in-place error rather than
+    // silently routing them to the maintenance screen on the next render.
+    // Also sign them back out so a stale session doesn't accidentally lift
+    // restrictions if maintenance flips off mid-session.
+    if (maintenanceMode && !profile.is_admin) {
+      try { await supabase.auth.signOut(); } catch { /* best-effort */ }
+      setErr("The site is currently in maintenance. Please try again later.");
+      setBusy(false);
+      return;
+    }
     if (!profile.is_active && !profile.is_admin) {
       // Comp users awaiting admin approval — keep the explanation, no path
       // forward yet (admin has to flip them active manually).
@@ -1468,7 +1478,17 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout }) {
   };
 
   return (
-    <AuthShell title="Welcome back" sub="Sign in to your CrewAllowance.com account" onSubmit={submit}>
+    <AuthShell
+      title={maintenanceMode ? "Admin sign-in" : "Welcome back"}
+      sub={maintenanceMode ? "Site is in maintenance — admin access only" : "Sign in to your CrewAllowance.com account"}
+      onSubmit={submit}
+    >
+      {maintenanceMode && (
+        <div style={{ padding:"10px 14px", background:C.goldBg, border:"1px solid "+C.goldBorder,
+          borderRadius:8, color:C.goldText, fontSize:12, marginBottom:14, lineHeight:1.5 }}>
+          <strong>🔧 Maintenance mode is on.</strong> Only administrators can sign in right now. Pilots will be able to use the site again as soon as we're done.
+        </div>
+      )}
       <FInput label="Email address" type="email" value={email} onChange={setEmail} placeholder="Your registered email address" autoComplete="email" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Your password" autoComplete="current-password" />
       {err && <div style={{ padding:"10px 14px", background:C.redBg, border:"1px solid #fca5a5", borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
@@ -1476,10 +1496,12 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout }) {
       <div style={{ marginTop:14, textAlign:"center" }}>
         <button type="button" onClick={goForgot} style={{ background:"none", border:"none", color:C.blue, fontSize:13, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>Forgot password?</button>
       </div>
-      <div style={{ marginTop:10, textAlign:"center", fontSize:13, color:C.textMid }}>
-        New user?{" "}
-        <button type="button" onClick={goSignup} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700 }}>Create an account</button>
-      </div>
+      {!maintenanceMode && (
+        <div style={{ marginTop:10, textAlign:"center", fontSize:13, color:C.textMid }}>
+          New user?{" "}
+          <button type="button" onClick={goSignup} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700 }}>Create an account</button>
+        </div>
+      )}
       <div style={{ marginTop:10, textAlign:"center" }}>
         <button type="button" onClick={goLanding} style={{ background:"none", border:"none", color:C.textLo, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>← Back to home</button>
       </div>
@@ -4360,7 +4382,7 @@ function AppInner() {
   }
 
   if (screen === "landing")        return <LandingPage goLogin={() => setScreen("login")} goSignup={() => setScreen("signup")} />;
-  if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} />;
+  if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} maintenanceMode={maintenance.enabled} />;
   if (screen === "signup")         return <SignupScreen goLogin={() => setScreen("login")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} goForgot={() => setScreen("forgot")} />;
   if (screen === "checkout")       return <CheckoutScreen pendingUser={pendingUser} goLogin={() => setScreen("login")} onActivate={onActivate} />;
   if (screen === "forgot")         return <ForgotScreen goLogin={() => setScreen("login")} />;
