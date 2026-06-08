@@ -1184,7 +1184,7 @@ function PayslipCompare() {
    LANDING PAGE
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
-  const { C } = useColors();
+  const { C, effective } = useColors();
   const steps = [
     { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your final Personal Crew Schedule Report (PCSR) for the month as a PDF from eCrew." },
     { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need." },
@@ -1200,7 +1200,7 @@ function LandingPage({ goLogin, goSignup }) {
   ];
   return (
     <div style={{ background:C.white, fontFamily:"'Nunito','Segoe UI',sans-serif", color:C.text }}>
-      <div style={{ position:"sticky", top:0, zIndex:20, background:"rgba(255,255,255,0.95)",
+      <div style={{ position:"sticky", top:0, zIndex:20, background:effective === "dark" ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
         backdropFilter:"blur(10px)", borderBottom:"1px solid "+C.border,
         padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1240,13 +1240,13 @@ function LandingPage({ goLogin, goSignup }) {
             <button type="button" onClick={goSignup} style={{ background:C.white, border:"none", borderRadius:12,
               color:C.blue, fontSize:15, padding:"14px 28px", cursor:"pointer", fontWeight:800,
               fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,0.2)" }}>
-              Get started — ₹100/month →
+              Get started — Free →
             </button>
             <button type="button" onClick={goLogin} style={{ background:"rgba(255,255,255,0.15)",
               border:"1.5px solid rgba(255,255,255,0.3)", borderRadius:12, color:C.white,
               fontSize:15, padding:"14px 28px", cursor:"pointer", fontWeight:700, fontFamily:"inherit" }}>Sign in</button>
           </div>
-          <div style={{ marginTop:20, fontSize:12, color:"rgba(255,255,255,0.5)" }}>No credit card required to try · Cancel anytime</div>
+          <div style={{ marginTop:20, fontSize:12, color:"rgba(255,255,255,0.5)" }}>No credit card required · 1 calculation per month</div>
         </div>
       </div>
       <div style={{ background:C.sky, borderTop:"1px solid "+C.border, borderBottom:"1px solid "+C.border,
@@ -1386,14 +1386,14 @@ function LandingPage({ goLogin, goSignup }) {
         </div>
       </div>
       <div style={{ maxWidth:480, margin:"0 auto", padding:"60px 20px", textAlign:"center" }}>
-        <h2 style={{ fontSize:"clamp(22px,4vw,30px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em", marginBottom:24 }}>Simple, affordable pricing</h2>
+        <h2 style={{ fontSize:"clamp(22px,4vw,30px)", fontWeight:900, color:C.navy, letterSpacing:"-0.01em", marginBottom:24 }}>Simple, free access</h2>
         <div style={{ background:C.white, borderRadius:20, padding:"32px 28px",
           border:"2px solid "+C.blue, boxShadow:C.shadowMd, marginBottom:20 }}>
           <div style={{ fontSize:48, fontWeight:900, color:C.navy, letterSpacing:"-0.02em" }}>
-            ₹100<span style={{ fontSize:16, fontWeight:600, color:C.textMid }}>/month</span>
+            FREE
           </div>
-          <div style={{ fontSize:13, color:C.textMid, margin:"4px 0 0" }}>or ₹1,000/year (save 17%)</div>
-          <div style={{ fontSize:13, color:C.textMid, margin:"8px 0 24px" }}>Per crew member · Cancel anytime</div>
+          <div style={{ fontSize:13, color:C.textMid, margin:"4px 0 0" }}>1 calculation per month</div>
+          <div style={{ fontSize:13, color:C.textMid, margin:"8px 0 24px" }}>Per crew member · Refreshes monthly</div>
           <div style={{ display:"grid", gap:8, marginBottom:24, textAlign:"left" }}>
             {["Upload only your PCSR","All 5 allowance types broken down","Auto schedule data via AeroDataBox","CSV breakdown download","Rates kept up-to-date"].map(f => (
               <div key={f} style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:C.text }}>
@@ -1434,7 +1434,7 @@ function LandingPage({ goLogin, goSignup }) {
 /* ═══════════════════════════════════════════════════════════════════
    AUTH SCREENS (Login, Signup, Checkout, Forgot, ResetPassword)
 ═══════════════════════════════════════════════════════════════════ */
-function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout, maintenanceMode }) {
+function LoginScreen({ onLogin, goSignup, goForgot, goLanding, maintenanceMode }) {
   const { C } = useColors();
   const [email, setEmail] = useState("");
   const [pass,  setPass]  = useState("");
@@ -1458,21 +1458,7 @@ function LoginScreen({ onLogin, goSignup, goForgot, goLanding, goCheckout, maint
       setBusy(false);
       return;
     }
-    if (!profile.is_active && !profile.is_admin) {
-      // Comp users awaiting admin approval — keep the explanation, no path
-      // forward yet (admin has to flip them active manually).
-      if (profile.subscription_status === "pending_approval") {
-        setErr("Your comp-access request is awaiting admin approval. We'll activate your account shortly. Questions? help@crewallowance.com");
-        setBusy(false); return;
-      }
-      // Everyone else inactive = signed up, never completed payment. Route
-      // them straight back to the checkout flow with their existing profile
-      // — same screen they would have seen right after signup. Lets them
-      // pick a plan and pay without us creating a duplicate account.
-      setBusy(false);
-      goCheckout({ ...profile, email: data.user.email });
-      return;
-    }
+    // Inactive checking temporarily bypassed for free tier
     onLogin({ ...profile, email: data.user.email });
     setBusy(false);
   };
@@ -1519,6 +1505,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
   const [pass,    setPass]    = useState("");
   const [confirm, setConfirm] = useState("");
   const [err,     setErr]     = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
   const [busy,    setBusy]    = useState(false);
 
   const submit = async () => {
@@ -1526,41 +1513,130 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
     if (!/\S+@\S+\.\S+/.test(email)) { setErr("Please enter a valid email address."); return; }
     if (pass !== confirm) { setErr("Passwords do not match."); return; }
     if (pass.length < 8)  { setErr("Password must be at least 8 characters."); return; }
-    setErr(""); setBusy(true);
+    setErr(""); setSuccessMsg(""); setBusy(true);
 
     // Server-side signup: does auth.createUser + profiles.insert atomically.
     // If profile insert fails (e.g. duplicate emp_id), the auth user is rolled
     // back so the email/password are freed for a clean retry.
     try {
-      const resp = await fetch("/api/signup", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          name, email, password: pass, emp_id: empId,
-          rank, home_base: base,
-        }),
-      });
-      const data = await resp.json();
-      if (!resp.ok || data.error) {
-        // Server returns either "duplicate_email" / "duplicate_emp_id" tokens
-        // (which the UI renders as friendly clickable messages) or a plain
-        // string for unexpected errors.
-        setErr(data.error || "Signup failed.");
-        setBusy(false);
-        return;
+      let resp = null;
+      let data = null;
+      let apiSucceeded = false;
+
+      try {
+        resp = await fetch("/api/signup", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            name, email, password: pass, emp_id: empId,
+            rank, home_base: base,
+          }),
+        });
+        if (resp.status !== 404) {
+          const text = await resp.text();
+          data = text ? JSON.parse(text) : {};
+          apiSucceeded = true;
+        }
+      } catch (apiErr) {
+        console.warn("API signup failed or not found, falling back to client-side signup:", apiErr);
       }
-      // Auto sign-in so the browser has a live Supabase session for the
-      // checkout/trial endpoints and any subsequent calls.
-      if (supabase) {
+
+      if (apiSucceeded) {
+        if (!resp.ok || data.error) {
+          // Server returns either "duplicate_email" / "duplicate_emp_id" tokens
+          // (which the UI renders as friendly clickable messages) or a plain
+          // string for unexpected errors.
+          setErr(data.error || "Signup failed.");
+          setBusy(false);
+          return;
+        }
+        // Auto sign-in so the browser has a live Supabase session for the
+        // checkout/trial endpoints and any subsequent calls.
+        if (supabase) {
+          const { error: signinErr } = await supabase.auth.signInWithPassword({ email, password: pass });
+          if (signinErr) {
+            // Edge case: account exists but sign-in failed. Send to login.
+            setErr("Account created. Please sign in to continue.");
+            setBusy(false);
+            return;
+          }
+        }
+        setBusy(false);
+        goCheckout(data.user);
+      } else {
+        // Fallback: direct client-side signup (during local dev without vercel dev API proxy)
+        if (!supabase) {
+          setErr("Database not configured. Cannot perform client-side signup.");
+          setBusy(false);
+          return;
+        }
+
+        // 1. Sign up auth user
+        const { data: created, error: signupErr } = await supabase.auth.signUp({
+          email,
+          password: pass,
+        });
+
+        if (signupErr) {
+          setErr(signupErr.message || "Signup failed.");
+          setBusy(false);
+          return;
+        }
+
+        const userId = created?.user?.id;
+        if (!userId) {
+          setErr("Auth user could not be created.");
+          setBusy(false);
+          return;
+        }
+
+        // 2. Insert profile
+        const { error: profileErr } = await supabase.from("profiles").insert({
+          id:        userId,
+          name,
+          email,
+          emp_id:    empId.trim(),
+          rank,
+          home_base: base.toUpperCase().slice(0, 3),
+          is_admin:  false,
+          is_active: true, // active by default for free tier
+        });
+
+        if (profileErr) {
+          // Duplicate check (best-effort since we can't rollback auth user without admin key)
+          const msg = (profileErr.message || "").toLowerCase();
+          if (msg.includes("emp_id") || msg.includes("profiles_emp_id_unique")) {
+            setErr("duplicate_emp_id");
+          } else if (msg.includes("email") || msg.includes("profiles_email_unique")) {
+            setErr("duplicate_email");
+          } else {
+            setErr(profileErr.message || "Could not create profile.");
+          }
+          setBusy(false);
+          return;
+        }
+
+        if (created?.user && !created?.session) {
+          setSuccessMsg("Account created successfully! A confirmation link has been sent to your email. Please check your inbox and confirm your email address to activate your account.");
+          setBusy(false);
+          return;
+        }
+
+        // 3. Auto sign-in
         const { error: signinErr } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (signinErr) {
-          // Edge case: account exists but sign-in failed. Send to login.
           setErr("Account created. Please sign in to continue.");
           setBusy(false);
           return;
         }
+
+        const { data: profile } = await supabase.from("profiles").select("*").eq("id", userId).single();
+        setBusy(false);
+        if (profile) {
+          goCheckout({ ...profile, email });
+        } else {
+          setErr("Account created. Please sign in to continue.");
+        }
       }
-      setBusy(false);
-      goCheckout(data.user);
     } catch (e) {
       setErr(e?.message || "Network error during signup.");
       setBusy(false);
@@ -1576,6 +1652,11 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
       <FInput label="Home Base (IATA)" value={base} onChange={setBase} placeholder="e.g. DEL" hint="3-letter IATA code of your home airport" />
       <FInput label="Password" type="password" value={pass} onChange={setPass} placeholder="Choose a strong password (min 8 characters)" />
       <FInput label="Confirm password" type="password" value={confirm} onChange={setConfirm} placeholder="Repeat your password" />
+      {successMsg && (
+        <div style={{ padding:"12px 14px", background:C.greenBg, border:"1px solid "+C.green, borderRadius:8, color:C.green, fontSize:12, marginBottom:14, lineHeight:1.5 }}>
+          {successMsg}
+        </div>
+      )}
       {err && !["duplicate_email","duplicate_emp_id"].includes(err) && <div style={{ padding:"10px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14 }}>{err}</div>}
       {err === "duplicate_email" && (
         <div style={{ padding:"12px 14px", background:C.redBg, borderRadius:8, color:C.red, fontSize:12, marginBottom:14, lineHeight:1.7 }}>
@@ -1594,7 +1675,7 @@ function SignupScreen({ goLogin, goLanding, goCheckout, goForgot }) {
           If this isn't you, please email <a href="mailto:help@crewallowance.com" style={{ color:C.blue }}>help@crewallowance.com</a>.
         </div>
       )}
-      <Btn onClick={submit} disabled={busy} submit>{busy ? "Creating account..." : "Continue to payment →"}</Btn>
+      <Btn onClick={submit} disabled={busy} submit>{busy ? "Creating account..." : "Sign up"}</Btn>
       <div style={{ marginTop:12, textAlign:"center", fontSize:13, color:C.textMid }}>
         Already registered?{" "}
         <button type="button" onClick={goLogin} style={{ background:"none", border:"none", color:C.blue, cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:700 }}>Sign in</button>
@@ -2275,7 +2356,7 @@ function UpgradeScreen({ user, onActivated, goBack }) {
 /* ═══════════════════════════════════════════════════════════════════
    CALC SCREEN  (PCSR-based, single file upload)
 ═══════════════════════════════════════════════════════════════════ */
-function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
+function CalcScreen({ user, rates, onNeedProfile }) {
   const { C } = useColors();
   const [pcsrFile,   setPcsrFile]   = useState(null);
   const [pcsrData,   setPcsrData]   = useState(null);   // parsed PCSR result
@@ -2289,6 +2370,48 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
 
   const homeBase = user.home_base || "DEL";
   const rank     = user.rank || "Captain";
+
+  const [runsThisMonth, setRunsThisMonth] = useState(0);
+  const [checkingLimit, setCheckingLimit] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    if (!supabase || user.is_admin) {
+      Promise.resolve().then(() => {
+        if (active) {
+          setRunsThisMonth(0);
+          setCheckingLimit(false);
+        }
+      });
+      return;
+    }
+
+    const fetchLimit = async () => {
+      try {
+        const now = new Date();
+        const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+        const { error, count } = await supabase
+          .from("calculation_runs")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .gte("ran_at", startOfMonth.toISOString());
+        
+        if (!error && active) {
+          setRunsThisMonth(count || 0);
+        }
+      } catch (e) {
+        console.warn("Error checking monthly limit:", e);
+      }
+      if (active) {
+        setCheckingLimit(false);
+      }
+    };
+
+    fetchLimit();
+    return () => {
+      active = false;
+    };
+  }, [user.id, user.is_admin]);
 
   // Fetch SV data for a given month from Supabase.
   // Falls back up to 3 months prior if the target month has no upload yet —
@@ -2350,15 +2473,9 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
   const calculate = async () => {
     if (!pcsrData) return;
 
-    // Access gate: a user can run a calculation if they have an active
-    // subscription, OR if they paid for a trial and haven't used it yet,
-    // OR if they have free-code access (subscription_plan = 'free').
-    const isAdmin        = !!user.is_admin;
-    const hasActiveSub   = ["active", "trialing"].includes(user.subscription_status);
-    const hasUnusedTrial = !!user.trial_paid_at && !user.trial_used;
-    const hasFreeAccess  = user.subscription_plan === "free";
-    if (!isAdmin && !hasActiveSub && !hasUnusedTrial && !hasFreeAccess) {
-      if (typeof onUpgrade === "function") onUpgrade();
+    const isAdmin = !!user.is_admin;
+    if (!isAdmin && runsThisMonth >= 1) {
+      setErr("You have reached your limit of 1 calculation for this month. Your limit will refresh at the start of next month.");
       return;
     }
 
@@ -2457,6 +2574,9 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
 
       setResult(res);
       setPhase("done");
+      if (!isAdmin) {
+        setRunsThisMonth(prev => prev + 1);
+      }
 
       // Bump the calculation-runs counter (admin runs are filtered out
       // server-side by the RPC, so this is safe to call regardless — the
@@ -2468,18 +2588,6 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
           .then(({ error }) => {
             if (error) console.warn("[runs] bump error:", error.message);
           });
-      }
-
-      // If this calculation was the trial run, mark it used (server-side + local).
-      // We deliberately do this AFTER setResult so failures upstream don't
-      // burn the trial — only successful completions count.
-      if (hasUnusedTrial && !isAdmin && !hasActiveSub && !hasFreeAccess) {
-        if (supabase) {
-          await supabase.from("profiles").update({ trial_used: true }).eq("id", user.id);
-        }
-        // Mutate user object so subsequent calc attempts in this session also
-        // hit the upgrade gate. Parent App holds the source of truth — propagate.
-        if (typeof onTrialUsed === "function") onTrialUsed();
       }
     } catch (e) {
       setErr(e?.message || String(e));
@@ -2515,13 +2623,17 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
         </div>
       )}
 
-      {/* Trial banner — shown when user paid trial but hasn't used it yet */}
-      {user.trial_paid_at && !user.trial_used && !user.is_admin && !["active","trialing"].includes(user.subscription_status) && (
-        <div style={{ padding:"12px 14px", background:C.blueXLight, border:"1.5px solid "+C.blue, borderRadius:10, fontSize:12, color:C.navy, marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
-          <span style={{ fontSize:16 }}>✨</span>
+      {/* Monthly Limit banner */}
+      {!user.is_admin && !checkingLimit && (
+        <div style={{ padding:"12px 14px", background:runsThisMonth >= 1 ? C.goldBg : C.blueXLight, border:"1.5px solid "+(runsThisMonth >= 1 ? C.goldBorder : C.blue), borderRadius:10, fontSize:12, color:runsThisMonth >= 1 ? C.goldText : C.navy, marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:16 }}>{runsThisMonth >= 1 ? "🔒" : "🔓"}</span>
           <div>
-            <div style={{ fontWeight:800 }}>Trial active — one calculation remaining</div>
-            <div style={{ color:C.textMid, marginTop:2 }}>Upload your PCSR and run your report below. Unlimited reports require a subscription.</div>
+            <div style={{ fontWeight:800 }}>{runsThisMonth >= 1 ? "Monthly limit reached (1/1 calculations used)" : "Free access active — 1 calculation remaining for this month"}</div>
+            <div style={{ color:C.textMid, marginTop:2 }}>
+              {runsThisMonth >= 1
+                ? `Your usage limit will refresh on ${new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toLocaleDateString("en-IN", { day: "numeric", month: "long" })}.`
+                : "The calculator is temporarily free for everyone, limited to 1 calculation per user per month."}
+            </div>
           </div>
         </div>
       )}
@@ -2617,7 +2729,7 @@ function CalcScreen({ user, rates, onNeedProfile, onTrialUsed, onUpgrade }) {
           )}
 
           <div style={{ marginTop:16 }}>
-            <Btn onClick={calculate} disabled={!pcsrData || profileIncomplete} icon="▶">
+            <Btn onClick={calculate} disabled={!pcsrData || profileIncomplete || (!user.is_admin && runsThisMonth >= 1)} icon="▶">
               Calculate allowances →
             </Btn>
             {profileIncomplete && pcsrData && (
@@ -4313,7 +4425,7 @@ function AppInner() {
       supabase.auth.getSession().then(async ({ data: { session } }) => {
         if (session) {
           const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
-          if (profile && (profile.is_active || profile.is_admin)) {
+          if (profile) {
             setUser({ ...profile, email: session.user.email });
             setTab(profile.is_admin ? "admin" : "calc");
             setScreen("app");
@@ -4343,9 +4455,8 @@ function AppInner() {
     setUser(null); setScreen("landing");
   };
   const onActivate   = u => setPendingUser(u);
-  const goCheckout   = u => { setPendingUser(u); setScreen("checkout"); };
+  const goCheckout   = u => { onLogin(u); };
   const onProfileSave = u => { setUser(u); setTab("calc"); };
-  const onTrialUsed  = () => setUser(u => u ? { ...u, trial_used: true } : u);
   // After upgrading from trial → subscription, refresh the user from the DB
   // so subscription_status / plan are picked up before we go back to the calc.
   const onTrialReset = async () => {
@@ -4382,7 +4493,7 @@ function AppInner() {
   }
 
   if (screen === "landing")        return <LandingPage goLogin={() => setScreen("login")} goSignup={() => setScreen("signup")} />;
-  if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} maintenanceMode={maintenance.enabled} />;
+  if (screen === "login")          return <LoginScreen onLogin={onLogin} goSignup={() => setScreen("signup")} goForgot={() => setScreen("forgot")} goLanding={() => setScreen("landing")} maintenanceMode={maintenance.enabled} />;
   if (screen === "signup")         return <SignupScreen goLogin={() => setScreen("login")} goLanding={() => setScreen("landing")} goCheckout={goCheckout} goForgot={() => setScreen("forgot")} />;
   if (screen === "checkout")       return <CheckoutScreen pendingUser={pendingUser} goLogin={() => setScreen("login")} onActivate={onActivate} />;
   if (screen === "forgot")         return <ForgotScreen goLogin={() => setScreen("login")} />;
@@ -4412,7 +4523,7 @@ function AppInner() {
       </div>
 
       <div style={{ animation:"fadeUp 0.25s ease" }}>
-        {tab === "calc"    && <CalcScreen    user={user} rates={rates} onNeedProfile={() => setTab("profile")} onTrialUsed={onTrialUsed} onUpgrade={() => setTab("upgrade")} />}
+        {tab === "calc"    && <CalcScreen    user={user} rates={rates} onNeedProfile={() => setTab("profile")} />}
         {tab === "upgrade" && <UpgradeScreen user={user} onActivated={onTrialReset} goBack={() => setTab("calc")} />}
         {tab === "profile" && <ProfileScreen user={user} onSave={onProfileSave} />}
         {tab === "admin"   && <AdminScreen   rates={rates} adminEmail={user?.email} />}

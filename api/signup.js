@@ -93,7 +93,7 @@ export default async function handler(req, res) {
     rank,
     home_base: homeBaseClean,
     is_admin:  false,
-    is_active: false,
+    is_active: true,
   });
 
   if (profileErr) {

@@ -1140,7 +1140,7 @@ export function parseTransferSection(text) {
   //   "Hotel to Airport:   13/01/2026   03:40   TRZ TRANSPORTER"
   // The IATA station code sits immediately AFTER the time, before the
   // transport company name (which may be "TRANSPORT", "TRANSPORTER", etc.).
-  const ENTRY_RE = /(Airport\s+to\s+Hotel|Hotel\s+to\s+Airport)[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(\d{1,2}:\d{2})\s+([A-Z]{3})\b/gi;
+  const ENTRY_RE = /(Airport\s+to\s+Hotel|Hotel\s+to\s+Airport)[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(\d{1,2}:\d{2})\s+([A-Z]{3})\b/gi;
   let m;
   while ((m = ENTRY_RE.exec(section)) !== null) {
     const type = /Airport\s+to\s+Hotel/i.test(m[1]) ? "inbound" : "outbound";
