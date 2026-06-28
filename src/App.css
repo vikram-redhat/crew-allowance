@@ -54,3 +54,28 @@ html[data-theme="dark"] select option {
     transform: none;
   }
 }
+
+@keyframes energeticGlow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(251, 191, 36, 0.15), inset 0 0 0 1px rgba(251, 191, 36, 0.1);
+    border-color: rgba(251, 191, 36, 0.35);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(251, 191, 36, 0.5), inset 0 0 0 1px rgba(251, 191, 36, 0.25);
+    border-color: rgba(251, 191, 36, 0.75);
+    transform: scale(1.01);
+  }
+}
+
+@keyframes yellowBlink {
+  0% {
+    background-color: #d97706;
+    box-shadow: 0 0 2px rgba(217, 119, 6, 0.5);
+  }
+  100% {
+    background-color: #fbbf24;
+    box-shadow: 0 0 10px #fbbf24, 0 0 20px #fbbf24;
+  }
+}
+

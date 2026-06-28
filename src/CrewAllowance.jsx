@@ -806,7 +806,7 @@ function AuthShell({ children, title, sub, wide, onSubmit }) {
         <div style={{ width:54, height:54, borderRadius:16,
           background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
           display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:26, margin:"0 auto 12px", boxShadow:"0 6px 20px rgba(26,111,212,0.3)" }}>✈</div>
+          fontSize:26, color:"#ffffff", margin:"0 auto 12px", boxShadow:"0 6px 20px rgba(26,111,212,0.3)" }}>✈</div>
         <div style={{ fontSize:22, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
         <div style={{ fontSize:11, color:C.blue, letterSpacing:"0.12em", textTransform:"uppercase", marginTop:2, opacity:0.75 }}>{CONFIG.airline ? `${CONFIG.airline} · ${CONFIG.tagline}` : CONFIG.tagline}</div>
       </div>
@@ -1184,7 +1184,7 @@ function PayslipCompare() {
    LANDING PAGE
 ═══════════════════════════════════════════════════════════════════ */
 function LandingPage({ goLogin, goSignup }) {
-  const { C } = useColors();
+  const { C, effective } = useColors();
   const steps = [
     { icon:"📄", title:"Export your PCSR from eCrew", body:"Download your final Personal Crew Schedule Report (PCSR) for the month as a PDF from eCrew." },
     { icon:"⬆", title:"Upload your PCSR", body:"Drop your PCSR PDF into the app. That's the only file you need." },
@@ -1200,19 +1200,20 @@ function LandingPage({ goLogin, goSignup }) {
   ];
   return (
     <div style={{ background:C.white, fontFamily:"'Nunito','Segoe UI',sans-serif", color:C.text }}>
-      <div style={{ position:"sticky", top:0, zIndex:20, background:"rgba(255,255,255,0.95)",
+      <div style={{ position:"sticky", top:0, zIndex:20,
+        background: effective === "dark" ? "rgba(30, 41, 59, 0.95)" : "rgba(255, 255, 255, 0.95)",
         backdropFilter:"blur(10px)", borderBottom:"1px solid "+C.border,
         padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:34, height:34, borderRadius:10,
             background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
             display:"flex", alignItems:"center", justifyContent:"center",
-            fontSize:18, boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
+            fontSize:18, color:"#ffffff", boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
           <div style={{ fontSize:16, fontWeight:900, color:C.navy, letterSpacing:"-0.01em" }}>{APP_NAME}</div>
         </div>
         <div style={{ display:"flex", gap:8 }}>
           <button type="button" onClick={goLogin} style={{ background:"transparent", border:"1.5px solid "+C.borderMid,
-            borderRadius:9, color:C.textMid, fontSize:13, padding:"7px 14px", cursor:"pointer", fontWeight:700, fontFamily:"inherit" }}>Sign in</button>
+            borderRadius:9, color:C.text, fontSize:13, padding:"7px 14px", cursor:"pointer", fontWeight:700, fontFamily:"inherit" }}>Sign in</button>
           <button type="button" onClick={goSignup} style={{ background:"linear-gradient(135deg,"+C.blue+","+C.blueMid+")",
             border:"none", borderRadius:9, color:C.white, fontSize:13, padding:"7px 16px",
             cursor:"pointer", fontWeight:700, fontFamily:"inherit", boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>Get started →</button>
@@ -1221,6 +1222,35 @@ function LandingPage({ goLogin, goSignup }) {
       <div style={{ background:"linear-gradient(160deg,"+C.brand2+" 0%,"+C.brand1+" 60%,"+C.blueMid+" 100%)",
         padding:"60px 20px 80px", textAlign:"center", position:"relative", overflow:"hidden" }}>
         <div style={{ position:"relative", maxWidth:640, margin:"0 auto" }}>
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            background: "rgba(251, 191, 36, 0.12)",
+            border: "1px solid rgba(251, 191, 36, 0.35)",
+            borderRadius: 30,
+            padding: "8px 18px",
+            fontSize: "clamp(12px, 2.5vw, 14px)",
+            color: "#ffffff",
+            fontWeight: 800,
+            marginBottom: 24,
+            animation: "energeticGlow 1.2s infinite ease-in-out",
+            boxShadow: "0 4px 14px rgba(251, 191, 36, 0.15)",
+            backdropFilter: "blur(4px)"
+          }}>
+            <span style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              backgroundColor: "#fbbf24",
+              animation: "yellowBlink 0.6s infinite alternate ease-in-out"
+            }} />
+            <span style={{ textShadow: "0 0 2px rgba(251, 191, 36, 0.3)" }}>
+              We are back after making some necessary changes for a better experience!
+            </span>
+          </div>
+          <br />
           <div style={{ display:"inline-block", background:"rgba(255,255,255,0.12)", borderRadius:20,
             padding:"4px 14px", fontSize:12, color:"rgba(255,255,255,0.9)", fontWeight:700,
             letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:20 }}>For Cockpit Crew</div>
@@ -4399,7 +4429,7 @@ function AppInner() {
         position:"sticky", top:0, zIndex:20, boxShadow:"0 1px 8px rgba(26,111,212,0.07)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:36, height:36, borderRadius:11, background:"linear-gradient(135deg,"+C.brand1+","+C.brand2+")",
-            display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, color:"#ffffff", boxShadow:"0 2px 8px rgba(26,111,212,0.28)" }}>✈</div>
           <div>
             <div style={{ fontSize:16, fontWeight:900, color:C.navy, letterSpacing:"-0.02em", lineHeight:1 }}>{APP_NAME}</div>
             {CONFIG.airline && <div style={{ fontSize:9, color:C.blue, letterSpacing:"0.1em", textTransform:"uppercase", opacity:0.75 }}>{CONFIG.airline}</div>}
